@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api/invoices";
+const API_URL = "${process.env.REACT_APP/API_BASE_URL}/api/invoices";
 
 export const fetchInvoices = () => axios.get(API_URL);
 export const createInvoice = (invoice) => axios.post(API_URL, invoice);

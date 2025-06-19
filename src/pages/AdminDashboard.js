@@ -18,21 +18,21 @@ const AdminDashboard = () => {
   const token = localStorage.getItem("token");
 
   const fetchStats = async () => {
-    const res = await axios.get("http://localhost:5000/api/admin/overview", {
+    const res = await axios.get("${process.env.REACT_APP/API_BASE_URL}/api/admin/overview", {
       headers: { Authorization: `Bearer ${token}` },
     });
     setStats(res.data);
   };
 
   const fetchUsers = async () => {
-    const res = await axios.get("http://localhost:5000/api/admin/users", {
+    const res = await axios.get("${process.env.REACT_APP/API_BASE_URL}/api/admin/users", {
       headers: { Authorization: `Bearer ${token}` },
     });
     setUsers(res.data);
   };
 
   const fetchVendors = async () => {
-    const res = await axios.get("http://localhost:5000/api/vendors", {
+    const res = await axios.get("${process.env.REACT_APP/API_BASE_URL}/api/vendors", {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendors(res.data);
@@ -40,7 +40,7 @@ const AdminDashboard = () => {
 
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) return;
-    await axios.post("http://localhost:5000/api/vendors", vendorForm, {
+    await axios.post("V/api/vendors", vendorForm, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
@@ -48,14 +48,14 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteVendor = async (id) => {
-    await axios.delete(`http://localhost:5000/api/vendors/${id}`, {
+    await axios.delete("${process.env.REACT_APP/API_BASE_URL}/api/vendors/${id}", {
       headers: { Authorization: `Bearer ${token}` },
     });
     fetchVendors();
   };
 
   const handleDeleteUser = async (id) => {
-    await axios.delete(`http://localhost:5000/api/admin/users/${id}`, {
+    await axios.delete("${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}", {
       headers: { Authorization: `Bearer ${token}` },
     });
     fetchUsers();

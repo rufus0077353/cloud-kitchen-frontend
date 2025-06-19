@@ -23,7 +23,7 @@ const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/admin/users", {
+      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/users", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -46,8 +46,8 @@ const AdminUsers = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const url = editingId
-      ? `http://localhost:5000/api/admin/users/${editingId}`
-      : "http://localhost:5000/api/admin/register";
+      ? "${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${editingId}"
+      : "${process.env.REACT_APP/API_BASE_URL}/api/admin/register";
 
     const method = editingId ? "PUT" : "POST";
 
@@ -83,7 +83,7 @@ const AdminUsers = () => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
 
     try {
-      await fetch(`http://localhost:5000/api/admin/users/${id}`, {
+      await fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -96,7 +96,7 @@ const AdminUsers = () => {
   const promoteUser = async (userId) => {
     try{
         const token = localStorage.getItem("token");
-        const res = await fetch('http://localhost:5000/api/admin/promote/${userId}', {
+        const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/promote/${userId}", {
             method: "PUT",
             headers: {
                 Authorization: 'Bearer ${token}',

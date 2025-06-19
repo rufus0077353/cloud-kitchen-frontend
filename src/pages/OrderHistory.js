@@ -32,7 +32,7 @@ const OrderHistory = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/orders/my", {
+      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/my", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -52,7 +52,7 @@ const OrderHistory = () => {
 
   const handleUpdate = async () => {
     try {
-      const res = await fetch(`http://localhost:5000/api/orders/${editingOrder.id}`, {
+      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/${editingOrder.id}", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -71,7 +71,7 @@ const OrderHistory = () => {
 
   const handleDelete = async (orderId) => {
     try {
-      await fetch(`http://localhost:5000/api/orders/${orderId}`, {
+      await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/${orderId}", {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

@@ -34,7 +34,7 @@ const UserOrders = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/orders/my", {
+      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/my", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -54,7 +54,7 @@ const UserOrders = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/orders/${id}`, {
+      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/${id}", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -21,7 +21,7 @@ const CreateOrder = () => {
   const [message, setMessage] = useState("");
 
   const fetchMenuItems = async () => {
-    const res = await fetch("http://localhost:5000/api/menu-items");
+    const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items");
     const data = await res.json();
     setMenuItems(data);
   };
@@ -58,7 +58,7 @@ const CreateOrder = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:5000/api/orders", {
+      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ UserId: userId, VendorId: vendorId, totalAmount, items }),
