@@ -61,7 +61,7 @@ const AdminMenuItems = () => {
   const handleSubmit = async () => {
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
-      ? "${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${editingItem.id}"
+      ? `${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${editingItem.id}`
       : "${process.env.REACT_APP/API_BASE_URL}/api/menu-items";
 
     const res = await fetch(url, {
@@ -81,7 +81,7 @@ const AdminMenuItems = () => {
 
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this item?")) return;
-    await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${id}", {
+    await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${id}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${token}`,

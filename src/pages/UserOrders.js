@@ -54,7 +54,7 @@ const UserOrders = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/${id}", {
+      const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/orders/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

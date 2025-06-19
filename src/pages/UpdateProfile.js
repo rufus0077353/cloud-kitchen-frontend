@@ -10,7 +10,7 @@ const EditUser = () => {
   const token = localStorage.getItem("token");
 
   useEffect(() => {
-    fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}", {
+    fetch(`${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -22,7 +22,7 @@ const EditUser = () => {
     e.preventDefault();
 
     try {
-      const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}", {
+      const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

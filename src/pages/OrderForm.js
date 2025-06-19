@@ -36,7 +36,7 @@ const OrderForm = () => {
 
   useEffect(() => {
     if (selectedVendor) {
-      fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items/vendor/${selectedVendor}", {
+      fetch(`${process.env.REACT_APP/API_BASE_URL}/api/menu-items/vendor/${selectedVendor}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`
         }

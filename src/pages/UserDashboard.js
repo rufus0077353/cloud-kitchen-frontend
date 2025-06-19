@@ -46,7 +46,7 @@ const UserDashboard = () => {
   };
 
   const fetchMenuItems = async (vendorId) => {
-    const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items?vendorId=${vendorId}");
+    const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/menu-items?vendorId=${vendorId}`);
     const data = await res.json();
     setMenuItems(data);
   };
