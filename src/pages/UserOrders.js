@@ -23,6 +23,8 @@ import {
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const UserOrders = () => {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
@@ -32,7 +34,7 @@ const UserOrders = () => {
 
   const token = localStorage.getItem("token");
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const fetchOrders = async () => {
     try {

@@ -6,6 +6,8 @@ import {
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const AdminVendors = () => {
   const [vendors, setVendors] = useState([]);
   const [stats, setStats] = useState({ totalUsers: 0, totalVendors: 0, totalRevenue: 0 });
@@ -13,7 +15,7 @@ const AdminVendors = () => {
 
   const token = localStorage.getItem("token");
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   useEffect(() => {
     fetchOverview();

@@ -11,6 +11,8 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const CreateOrder = () => {
   const navigate = useNavigate();
   const [userId, setUserId] = useState("");
@@ -20,7 +22,7 @@ const CreateOrder = () => {
   const [totalAmount, setTotalAmount] = useState(0);
   const [message, setMessage] = useState("");
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const fetchMenuItems = async () => {
     const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items");

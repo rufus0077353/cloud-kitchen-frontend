@@ -20,6 +20,8 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import AddIcon from "@mui/icons-material/Add";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const AdminMenuItems = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [open, setOpen] = useState(false);
@@ -32,7 +34,7 @@ const AdminMenuItems = () => {
   });
 
   const token = localStorage.getItem("token");
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const fetchMenuItems = async () => {
     const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items");

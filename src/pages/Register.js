@@ -11,6 +11,8 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const Register = () => {
   const [form, setForm] = useState({
     name: "",
@@ -21,7 +23,7 @@ const Register = () => {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });

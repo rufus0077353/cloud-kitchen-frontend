@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const EditUser = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -8,7 +10,7 @@ const EditUser = () => {
   const [error, setError] = useState("");
 
   const token = localStorage.getItem("token");
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   useEffect(() => {
     fetch(`${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}`, {

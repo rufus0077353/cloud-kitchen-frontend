@@ -17,6 +17,8 @@ import {
   Toolbar
 } from "@mui/material";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const UserDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -28,7 +30,7 @@ const UserDashboard = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user"));
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const headers = {
     Authorization: `Bearer ${token}`,

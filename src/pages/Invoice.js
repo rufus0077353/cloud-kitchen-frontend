@@ -2,12 +2,14 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const Invoice = () => {
   const { orderId } = useParams();
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   useEffect(() => {
     const fetchInvoice = async () => {

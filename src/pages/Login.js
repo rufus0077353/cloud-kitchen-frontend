@@ -11,13 +11,15 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const handleLogin = async (e) => {
     e.preventDefault();

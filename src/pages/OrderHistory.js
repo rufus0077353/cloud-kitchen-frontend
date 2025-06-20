@@ -21,6 +21,8 @@ import {
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const OrderHistory = () => {
   const [orders, setOrders] = useState([]);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -30,7 +32,7 @@ const OrderHistory = () => {
 
   const token = localStorage.getItem("token");
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const fetchOrders = async () => {
     try {

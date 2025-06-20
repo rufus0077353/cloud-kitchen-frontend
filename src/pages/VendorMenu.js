@@ -19,6 +19,8 @@ import {
 } from "@mui/material";
 import { Delete, Edit, Logout } from "@mui/icons-material";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [open, setOpen] = useState(false);
@@ -28,7 +30,7 @@ const VendorMenu = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user"));
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const fetchMenuItems = async () => {
   try {

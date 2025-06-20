@@ -12,12 +12,14 @@ import {
   Divider
 } from "@mui/material";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const OrderSuccess = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const order = location.state?.order;
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  
 
   const handleLogout = () => {
     localStorage.clear();

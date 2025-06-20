@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 import {
   Box, Typography, Grid, Paper, TextField, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow
@@ -13,8 +15,6 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [vendorForm, setVendorForm] = useState({ name: "", location: "", cuisine: "" , UserId: ""});
-
-  const API = process.env.REACT_APP_API_BASE_URL;
 
 
   const navigate = useNavigate();
