@@ -17,6 +17,8 @@ const OrderSuccess = () => {
   const location = useLocation();
   const order = location.state?.order;
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const handleLogout = () => {
     localStorage.clear();
     navigate("/login");

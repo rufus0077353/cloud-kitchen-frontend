@@ -8,6 +8,8 @@ const VendorLogin = () => {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const handleLogin = async (e) => {
     e.preventDefault();
 

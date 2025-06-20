@@ -21,6 +21,8 @@ const Register = () => {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };

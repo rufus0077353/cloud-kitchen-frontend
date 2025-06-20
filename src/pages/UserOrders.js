@@ -32,6 +32,8 @@ const UserOrders = () => {
 
   const token = localStorage.getItem("token");
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const fetchOrders = async () => {
     try {
       const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/my", {

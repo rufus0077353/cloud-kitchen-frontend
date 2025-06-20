@@ -13,6 +13,8 @@ const AdminVendors = () => {
 
   const token = localStorage.getItem("token");
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   useEffect(() => {
     fetchOverview();
     fetchVendors();

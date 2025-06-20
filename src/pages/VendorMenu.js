@@ -28,6 +28,8 @@ const VendorMenu = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user"));
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const fetchMenuItems = async () => {
   try {
     const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/vendors/${user.id}/menu`, {

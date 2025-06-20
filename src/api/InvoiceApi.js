@@ -1,5 +1,8 @@
 import axios from "axios";
 
+
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const API_URL = "${process.env.REACT_APP/API_BASE_URL}/api/invoices";
 
 export const fetchInvoices = () => axios.get(API_URL);

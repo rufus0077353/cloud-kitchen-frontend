@@ -17,6 +17,8 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");

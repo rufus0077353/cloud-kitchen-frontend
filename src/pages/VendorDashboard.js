@@ -11,6 +11,8 @@ const VendorDashboard = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ name: "", price: "", description: "" });
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const fetchMenu = async () => {
     const token = localStorage.getItem("token");
     const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items", {

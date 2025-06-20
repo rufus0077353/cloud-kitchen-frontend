@@ -21,6 +21,8 @@ const AdminUsers = () => {
 
   const token = localStorage.getItem("token");
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const fetchUsers = async () => {
     try {
       const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/users", {

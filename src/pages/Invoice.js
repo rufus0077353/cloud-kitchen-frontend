@@ -7,6 +7,8 @@ const Invoice = () => {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   useEffect(() => {
     const fetchInvoice = async () => {
       try {

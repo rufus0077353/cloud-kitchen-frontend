@@ -20,6 +20,7 @@ const EditUser = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
   const token = localStorage.getItem("token");
+  const API = process.env.REACT_APP_API_BASE_URL;
 
   useEffect(() => {
     fetch(`${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}`, {
