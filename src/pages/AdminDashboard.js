@@ -43,7 +43,7 @@ const AdminDashboard = () => {
 
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) return;
-    await axios.post("${process.env.REACT_APP/API_BASE_URL}/api/vendors", vendorForm, {
+    await axios.post("${API}/api/vendors", vendorForm, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
@@ -51,14 +51,14 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteVendor = async (id) => {
-    await axios.delete(`${process.env.REACT_APP/API_BASE_URL}/api/vendors/${id}`, {
+    await axios.delete(`${API}/api/vendors/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     fetchVendors();
   };
 
   const handleDeleteUser = async (id) => {
-    await axios.delete(`${process.env.REACT_APP/API_BASE_URL}/api/admin/users/${id}`, {
+    await axios.delete(`${API}/api/admin/users/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     fetchUsers();
