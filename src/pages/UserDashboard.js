@@ -38,19 +38,19 @@ const UserDashboard = () => {
   };
 
   const fetchOrders = async () => {
-    const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/orders/my", { headers });
+    const res = await fetch("${API}/api/orders/my", { headers });
     const data = await res.json();
     setOrders(data);
   };
 
   const fetchVendors = async () => {
-    const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/vendors");
+    const res = await fetch("${API}/api/vendors");
     const data = await res.json();
     setVendors(data);
   };
 
   const fetchMenuItems = async (vendorId) => {
-    const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/menu-items?vendorId=${vendorId}`);
+    const res = await fetch(`${API}/api/menu-items?vendorId=${vendorId}`);
     const data = await res.json();
     setMenuItems(data);
   };

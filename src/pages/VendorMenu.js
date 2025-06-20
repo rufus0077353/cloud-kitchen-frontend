@@ -34,7 +34,7 @@ const VendorMenu = () => {
 
   const fetchMenuItems = async () => {
   try {
-    const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/vendors/${user.id}/menu`, {
+    const res = await fetch(`${API}/api/vendors/${user.id}/menu`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -71,8 +71,8 @@ const VendorMenu = () => {
 
   const handleSubmit = async () => {
     const url = editingItem
-      ? `${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${editingItem.id}`
-      : `${process.env.REACT_APP/API_BASE_URL}/api/menu-items`;
+      ? `${API}/api/menu-items/${editingItem.id}`
+      : `${API}/api/menu-items`;
 
     const method = editingItem ? "PUT" : "POST";
 
@@ -100,7 +100,7 @@ const VendorMenu = () => {
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`http://localhost:5000/api/menu-items/${id}`, {
+      await fetch(`${API}/api/menu-items/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

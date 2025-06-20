@@ -21,7 +21,7 @@ const OrderForm = () => {
   
 
   useEffect(() => {
-    fetch("${process.env.REACT_APP/API_BASE_URL}/api/admin/users", {
+    fetch("${API}/api/admin/users", {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`
       }
@@ -29,7 +29,7 @@ const OrderForm = () => {
       .then(res => res.json())
       .then(data => setUsers(data));
 
-    fetch("${process.env.REACT_APP/API_BASE_URL}/api/vendors", {
+    fetch("${API}/api/vendors", {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`
       }
@@ -40,7 +40,7 @@ const OrderForm = () => {
 
   useEffect(() => {
     if (selectedVendor) {
-      fetch(`${process.env.REACT_APP/API_BASE_URL}/api/menu-items/vendor/${selectedVendor}`, {
+      fetch(`${API}/api/menu-items/vendor/${selectedVendor}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`
         }
@@ -75,7 +75,7 @@ const OrderForm = () => {
       items
     };
 
-    const res = await fetch("http://localhost:5000/api/orders", {
+    const res = await fetch("${API}/api/orders", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

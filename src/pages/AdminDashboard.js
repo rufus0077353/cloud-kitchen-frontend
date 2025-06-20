@@ -21,21 +21,21 @@ const AdminDashboard = () => {
   const token = localStorage.getItem("token");
 
   const fetchStats = async () => {
-    const res = await axios.get("${process.env.REACT_APP/API_BASE_URL}/api/admin/overview", {
+    const res = await axios.get("${API}/api/admin/overview", {
       headers: { Authorization: `Bearer ${token}` },
     });
     setStats(res.data);
   };
 
   const fetchUsers = async () => {
-    const res = await axios.get("${process.env.REACT_APP/API_BASE_URL}/api/admin/users", {
+    const res = await axios.get("${API}/api/admin/users", {
       headers: { Authorization: `Bearer ${token}` },
     });
     setUsers(res.data);
   };
 
   const fetchVendors = async () => {
-    const res = await axios.get("${process.env.REACT_APP/API_BASE_URL}/api/vendors", {
+    const res = await axios.get("${API}/api/vendors", {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendors(res.data);

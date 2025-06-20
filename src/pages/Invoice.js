@@ -15,7 +15,7 @@ const Invoice = () => {
     const fetchInvoice = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/orders/invoice/${orderId}`, {
+        const res = await fetch(`${API}/api/orders/invoice/${orderId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },

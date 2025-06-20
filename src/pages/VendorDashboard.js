@@ -17,7 +17,7 @@ const VendorDashboard = () => {
 
   const fetchMenu = async () => {
     const token = localStorage.getItem("token");
-    const res = await fetch("${process.env.REACT_APP/API_BASE_URL}/api/menu-items", {
+    const res = await fetch("${API}/api/menu-items", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -39,8 +39,8 @@ const VendorDashboard = () => {
     const token = localStorage.getItem("token");
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
-      ? `${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${editingItem.id}`
-      : `${process.env.REACT_APP/API_BASE_URL}/api/menu-items`;
+      ? `${API}/api/menu-items/${editingItem.id}`
+      : `${API}/api/menu-items`;
 
     const res = await fetch(url, {
       method,
@@ -65,7 +65,7 @@ const VendorDashboard = () => {
 
   const handleDelete = async (id) => {
     const token = localStorage.getItem("token");
-    await fetch(`${process.env.REACT_APP/API_BASE_URL}/api/menu-items/${id}`, {
+    await fetch(`${API}/api/menu-items/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
