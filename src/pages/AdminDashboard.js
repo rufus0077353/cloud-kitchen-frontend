@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 
-const API = process.env.REACT_APP_API_BASE_URL;
+
 
 import {
   Box, Typography, Grid, Paper, TextField, Button, Table, TableBody,
@@ -9,6 +9,8 @@ import {
 } from "@mui/material";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({});
