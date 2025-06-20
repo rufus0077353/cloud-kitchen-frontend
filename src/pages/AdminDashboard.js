@@ -1,11 +1,7 @@
 import React, { useEffect, useState } from "react";
-import Navbar from "../components/Navbar";
-
-
-
 import {
-  Box, Typography, Grid, Paper, TextField, Button, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow
+  Box, Typography, Grid, Paper, TextField, Button,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow
 } from "@mui/material";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -16,28 +12,27 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState({});
   const [users, setUsers] = useState([]);
   const [vendors, setVendors] = useState([]);
-  const [vendorForm, setVendorForm] = useState({ name: "", location: "", cuisine: "" , UserId: ""});
-
+  const [vendorForm, setVendorForm] = useState({ name: "", location: "", cuisine: "", UserId: "" });
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
   const fetchStats = async () => {
-    const res = await axios.get('${API}/api/admin/overview', {
+    const res = await axios.get(`${API}/api/admin/overview`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setStats(res.data);
   };
 
   const fetchUsers = async () => {
-    const res = await axios.get('${API}/api/admin/users', {
+    const res = await axios.get(`${API}/api/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setUsers(res.data);
   };
 
   const fetchVendors = async () => {
-    const res = await axios.get('${API}/api/vendors', {
+    const res = await axios.get(`${API}/api/vendors`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendors(res.data);
@@ -45,7 +40,7 @@ const AdminDashboard = () => {
 
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) return;
-    await axios.post('${API}/api/vendors', vendorForm, {
+    await axios.post(`${API}/api/vendors`, vendorForm, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
@@ -66,24 +61,16 @@ const AdminDashboard = () => {
     fetchUsers();
   };
 
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate("/login");
-  };
-
   useEffect(() => {
     fetchStats();
     fetchUsers();
     fetchVendors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <Box p={3}>
-      <Box display="flex" justifyContent="space-between" alignItems="center">
-        <Navbar role="admin"/>
-        <Typography variant="h4" gutterBottom>Admin Dashboard</Typography>
-        
-      </Box>
+      <Typography variant="h4" gutterBottom>Admin Dashboard</Typography>
 
       <Grid container spacing={3}>
         <Grid item xs={3}>
