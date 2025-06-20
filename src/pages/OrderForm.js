@@ -21,7 +21,7 @@ const OrderForm = () => {
   
 
   useEffect(() => {
-    fetch("${API}/api/admin/users", {
+    fetch('${API}/api/admin/users', {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`
       }
@@ -29,7 +29,7 @@ const OrderForm = () => {
       .then(res => res.json())
       .then(data => setUsers(data));
 
-    fetch("${API}/api/vendors", {
+    fetch('${API}/api/vendors', {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`
       }
@@ -75,7 +75,7 @@ const OrderForm = () => {
       items
     };
 
-    const res = await fetch("${API}/api/orders", {
+    const res = await fetch('${API}/api/orders', {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

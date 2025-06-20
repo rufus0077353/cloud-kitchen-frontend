@@ -27,7 +27,7 @@ const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("${API}/api/admin/users", {
+      const res = await fetch('${API}/api/admin/users', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -51,7 +51,7 @@ const AdminUsers = () => {
     e.preventDefault();
     const url = editingId
       ? `${API}/api/admin/users/${editingId}`
-      : "${API}/api/admin/register";
+      : '${API}/api/admin/register';
 
     const method = editingId ? "PUT" : "POST";
 

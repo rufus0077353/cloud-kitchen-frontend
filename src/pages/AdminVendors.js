@@ -24,7 +24,7 @@ const AdminVendors = () => {
 
   const fetchOverview = async () => {
     try {
-      const res = await fetch("${API}/api/admin/overview", {
+      const res = await fetch('${API}/api/admin/overview', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -36,7 +36,7 @@ const AdminVendors = () => {
 
   const fetchVendors = async () => {
     try {
-      const res = await fetch("${API}/api/vendors", {
+      const res = await fetch('${API}/api/vendors', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -50,7 +50,7 @@ const AdminVendors = () => {
     if (!newVendor.name ||!newVendor.location ||!newVendor.cuisine ||!newVendor.UserId ) return;
 
     try {
-      const res = await fetch("${API}/api/vendors", {
+      const res = await fetch('${API}/api/vendors', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

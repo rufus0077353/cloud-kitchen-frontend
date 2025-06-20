@@ -38,13 +38,13 @@ const UserDashboard = () => {
   };
 
   const fetchOrders = async () => {
-    const res = await fetch("${API}/api/orders/my", { headers });
+    const res = await fetch('${API}/api/orders/my', { headers });
     const data = await res.json();
     setOrders(data);
   };
 
   const fetchVendors = async () => {
-    const res = await fetch("${API}/api/vendors");
+    const res = await fetch('${API}/api/vendors');
     const data = await res.json();
     setVendors(data);
   };
@@ -101,7 +101,7 @@ const UserDashboard = () => {
       })),
     };
 
-    const res = await fetch("http://localhost:5000/api/orders", {
+    const res = await fetch('${API}/api/orders', {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
@@ -116,7 +116,7 @@ const UserDashboard = () => {
   };
 
   const deleteOrder = async (orderId) => {
-    const res = await fetch(`http://localhost:5000/api/orders/${orderId}`, {
+    const res = await fetch(`${API}/api/orders/${orderId}`, {
       method: "DELETE",
       headers,
     });

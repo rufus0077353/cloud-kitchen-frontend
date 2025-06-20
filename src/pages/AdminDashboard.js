@@ -23,21 +23,21 @@ const AdminDashboard = () => {
   const token = localStorage.getItem("token");
 
   const fetchStats = async () => {
-    const res = await axios.get("${API}/api/admin/overview", {
+    const res = await axios.get('${API}/api/admin/overview', {
       headers: { Authorization: `Bearer ${token}` },
     });
     setStats(res.data);
   };
 
   const fetchUsers = async () => {
-    const res = await axios.get("${API}/api/admin/users", {
+    const res = await axios.get('${API}/api/admin/users', {
       headers: { Authorization: `Bearer ${token}` },
     });
     setUsers(res.data);
   };
 
   const fetchVendors = async () => {
-    const res = await axios.get("${API}/api/vendors", {
+    const res = await axios.get('${API}/api/vendors', {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendors(res.data);
@@ -45,7 +45,7 @@ const AdminDashboard = () => {
 
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) return;
-    await axios.post("${API}/api/vendors", vendorForm, {
+    await axios.post('${API}/api/vendors', vendorForm, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
