@@ -17,7 +17,7 @@ const VendorDashboard = () => {
 
   const fetchMenu = async () => {
     const token = localStorage.getItem("token");
-    const res = await fetch('${API}/api/menu-items', {
+    const res = await fetch(`${API}/api/menu-items`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();

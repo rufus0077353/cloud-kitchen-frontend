@@ -20,11 +20,12 @@ const AdminVendors = () => {
   useEffect(() => {
     fetchOverview();
     fetchVendors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchOverview = async () => {
     try {
-      const res = await fetch('${API}/api/admin/overview', {
+      const res = await fetch(`${API}/api/admin/overview`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -36,7 +37,7 @@ const AdminVendors = () => {
 
   const fetchVendors = async () => {
     try {
-      const res = await fetch('${API}/api/vendors', {
+      const res = await fetch(`${API}/api/vendors`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -50,7 +51,7 @@ const AdminVendors = () => {
     if (!newVendor.name ||!newVendor.location ||!newVendor.cuisine ||!newVendor.UserId ) return;
 
     try {
-      const res = await fetch('${API}/api/vendors', {
+      const res = await fetch(`${API}/api/vendors`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,7 +78,7 @@ const AdminVendors = () => {
 
   const handleDeleteVendor = async (id) => {
     try {
-      await fetch('${API}/api/admin/vendors/${id}', {
+      await fetch(`${API}/api/admin/vendors/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

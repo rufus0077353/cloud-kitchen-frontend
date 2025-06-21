@@ -19,7 +19,10 @@ import OrderSuccess from "./pages/OrderSuccess";
 import OrderForm from "./pages/OrderForm";
 import OrderHistory from "./pages/OrderHistory";
 import Invoice from "./pages/Invoice";
+
+// eslint-disable-next-line no-unused-vars
 import Navbar from "./components/Navbar";
+
 import VendorMenu from "./pages/VendorMenu";
 
 // Components

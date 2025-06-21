@@ -38,7 +38,7 @@ const UserOrders = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch("${APIL}/api/orders/my", {
+      const res = await fetch(`${API}/api/orders/my`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -54,6 +54,7 @@ const UserOrders = () => {
 
   useEffect(() => {
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDelete = async (id) => {

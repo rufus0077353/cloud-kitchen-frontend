@@ -117,6 +117,7 @@ const VendorMenu = () => {
 
   useEffect(() => {
     fetchMenuItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

@@ -36,7 +36,7 @@ const OrderHistory = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch("${API}/api/orders/my", {
+      const res = await fetch(`${API}/api/orders/my`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -94,6 +94,7 @@ const OrderHistory = () => {
 
   useEffect(() => {
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

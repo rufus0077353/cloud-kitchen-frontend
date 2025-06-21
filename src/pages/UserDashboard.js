@@ -14,7 +14,9 @@ import {
   MenuItem,
   Box,
   AppBar,
-  Toolbar
+  Toolbar,
+ // eslint-disable-next-line no-unused-vars
+  getFormControlUtilityClasses
 } from "@mui/material";
 
 const API = process.env.REACT_APP_API_BASE_URL;
@@ -38,13 +40,13 @@ const UserDashboard = () => {
   };
 
   const fetchOrders = async () => {
-    const res = await fetch('${API}/api/orders/my', { headers });
+    const res = await fetch(`${API}/api/orders/my`, { headers });
     const data = await res.json();
     setOrders(data);
   };
 
   const fetchVendors = async () => {
-    const res = await fetch('${API}/api/vendors');
+    const res = await fetch(`${API}/api/vendors`);
     const data = await res.json();
     setVendors(data);
   };
@@ -58,6 +60,7 @@ const UserDashboard = () => {
   useEffect(() => {
     fetchOrders();
     fetchVendors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleVendorChange = (e) => {
@@ -101,7 +104,7 @@ const UserDashboard = () => {
       })),
     };
 
-    const res = await fetch('${API}/api/orders', {
+    const res = await fetch(`${API}/api/orders`, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
@@ -125,6 +128,7 @@ const UserDashboard = () => {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const logout = () => {
     localStorage.clear();
     window.location.href = "/login";

@@ -25,13 +25,14 @@ const CreateOrder = () => {
   
 
   const fetchMenuItems = async () => {
-    const res = await fetch('${API}/api/menu-items');
+    const res = await fetch(`${API}/api/menu-items`);
     const data = await res.json();
     setMenuItems(data);
   };
 
   useEffect(() => {
     fetchMenuItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleItemChange = (index, field, value) => {
@@ -53,6 +54,7 @@ const CreateOrder = () => {
 
   useEffect(() => {
     calculateTotal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
   const handleAddItem = () => {
@@ -62,7 +64,7 @@ const CreateOrder = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('${API}/api/orders', {
+      const res = await fetch(`${API}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ UserId: userId, VendorId: vendorId, totalAmount, items }),

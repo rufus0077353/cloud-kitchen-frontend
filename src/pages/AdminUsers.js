@@ -27,7 +27,7 @@ const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('${API}/api/admin/users', {
+      const res = await fetch(`${API}/api/admin/users`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -41,6 +41,7 @@ const AdminUsers = () => {
 
   useEffect(() => {
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleChange = (e) => {
@@ -51,7 +52,7 @@ const AdminUsers = () => {
     e.preventDefault();
     const url = editingId
       ? `${API}/api/admin/users/${editingId}`
-      : '${API}/api/admin/register';
+      : `${API}/api/admin/register`;
 
     const method = editingId ? "PUT" : "POST";
 
@@ -100,10 +101,10 @@ const AdminUsers = () => {
   const promoteUser = async (userId) => {
     try{
         const token = localStorage.getItem("token");
-        const res = await fetch('${API}/api/admin/promote/${userId}', {
+        const res = await fetch(`${API}/api/admin/promote/${userId}`, {
             method: "PUT",
             headers: {
-                Authorization: 'Bearer ${token}',
+                Authorization: `Bearer ${token}`,
             },
         });
         const data = await res.json();

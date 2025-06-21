@@ -14,6 +14,7 @@ const AdminDashboard = () => {
   const [vendors, setVendors] = useState([]);
   const [vendorForm, setVendorForm] = useState({ name: "", location: "", cuisine: "", UserId: "" });
 
+  // eslint-disable-next-line no-unused-vars
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 

@@ -37,7 +37,7 @@ const AdminMenuItems = () => {
   
 
   const fetchMenuItems = async () => {
-    const res = await fetch('${API}/api/menu-items');
+    const res = await fetch(`${API}/api/menu-items`);
     const data = await res.json();
     setMenuItems(data);
   };
@@ -65,7 +65,7 @@ const AdminMenuItems = () => {
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
       ? `${API}/api/menu-items/${editingItem.id}`
-      : '${API}/api/menu-items';
+      : `${API}/api/menu-items`;
 
     const res = await fetch(url, {
       method,
