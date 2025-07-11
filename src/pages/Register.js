@@ -11,7 +11,6 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
 
 
 const Register = () => {
@@ -35,7 +34,7 @@ const Register = () => {
     setError("");
 
     try {
-      const res = await fetch(`${API}/api/auth/register`, {
+      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

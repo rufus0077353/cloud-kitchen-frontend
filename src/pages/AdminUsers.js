@@ -13,7 +13,6 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
 
 
 const AdminUsers = () => {
@@ -28,7 +27,7 @@ const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API}/api/admin/users`, {
+      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/admin/users`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -52,8 +51,8 @@ const AdminUsers = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const url = editingId
-      ? `${API}/api/admin/users/${editingId}`
-      : `${API}/api/admin/register`;
+      ? `${REACT_APP_API_BASE_URL}/api/admin/users/${editingId}`
+      : `${REACT_APP_API_BASE_URL}/api/admin/register`;
 
     const method = editingId ? "PUT" : "POST";
 
@@ -89,7 +88,7 @@ const AdminUsers = () => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
 
     try {
-      await fetch(`${API}/api/admin/users/${id}`, {
+      await fetch(`${REACT_APP_API_BASE_URL}/api/admin/users/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -102,7 +101,7 @@ const AdminUsers = () => {
   const promoteUser = async (userId) => {
     try{
         const token = localStorage.getItem("token");
-        const res = await fetch(`${API}/api/admin/promote/${userId}`, {
+        const res = await fetch(`${REACT_APP_API_BASE_URL}/api/admin/promote/${userId}`, {
             method: "PUT",
             headers: {
                 Authorization: `Bearer ${token}`,

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
+
 
 const Invoice = () => {
   const { orderId } = useParams();
@@ -15,7 +15,7 @@ const Invoice = () => {
     const fetchInvoice = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`${API}/api/orders/invoice/${orderId}`, {
+        const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/invoice/${orderId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },

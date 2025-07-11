@@ -21,7 +21,6 @@ import {
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
 
 const OrderHistory = () => {
   const [orders, setOrders] = useState([]);
@@ -36,7 +35,7 @@ const OrderHistory = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch(`${API}/api/orders/my`, {
+      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/my`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -56,7 +55,7 @@ const OrderHistory = () => {
 
   const handleUpdate = async () => {
     try {
-      const res = await fetch(`${API}/api/orders/${editingOrder.id}`, {
+      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/${editingOrder.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -75,7 +74,7 @@ const OrderHistory = () => {
 
   const handleDelete = async (orderId) => {
     try {
-      await fetch(`${API}/api/orders/${orderId}`, {
+      await fetch(`${REACT_APP_API_BASE_URL}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

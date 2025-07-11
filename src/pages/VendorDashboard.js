@@ -6,7 +6,6 @@ import {
 } from "@mui/material";
 import { Delete, Edit } from "@mui/icons-material";
 
-const API = process.env.REACT_APP_API_BASE_URL;
 
 
 const VendorDashboard = () => {
@@ -18,7 +17,7 @@ const VendorDashboard = () => {
 
   const fetchMenu = async () => {
     const token = localStorage.getItem("token");
-    const res = await fetch(`${API}/api/menu-items`, {
+    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/menu-items`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -40,8 +39,8 @@ const VendorDashboard = () => {
     const token = localStorage.getItem("token");
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
-      ? `${API}/api/menu-items/${editingItem.id}`
-      : `${API}/api/menu-items`;
+      ? `${REACT_APP_API_BASE_URL}/api/menu-items/${editingItem.id}`
+      : `${REACT_APP_API_BASE_URL}/api/menu-items`;
 
     const res = await fetch(url, {
       method,
@@ -66,7 +65,7 @@ const VendorDashboard = () => {
 
   const handleDelete = async (id) => {
     const token = localStorage.getItem("token");
-    await fetch(`${API}/api/menu-items/${id}`, {
+    await fetch(`${REACT_APP_API_BASE_URL}/api/menu-items/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });

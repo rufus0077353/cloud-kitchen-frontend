@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
+
 
 
 const VendorLogin = () => {
@@ -17,7 +17,7 @@ const VendorLogin = () => {
     e.preventDefault();
 
     try {
-      const res = await fetch(`${API}/api/vendor-auth/login`, {
+      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/vendor-auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),

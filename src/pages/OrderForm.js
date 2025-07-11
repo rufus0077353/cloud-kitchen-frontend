@@ -7,7 +7,6 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
 
 
 const OrderForm = () => {
@@ -22,7 +21,7 @@ const OrderForm = () => {
   
 
   useEffect(() => {
-    fetch(`${API}/api/admin/users`, {
+    fetch(`${REACT_APP_API_BASE_URL}/api/admin/users`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`
       }
@@ -30,7 +29,7 @@ const OrderForm = () => {
       .then(res => res.json())
       .then(data => setUsers(data));
 
-    fetch(`${API}/api/vendors`, {
+    fetch(`${REACT_APP_API_BASE_URL}/api/vendors`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`
       }
@@ -41,7 +40,7 @@ const OrderForm = () => {
 
   useEffect(() => {
     if (selectedVendor) {
-      fetch(`${API}/api/menu-items/vendor/${selectedVendor}`, {
+      fetch(`${REACT_APP_API_BASE_URL}/api/menu-items/vendor/${selectedVendor}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`
         }
@@ -76,7 +75,7 @@ const OrderForm = () => {
       items
     };
 
-    const res = await fetch(`${API}/api/orders`, {
+    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

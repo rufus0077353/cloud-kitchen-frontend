@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
 
 
 const EditUser = () => {
@@ -14,7 +13,7 @@ const EditUser = () => {
   
 
   useEffect(() => {
-    fetch(`${API}/api/admin/users/${id}`, {
+    fetch(`${REACT_APP_API_BASE_URL}/api/admin/users/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -26,7 +25,7 @@ const EditUser = () => {
     e.preventDefault();
 
     try {
-      const res = await fetch(`${API}/api/admin/users/${id}`, {
+      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/admin/users/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
