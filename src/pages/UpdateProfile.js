@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 
 const API = process.env.REACT_APP_API_BASE_URL;
 
+
 const EditUser = () => {
   const { id } = useParams();
   const navigate = useNavigate();
