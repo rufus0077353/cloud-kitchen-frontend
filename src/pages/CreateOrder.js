@@ -11,7 +11,7 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useNavigate } from "react-router-dom";
 
-
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const CreateOrder = () => {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ const CreateOrder = () => {
   
 
   const fetchMenuItems = async () => {
-    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/menu-items`);
+    const res = await fetch(`${API}/api/menu-items`);
     const data = await res.json();
     setMenuItems(data);
   };
@@ -64,7 +64,7 @@ const CreateOrder = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders`, {
+      const res = await fetch(`${API}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ UserId: userId, VendorId: vendorId, totalAmount, items }),

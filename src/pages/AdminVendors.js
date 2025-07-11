@@ -6,6 +6,7 @@ import {
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const AdminVendors = () => {
   const [vendors, setVendors] = useState([]);
@@ -24,7 +25,7 @@ const AdminVendors = () => {
 
   const fetchOverview = async () => {
     try {
-      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/admin/overview`, {
+      const res = await fetch(`${API}/api/admin/overview`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -36,7 +37,7 @@ const AdminVendors = () => {
 
   const fetchVendors = async () => {
     try {
-      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/vendors`, {
+      const res = await fetch(`${API}/api/vendors`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -50,7 +51,7 @@ const AdminVendors = () => {
     if (!newVendor.name ||!newVendor.location ||!newVendor.cuisine ||!newVendor.UserId ) return;
 
     try {
-      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/vendors`, {
+      const res = await fetch(`${API}/api/vendors`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,7 +78,7 @@ const AdminVendors = () => {
 
   const handleDeleteVendor = async (id) => {
     try {
-      await fetch(`${REACT_APP_API_BASE_URL}/api/admin/vendors/${id}`, {
+      await fetch(`${API}/api/admin/vendors/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -24,7 +24,7 @@ import { Delete, Edit, Logout } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 
 
-
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const UserOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -39,7 +39,7 @@ const UserOrders = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/my`, {
+      const res = await fetch(`${API}/api/orders/my`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -60,7 +60,7 @@ const UserOrders = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/${id}`, {
+      const res = await fetch(`${API}/api/orders/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -12,7 +12,7 @@ import {
   Divider
 } from "@mui/material";
 
-
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const OrderSuccess = () => {
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ const OrderSuccess = () => {
 
   const handleDelete = async () => {
     try {
-      await fetch(`${REACT_APP_API_BASE_URL}/api/orders/${order.id}`, {
+      await fetch(`${API}/api/orders/${order.id}`, {
         method: "DELETE"
       });
       alert("Order deleted");
@@ -41,7 +41,7 @@ const OrderSuccess = () => {
   const handleUpdate = async () => {
     const updatedAmount = prompt("Enter new total amount:");
     try {
-      await fetch(`${REACT_APP_API_BASE_URL}/api/orders/${order.id}`, {
+      await fetch(`${API}/api/orders/${order.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ totalAmount: updatedAmount, items: order.items })

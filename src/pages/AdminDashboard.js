@@ -6,6 +6,7 @@ import {
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({});
@@ -18,21 +19,21 @@ const AdminDashboard = () => {
   const token = localStorage.getItem("token");
 
   const fetchStats = async () => {
-    const res = await axios.get(`${REACT_APP_API_BASE_URL}/api/admin/overview`, {
+    const res = await axios.get(`${API}/api/admin/overview`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setStats(res.data);
   };
 
   const fetchUsers = async () => {
-    const res = await axios.get(`${REACT_APP_API_BASE_URL}/api/admin/users`, {
+    const res = await axios.get(`${API}/api/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setUsers(res.data);
   };
 
   const fetchVendors = async () => {
-    const res = await axios.get(`${REACT_APP_API_BASE_URL}/api/vendors`, {
+    const res = await axios.get(`${API}/api/vendors`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setVendors(res.data);
@@ -48,14 +49,14 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteVendor = async (id) => {
-    await axios.delete(`${REACT_APP_API_BASE_URL}/api/vendors/${id}`, {
+    await axios.delete(`${API}/api/vendors/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     fetchVendors();
   };
 
   const handleDeleteUser = async (id) => {
-    await axios.delete(`${REACT_APP_API_BASE_URL}/api/admin/users/${id}`, {
+    await axios.delete(`${API}/api/admin/users/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     fetchUsers();

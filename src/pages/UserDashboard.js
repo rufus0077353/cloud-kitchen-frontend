@@ -20,7 +20,7 @@ import {
 } from "@mui/material";
 
 
-
+const API = process.env.REACT_APP_API_BASE_URL;
 
 const UserDashboard = () => {
   const [orders, setOrders] = useState([]);
@@ -41,19 +41,19 @@ const UserDashboard = () => {
   };
 
   const fetchOrders = async () => {
-    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/my`, { headers });
+    const res = await fetch(`${API}/api/orders/my`, { headers });
     const data = await res.json();
     setOrders(data);
   };
 
   const fetchVendors = async () => {
-    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/vendors`);
+    const res = await fetch(`${API}/api/vendors`);
     const data = await res.json();
     setVendors(data);
   };
 
   const fetchMenuItems = async (vendorId) => {
-    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/menu-items?vendorId=${vendorId}`);
+    const res = await fetch(`${API}/api/menu-items?vendorId=${vendorId}`);
     const data = await res.json();
     setMenuItems(data);
   };
@@ -105,7 +105,7 @@ const UserDashboard = () => {
       })),
     };
 
-    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders`, {
+    const res = await fetch(`${API}/api/orders`, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
@@ -120,7 +120,7 @@ const UserDashboard = () => {
   };
 
   const deleteOrder = async (orderId) => {
-    const res = await fetch(`${REACT_APP_API_BASE_URL}/api/orders/${orderId}`, {
+    const res = await fetch(`${API}/api/orders/${orderId}`, {
       method: "DELETE",
       headers,
     });
