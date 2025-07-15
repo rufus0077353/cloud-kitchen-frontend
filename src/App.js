@@ -1,6 +1,8 @@
 
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { CssBaseline, Container } from "@mui/material";
 
 // Pages
@@ -171,6 +173,7 @@ function App() {
             }
          />
         </Routes>
+        <ToastContainer position="top-right" autoClose={5000} />    
       </Container>
     </Router>
   );

@@ -1,5 +1,6 @@
 // src/pages/Register.js
 import React, { useState } from "react";
+import { toast } from "react-toastify";
 import {
   Container,
   TextField,
@@ -43,16 +44,21 @@ const Register = () => {
       const data = await res.json();
 
       if (res.ok) {
+        toast.success("regisration succesful");
+
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
         navigate("/dashboard");
       } else {
+        toast.error("Registration failed");
         setError(data.message || "Registration failed");
       }
     } catch (err) {
+      toast.error("server error. Please try again later");
       setError("Server error");
     }
   };
+  
 
   return (
     <Container maxWidth="xs">
