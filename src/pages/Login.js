@@ -36,6 +36,8 @@ const Login = () => {
       const data = await res.json();
 
       if (res.ok) {
+        toast.success("login successful");
+
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
         // Navigate based on role
@@ -48,6 +50,7 @@ const Login = () => {
         setError(data.message || "Login failed");
       }
     } catch (err) {
+      toast.error("Server error. please try again later");
       setError("Server error");
     }
   };
