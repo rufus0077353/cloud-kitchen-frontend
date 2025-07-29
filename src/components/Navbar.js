@@ -16,7 +16,7 @@ const Navbar = () => {
 
   return (
     <nav style={styles.nav}>
-      <div style={styles.logo}>Cloud Kitchen</div>
+      <div style={styles.logo}>Servezy</div>
       <div style={styles.links}>
         {token && user && (
           <>
@@ -32,7 +32,6 @@ const Navbar = () => {
             {user.role === "user" && (
               <Link to="/dashboard" style={styles.link}>Home</Link>
             )}
-            <button onClick={handleLogout} style={styles.button}>Logout</button>
           </>
         )}
       </div>
