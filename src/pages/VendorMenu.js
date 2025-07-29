@@ -92,9 +92,11 @@ const VendorMenu = () => {
         },
         body: JSON.stringify(body),
       });
+      toast.success(editingItem ? "Menu item updated!" : "Item added!");
       await fetchMenuItems();
       handleClose();
     } catch (err) {
+      toast.error("Failed to submit item");
       console.error("Submit error:", err);
     }
   };
@@ -105,8 +107,10 @@ const VendorMenu = () => {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
+      toast.success("Item deleted!");
       await fetchMenuItems();
     } catch (err) {
+      toast.error("Failed to delete item");
       console.error("Delete failed:", err);
     }
   };

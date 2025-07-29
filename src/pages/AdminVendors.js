@@ -5,6 +5,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
+import { toast } from "react-toastify";
 
 const API = process.env.REACT_APP_API_BASE_URL;
 
@@ -72,6 +73,7 @@ const AdminVendors = () => {
         alert(data.message);
       }
     } catch (err) {
+      toast.error("Error addning vendor. Please try again later.");
       console.error("Error adding vendor:", err);
     }
   };

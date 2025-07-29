@@ -44,6 +44,7 @@ const AdminDashboard = () => {
     await axios.post(`${API}/api/vendors`, vendorForm, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    toast.success("Vendor added successfully");
     setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
     fetchVendors();
   };
@@ -52,6 +53,8 @@ const AdminDashboard = () => {
     await axios.delete(`${API}/api/vendors/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    // Show toast after successful deletion
+    toast.error("Vendor deleted successfully");
     fetchVendors();
   };
 
@@ -59,6 +62,7 @@ const AdminDashboard = () => {
     await axios.delete(`${API}/api/admin/users/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    toast.error("User deleted succesfully");
     fetchUsers();
   };
 

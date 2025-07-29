@@ -36,6 +36,7 @@ function App() {
     <Router>
       <CssBaseline />
       <Container maxWidth="lg">
+        <Navbar />
         <Routes>
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="/login" element={<Login />} />

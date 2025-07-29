@@ -73,11 +73,14 @@ const CreateOrder = () => {
 
       const data = await res.json();
       if (res.ok) {
+        toast.success("Order created succesfully");
         setMessage("Order created successfully");
       } else {
         setMessage(data.message || "Error creating order");
+        toast.error("Order creation failed");
       }
     } catch (err) {
+      toast.error("Server error");
       setMessage("Server error");
     }
   };

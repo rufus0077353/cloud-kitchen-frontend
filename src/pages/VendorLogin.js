@@ -26,10 +26,12 @@ const VendorLogin = () => {
       const data = await res.json();
 
       if (res.ok) {
+        toast.success("login succesful");
         localStorage.setItem("vendorToken", data.token);
         localStorage.setItem("vendor", JSON.stringify(data.vendor));
         navigate("/vendor/dashboard");
       } else {
+        toast.error("login failed");
         setError(data.message || "Login failed");
       }
     } catch {

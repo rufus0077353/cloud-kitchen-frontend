@@ -28,6 +28,7 @@ const VendorDashboard = () => {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    toast.success("Logout successful");
     window.location.href = "/login";
   };
 
@@ -35,8 +36,9 @@ const VendorDashboard = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  try {
     const token = localStorage.getItem("token");
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
@@ -53,11 +55,17 @@ const VendorDashboard = () => {
     });
 
     if (res.ok) {
+      toast.success(editingItem ? "Menu item updated!" : "item added!");
       setForm({ name: "", price: "", description: "" });
       setEditingItem(null);
       fetchMenu();
+    } else {
+      toast.error("Failed to save item");
     }
-  };
+  } catch (err) {
+    toast.error("Server error");
+  }
+};
 
   const handleEdit = (item) => {
     setForm({ name: item.name, price: item.price, description: item.description });
@@ -65,12 +73,21 @@ const VendorDashboard = () => {
   };
 
   const handleDelete = async (id) => {
-    const token = localStorage.getItem("token");
-    await fetch(`${API}/api/menu-items/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    fetchMenu();
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API}/api/menu-items/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        toast.success("Item deleted!");
+        fetchMenu();
+      } else {
+        toast.error("Failed to delete");
+      }
+    } catch (err) {
+      toast.error("server error");
+    }
   };
 
   useEffect(() => {
