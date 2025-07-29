@@ -32,6 +32,7 @@ const Navbar = () => {
             {user.role === "user" && (
               <Link to="/dashboard" style={styles.link}>Home</Link>
             )}
+            <button onClick={handleLogout} style={styles.button}>Logout</button>
           </>
         )}
       </div>
