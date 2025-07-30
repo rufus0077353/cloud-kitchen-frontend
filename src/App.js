@@ -56,7 +56,7 @@ function App() {
           <Route
             path="/vendor/dashboard"
             element={
-              <PrivateRoute>
+              <PrivateRoute role ="vendor">
                 <VendorDashboard />
               </PrivateRoute>
             }
@@ -66,7 +66,7 @@ function App() {
           <Route
             path="/admin/dashboard"
             element={
-              <PrivateRoute>
+              <PrivateRoute role="admin">
                 <AdminRoute>
                   <AdminDashboard />
                 </AdminRoute>

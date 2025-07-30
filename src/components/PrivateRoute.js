@@ -1,9 +1,21 @@
+// src/components/PrivateRoute.js
 import React from "react";
 import { Navigate } from "react-router-dom";
 
-const PrivateRoute = ({ children }) => {
+const PrivateRoute = ({ children, role }) => {
   const token = localStorage.getItem("token");
-  return token ? children : <Navigate to="/login" />;
+  const user = JSON.parse(localStorage.getItem("user"));
+
+  if (!token || !user) {
+    return <Navigate to="/login" />;
+  }
+
+  if (role && user.role !== role) {
+    // Unauthorized for this route
+    return <Navigate to="/dashboard" />;
+  }
+
+  return children;
 };
 
 export default PrivateRoute;
