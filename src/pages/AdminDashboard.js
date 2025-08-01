@@ -40,16 +40,30 @@ const AdminDashboard = () => {
     setVendors(res.data);
   };
 
-  const handleAddVendor = async () => {
-    if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) return;
-    await axios.post(`${API}/api/vendors`, vendorForm, {
-      headers: { Authorization: `Bearer ${token}` },
+ const handleAddVendor = async () => {
+  const token = localStorage.getItem("token");
+
+  if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) {
+    toast.error("Please fill in all fields");
+    return;
+  }
+
+  try {
+    const res = await axios.post(`${API}/api/vendors`, vendorForm, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
     });
-    toast.success("Vendor added successfully");
+
+    toast.success("Vendor created successfully");
     setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
     fetchVendors();
-  };
-
+  } catch (err) {
+    toast.error("Failed to create vendor");
+    console.error(err.response?.data || err.message);
+  }
+};
   const handleDeleteVendor = async (id) => {
     await axios.delete(`${API}/api/vendors/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
