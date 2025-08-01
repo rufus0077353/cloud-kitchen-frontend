@@ -169,6 +169,23 @@ const AdminDashboard = () => {
             value={vendorForm.cuisine}
             onChange={(e) => setVendorForm({ ...vendorForm, cuisine: e.target.value })}
           />
+          <TextField
+            select
+            label="User"
+            value={vendorForm.UserId}
+            onChange={(e) => setVendorForm({ ...vendorForm, UserId: e.target.value })}
+            SelectProps={{ native: true }}
+            fullWidth
+           >
+            <option value="">Select User</option>
+           {users
+           .filter((u) => u.role === "vendor")
+           .map((u) => (
+           <option key={u.id} value={u.id}>
+           {u.name} ({u.email})
+           </option>
+           ))}
+          </TextField>
           <Button variant="contained" onClick={handleAddVendor}>Add Vendor</Button>
         </Box>
 
