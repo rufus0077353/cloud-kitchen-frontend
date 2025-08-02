@@ -22,39 +22,50 @@ const Login = () => {
 
   
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError("");
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setError("");
 
-    try {
-      const res = await fetch(`${API}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+  try {
+    const res = await fetch(`${API}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      if (res.ok) {
-        toast.success("login successful");
+    if (res.ok) {
+      toast.success("Login successful");
 
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        // Navigate based on role
-        if (data.user.role === "admin") {
-          navigate("/admin/dashboard");
-        } else {
-          navigate("/dashboard");
-        }
-      } else {
-        setError(data.message || "Login failed");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      // ✅ If user is vendor, store vendorId for dashboard and menu operations
+      if (data.user.role === "vendor" && data.vendor?.id) {
+        localStorage.setItem("vendorId", data.vendor.id);
       }
-    } catch (err) {
-      toast.error("Server error. please try again later");
-      setError("Server error");
-    }
-  };
 
+      // ✅ Navigate based on role
+      if (data.user.role === "admin") {
+        navigate("/admin/dashboard");
+      } else if (data.user.role === "vendor") {
+        navigate("/vendor/dashboard");
+      } else {
+        navigate("/dashboard");
+      }
+
+    } else {
+      toast.error(data.message || "Login failed");
+      setError(data.message || "Login failed");
+    }
+
+  } catch (err) {
+    console.error("Login error:", err);
+    toast.error("Server error. Please try again later");
+    setError("Server error");
+  }
+};
   return (
     <Container maxWidth="xs">
       <Box sx={{ mt: 8 }}>
