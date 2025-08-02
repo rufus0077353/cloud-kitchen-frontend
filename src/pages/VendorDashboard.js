@@ -39,35 +39,50 @@ const VendorDashboard = () => {
 
 const handleSubmit = async (e) => {
   e.preventDefault();
-  try {
-    const token = localStorage.getItem("token");
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem
-      ? `${API}/api/menu-items/${editingItem.id}`
-      : `${API}/api/menu-items`;
 
+  const token = localStorage.getItem("token");
+  const vendorId = localStorage.getItem("vendorId");
+
+  if (!vendorId) {
+    toast.error("Vendor ID not found. Please login again.");
+    return;
+  }
+
+  const method = editingItem ? "PUT" : "POST";
+  const url = editingItem
+    ? `${API}/api/menu-items/${editingItem.id}`
+    : `${API}/api/menu-items`;
+
+  const body = {
+    ...form,
+    VendorId: vendorId,  // 🔥 ADD VendorId here
+  };
+
+  try {
     const res = await fetch(url, {
       method,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(form),
+      body: JSON.stringify(body),
     });
 
-    if (res.ok) {
-      toast.success(editingItem ? "Menu item updated!" : "item added!");
-      setForm({ name: "", price: "", description: "" });
-      setEditingItem(null);
-      fetchMenu();
-    } else {
-      toast.error("Failed to save item");
+    if (!res.ok) {
+      const data = await res.json();
+      toast.error(data.message || "Failed to save item");
+      return;
     }
+
+    toast.success(editingItem ? "Item updated" : "Item added");
+    setForm({ name: "", price: "", description: "" });
+    setEditingItem(null);
+    fetchMenu();
   } catch (err) {
-    toast.error("Server error");
+    console.error("Menu item error:", err);
+    toast.error("Server error occurred");
   }
 };
-
   const handleEdit = (item) => {
     setForm({ name: item.name, price: item.price, description: item.description });
     setEditingItem(item);
