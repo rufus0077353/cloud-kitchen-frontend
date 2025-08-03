@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState } from "react";
-import { toast } from "react-toastify"; 
+import { toast } from "react-toastify";
 import {
   Container,
   Typography,
@@ -21,10 +22,15 @@ const AdminUsers = () => {
   const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "user" });
   const [editingId, setEditingId] = useState(null);
   const navigate = useNavigate();
-
   const token = localStorage.getItem("token");
 
-  
+  // ✅ Fix added here
+  const handleChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+  };
 
   const fetchUsers = async () => {
     try {
@@ -42,41 +48,40 @@ const AdminUsers = () => {
 
   useEffect(() => {
     fetchUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  const url = editingId
-    ? `${API}/api/admin/users/${editingId}`
-    : `${API}/api/auth/register`; // ✅ Corrected
+    e.preventDefault();
+    const url = editingId
+      ? `${API}/api/admin/users/${editingId}`
+      : `${API}/api/auth/register`;
 
-  const method = editingId ? "PUT" : "POST";
+    const method = editingId ? "PUT" : "POST";
 
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(formData),
-    });
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(formData),
+      });
 
-    if (res.ok) {
-      toast.success(editingId ? "User updated" : "User created");
-      setFormData({ name: "", email: "", password: "", role: "user" });
-      setEditingId(null);
-      fetchUsers();
-    } else {
-      const errorData = await res.json();
-      toast.error(errorData.message || "Failed to create/update user");
+      if (res.ok) {
+        toast.success(editingId ? "User updated" : "User created");
+        setFormData({ name: "", email: "", password: "", role: "user" });
+        setEditingId(null);
+        fetchUsers();
+      } else {
+        const errorData = await res.json();
+        toast.error(errorData.message || "Failed to create/update user");
+      }
+    } catch (err) {
+      console.error("Error submitting user:", err);
+      toast.error("Server error while submitting user");
     }
-  } catch (err) {
-    console.error("Error submitting user:", err);
-    toast.error("Server error while submitting user");
-  }
-};
+  };
 
   const handleEdit = (user) => {
     setFormData({ name: user.name, email: user.email, password: "", role: user.role });
@@ -98,26 +103,23 @@ const AdminUsers = () => {
   };
 
   const promoteUser = async (userId) => {
-    try{
-        const token = localStorage.getItem("token");
-        const res = await fetch(`${API}/api/admin/promote/${userId}`, {
-            method: "PUT",
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        });
-        const data = await res.json();
-        if (res.ok) {
-            alert("User promoted to vendor successfully!");
-            fetchUsers();
-        } else {
-            alert(data.message || "Promotion failed");
-        }
-    }   catch ( err) {
-        alert("Server error during promotion");
+    try {
+      const res = await fetch(`${API}/api/admin/promote/${userId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("User promoted to vendor successfully!");
+        fetchUsers();
+      } else {
+        alert(data.message || "Promotion failed");
+      }
+    } catch (err) {
+      alert("Server error during promotion");
     }
-         
-    
   };
 
   const handleLogout = () => {
@@ -201,7 +203,7 @@ const AdminUsers = () => {
               <TableCell>{user.role}</TableCell>
               <TableCell>
                 {user.role !== "vendor" && (
-                    <Button onClick={() => promoteUser(user.id)}>Promote to Vendor</Button>
+                  <Button onClick={() => promoteUser(user.id)}>Promote to Vendor</Button>
                 )}
                 <Button onClick={() => handleEdit(user)}>Edit</Button>
                 <Button onClick={() => handleDelete(user.id)} color="error">
