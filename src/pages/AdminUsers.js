@@ -103,24 +103,24 @@ const AdminUsers = () => {
   };
 
   const promoteUser = async (userId) => {
-    try {
-      const res = await fetch(`${API}/api/admin/promote/${userId}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        alert("User promoted to vendor successfully!");
-        fetchUsers();
-      } else {
-        alert(data.message || "Promotion failed");
-      }
-    } catch (err) {
-      alert("Server error during promotion");
+  try {
+    const res = await fetch(`${API}/api/admin/promote/${userId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast.success("User promoted to vendor successfully!");
+      fetchUsers();
+    } else {
+      toast.error(data.message || "Promotion failed");
     }
-  };
+  } catch (err) {
+    toast.error("Server error during promotion");
+  }
+};
 
   const handleLogout = () => {
     localStorage.clear();
