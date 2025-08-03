@@ -44,40 +44,38 @@ const AdminUsers = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    const url = editingId
-      ? `${API}/api/admin/users/${editingId}`
-      : `${API}/api/admin/register`;
+  e.preventDefault();
+  const url = editingId
+    ? `${API}/api/admin/users/${editingId}`
+    : `${API}/api/auth/register`; // ✅ Corrected
 
-    const method = editingId ? "PUT" : "POST";
+  const method = editingId ? "PUT" : "POST";
 
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(formData),
+    });
 
-      if (res.ok) {
-        setFormData({ name: "", email: "", password: "", role: "user" });
-        setEditingId(null);
-        fetchUsers();
-      } else {
-        const errorData = await res.json();
-        alert(errorData.message);
-      }
-    } catch (err) {
-      console.error("Error submitting user:", err);
+    if (res.ok) {
+      toast.success(editingId ? "User updated" : "User created");
+      setFormData({ name: "", email: "", password: "", role: "user" });
+      setEditingId(null);
+      fetchUsers();
+    } else {
+      const errorData = await res.json();
+      toast.error(errorData.message || "Failed to create/update user");
     }
-  };
+  } catch (err) {
+    console.error("Error submitting user:", err);
+    toast.error("Server error while submitting user");
+  }
+};
 
   const handleEdit = (user) => {
     setFormData({ name: user.name, email: user.email, password: "", role: user.role });
