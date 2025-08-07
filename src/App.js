@@ -21,6 +21,7 @@ import OrderSuccess from "./pages/OrderSuccess";
 import OrderForm from "./pages/OrderForm";
 import OrderHistory from "./pages/OrderHistory";
 import Invoice from "./pages/Invoice";
+import VendorOrders from "./pages/VendorOrders";
 
 // eslint-disable-next-line no-unused-vars
 import Navbar from "./components/Navbar";
@@ -124,6 +125,14 @@ function App() {
                 <UserOrders />
               </PrivateRoute>
             }
+          />
+          <Route
+            path="/orders"
+            element={
+              <PrivateRoute>
+                <VendorOrders />
+              </PrivateRoute>
+            }  
           />
           <Route
             path="/create-order"
