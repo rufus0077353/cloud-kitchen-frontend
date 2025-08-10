@@ -19,11 +19,7 @@ import {
 } from "@mui/material";
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { toast } from "react-toastify";
-import api from "../api";
-
-
-const API_BASE = process.env.REACT_APP_API_BASE_URL;
-
+import api from "../services/api";
 
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
@@ -31,27 +27,21 @@ const VendorMenu = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ name: "", price: "", description: "" });
 
-  const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user"));
-
-  
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   const fetchMenuItems = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/menu-items/mine`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
+      const { data } = await api.get("/menu-items/mine");
       setMenuItems(Array.isArray(data) ? data : []);
     } catch (err) {
-    toast.error("Failed to load menu");
-    setMenuItems([]);
+      toast.error("Failed to load menu");
+      setMenuItems([]);
     }
   };
+
   const handleOpen = (item = null) => {
     setEditingItem(item);
-    setFormData(item ? { ...item } : { name: "", price: "", description: "" });
+    setFormData(item ? { name: item.name ?? "", price: item.price ?? "", description: item.description ?? "" } : { name: "", price: "", description: "" });
     setOpen(true);
   };
 
@@ -66,48 +56,35 @@ const VendorMenu = () => {
   };
 
   const handleSubmit = async () => {
-  const url = editingItem
-    ? `${API_BASE}/api/menu-items/${editingItem.id}`
-    : `${API_BASE}/api/menu-items`;
+    const body = {
+      name: formData.name,
+      price: formData.price === "" ? null : parseFloat(formData.price),
+      description: formData.description,
+    };
 
-  const method = editingItem ? "PUT" : "POST";
-
-  const body = {
-    name: formData.name,
-    price: parseFloat(formData.price),
-    description: formData.description,
+    try {
+      if (editingItem) {
+        await api.put(`/menu-items/${editingItem.id}`, body);
+        toast.success("Menu item updated!");
+      } else {
+        await api.post(`/menu-items`, body);
+        toast.success("Item added!");
+      }
+      await fetchMenuItems();
+      handleClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to submit item");
+    }
   };
 
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error('Save failed');
-    toast.success(editingItem ? "Menu item updated!" : "Item added!");
-    await fetchMenuItems();
-    handleClose();
-  } catch (err) {
-    toast.error("Failed to submit item");
-  }
-};
-
-
   const handleDelete = async (id) => {
+    if (!window.confirm("Delete this item?")) return;
     try {
-      await fetch(`${API}/api/menu-items/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.delete(`/menu-items/${id}`);
       toast.success("Item deleted!");
       await fetchMenuItems();
     } catch (err) {
-      toast.error("Failed to delete item");
-      console.error("Delete failed:", err);
+      toast.error(err?.response?.data?.message || "Failed to delete item");
     }
   };
 
@@ -117,6 +94,12 @@ const VendorMenu = () => {
   };
 
   useEffect(() => {
+    // Optional: gate the page if not vendor
+    if (user?.role !== "vendor") {
+      toast.error("Vendors only");
+      window.location.replace("/");
+      return;
+    }
     fetchMenuItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -147,23 +130,27 @@ const VendorMenu = () => {
           {menuItems.map((item) => (
             <TableRow key={item.id}>
               <TableCell>{item.name}</TableCell>
-              <TableCell>₹{item.price}</TableCell>
+              <TableCell>{item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}</TableCell>
               <TableCell>{item.description}</TableCell>
               <TableCell>
-                <IconButton onClick={() => handleOpen(item)} color="primary">
+                <IconButton onClick={() => handleOpen(item)} color="primary" aria-label="edit">
                   <Edit />
                 </IconButton>
-                <IconButton onClick={() => handleDelete(item.id)} color="error">
+                <IconButton onClick={() => handleDelete(item.id)} color="error" aria-label="delete">
                   <Delete />
                 </IconButton>
               </TableCell>
             </TableRow>
           ))}
+          {menuItems.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={4} align="center">No items yet</TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
 
-      {/* Dialog */}
-      <Dialog open={open} onClose={handleClose}>
+      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
         <DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle>
         <DialogContent>
           <TextField
@@ -188,6 +175,8 @@ const VendorMenu = () => {
             label="Description"
             name="description"
             fullWidth
+            multiline
+            minRows={2}
             value={formData.description}
             onChange={handleChange}
           />
