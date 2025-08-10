@@ -1,6 +1,6 @@
+
 // src/components/Navbar.js
 import React from "react";
-import { AppBar, Toolbar, Typography, Button, Box } from "@mui/material";
 import { Link, useNavigate } from "react-router-dom";
 
 const Navbar = () => {
@@ -27,10 +27,16 @@ const Navbar = () => {
               </>
             )}
             {user.role === "vendor" && (
-              <Link to="/vendor/dashboard" style={styles.link}>Vendor Panel</Link>
+              <>
+                <Link to="/vendor/dashboard" style={styles.link}>Vendor Panel</Link>
+                <Link to="/vendor/orders" style={styles.link}>Orders</Link> {/* Added orders link */}
+              </>
             )}
             {user.role === "user" && (
-              <Link to="/dashboard" style={styles.link}>Home</Link>
+              <>
+                <Link to="/dashboard" style={styles.link}>Home</Link>
+                <Link to="/orders" style={styles.link}>My Orders</Link> {/* Added My Orders link */}
+              </>
             )}
             <button onClick={handleLogout} style={styles.button}>Logout</button>
           </>
