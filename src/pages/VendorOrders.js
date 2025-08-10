@@ -1,22 +1,29 @@
-import React, { useEffect, useState } from "react";
+
+// src/pages/VendorOrders.js
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Container, Typography, Table, TableHead, TableRow,
   TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField, Collapse, Divider
+  FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField,
+  Collapse, Divider, Switch, FormControlLabel, Tooltip
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { toast } from "react-toastify";
+import { io } from "socket.io-client";
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE;
 
 const STATUS_COLORS = {
-  pending: "default",
-  accepted: "primary",
-  rejected: "error",
-  ready: "warning",
+  pending:   "default",
+  accepted:  "primary",
+  rejected:  "error",
+  ready:     "warning",
   delivered: "success",
 };
 
@@ -30,6 +37,31 @@ export default function VendorOrders() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expanded, setExpanded] = useState(new Set());
+  const [realtime, setRealtime] = useState(true);
+  const [pollMs, setPollMs] = useState(30000);
+  const [soundOn, setSoundOn] = useState(true);
+  const [vendorId, setVendorId] = useState(null);
+
+  const prevPendingIdsRef = useRef(new Set());
+  const socketRef = useRef(null);
+
+  // tiny beep
+  const audioRef = useRef(null);
+  const beepSrc = useMemo(
+    () =>
+      "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAChAAAAAAAaAAAAPwAAAB8AAACAgICAAAAAA" +
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    []
+  );
+  const playBeep = () => {
+    if (!soundOn) return;
+    try {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
+      }
+    } catch {}
+  };
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -40,8 +72,8 @@ export default function VendorOrders() {
     return [];
   };
 
-  const loadOrders = async () => {
-    setLoading(true);
+  const loadOrders = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/orders/vendor`, { headers });
       if (res.status === 401) {
@@ -52,17 +84,31 @@ export default function VendorOrders() {
       }
       if (!res.ok) {
         const msg = (await res.json().catch(() => ({}))).message || `Failed (${res.status})`;
-        toast.error(msg);
+        if (!silent) toast.error(msg);
         setOrders([]);
         return;
       }
       const data = await res.json();
-      setOrders(parseOrders(data));
+      const incoming = parseOrders(data);
+      setOrders(incoming);
+
+      // detect new pending orders (beep once we have a baseline)
+      const currentPendingIds = new Set(
+        (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
+      );
+      const hadNew =
+        [...currentPendingIds].some((id) => !prevPendingIdsRef.current.has(id)) &&
+        prevPendingIdsRef.current.size !== 0;
+      prevPendingIdsRef.current = currentPendingIds;
+      if (hadNew && !silent) {
+        playBeep();
+        toast.info("New pending order received");
+      }
     } catch (e) {
-      console.error("load vendor orders error:", e);
+      if (!silent) toast.error("Network error while loading orders");
       setOrders([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -91,9 +137,8 @@ export default function VendorOrders() {
         return;
       }
       toast.success("Status updated");
-      loadOrders();
+      loadOrders({ silent: true }); // quick sync
     } catch (e) {
-      console.error("update status error:", e);
       setOrders(prev); // rollback
       toast.error("Network error");
     } finally {
@@ -101,14 +146,88 @@ export default function VendorOrders() {
     }
   };
 
+  // 1) Get vendorId then join the socket room
+  useEffect(() => {
+    const getMe = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        if (!r.ok) return;
+        const me = await r.json();
+        if (me?.vendorId) {
+          setVendorId(me.vendorId);
+        }
+      } catch {}
+    };
+    getMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 2) Initial load
   useEffect(() => {
     loadOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 3) Socket connect + listeners
+  useEffect(() => {
+    if (!token) return;
+
+    const s = io(SOCKET_URL, {
+      transports: ["websocket"],
+      auth: { token },
+      withCredentials: true,
+      reconnectionAttempts: 5,
+    });
+    socketRef.current = s;
+
+    s.on("connect_error", (err) => {
+      console.warn("socket connect_error:", err?.message || err);
+    });
+
+    const onNew = (fullOrder) => {
+      setOrders((prev) => [fullOrder, ...prev]);
+      playBeep();
+      toast.info(`New order #${fullOrder?.id || ""}`);
+    };
+
+    const onStatus = (payload) => {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o))
+      );
+    };
+
+    s.on("order:new", onNew);
+    s.on("order:status", onStatus);
+    s.on("orders:refresh", () => loadOrders({ silent: true }));
+
+    return () => {
+      try {
+        s.off("order:new", onNew);
+        s.off("order:status", onStatus);
+        s.off("orders:refresh");
+        s.disconnect();
+      } catch {}
+    };
+  }, [token]);
+
+  // 4) Once we know the vendorId, join its room
+  useEffect(() => {
+    if (!vendorId || !socketRef.current) return;
+    try {
+      socketRef.current.emit("vendor:join", vendorId);
+    } catch {}
+  }, [vendorId]);
+
+  // 5) Optional polling fallback (when realtime is toggled ON here it means "enable polling")
+  useEffect(() => {
+    if (!realtime) return; // sockets doing the job; toggle label is "Polling fallback"
+    const id = setInterval(() => loadOrders({ silent: true }), pollMs);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtime, pollMs]);
+
   // ----- helpers -----
   const getLineItems = (order) => {
-    // Prefer OrderItems include with nested MenuItem
     if (Array.isArray(order?.OrderItems) && order.OrderItems.length) {
       return order.OrderItems.map((oi) => ({
         name: oi.MenuItem?.name || "Item",
@@ -116,7 +235,6 @@ export default function VendorOrders() {
         quantity: oi.quantity ?? oi.OrderItem?.quantity ?? 1,
       }));
     }
-    // Fallback: through join (MenuItems with OrderItem)
     if (Array.isArray(order?.MenuItems) && order.MenuItems.length) {
       return order.MenuItems.map((mi) => ({
         name: mi.name,
@@ -166,10 +284,10 @@ export default function VendorOrders() {
     const bTotal = Number(b.totalAmount) || 0;
     switch (sortBy) {
       case "created_asc": return aTime - bTime;
-      case "total_desc": return bTotal - aTotal;
-      case "total_asc":  return aTotal - bTotal;
+      case "total_desc":  return bTotal - aTotal;
+      case "total_asc":   return aTotal - bTotal;
       case "created_desc":
-      default: return bTime - aTime;
+      default:            return bTime - aTime;
     }
   });
 
@@ -217,45 +335,18 @@ export default function VendorOrders() {
 
   return (
     <Container sx={{ py: 3 }}>
+      <audio ref={audioRef} src={beepSrc} preload="auto" />
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
         <Typography variant="h5">Vendor Orders</Typography>
 
         <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
-          {/* Search */}
-          <TextField
-            size="small"
-            label="Search (user or item)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <TextField size="small" label="Search (user or item)" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <TextField size="small" label="From" type="date" InputLabelProps={{ shrink: true }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
 
-          {/* Date range */}
-          <TextField
-            size="small"
-            label="From"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-          <TextField
-            size="small"
-            label="To"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-
-          {/* Status filter */}
           <FormControl size="small" sx={{ minWidth: 160 }}>
             <InputLabel id="status-filter-label">Status</InputLabel>
-            <Select
-              labelId="status-filter-label"
-              label="Status"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
+            <Select labelId="status-filter-label" label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <MenuItem value="all">All</MenuItem>
               <MenuItem value="pending">Pending</MenuItem>
               <MenuItem value="accepted">Accepted</MenuItem>
@@ -265,15 +356,9 @@ export default function VendorOrders() {
             </Select>
           </FormControl>
 
-          {/* Sort by */}
           <FormControl size="small" sx={{ minWidth: 200 }}>
             <InputLabel id="sort-by-label">Sort by</InputLabel>
-            <Select
-              labelId="sort-by-label"
-              label="Sort by"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-            >
+            <Select labelId="sort-by-label" label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
               <MenuItem value="created_desc">Newest first</MenuItem>
               <MenuItem value="created_asc">Oldest first</MenuItem>
               <MenuItem value="total_desc">Total: high → low</MenuItem>
@@ -281,7 +366,24 @@ export default function VendorOrders() {
             </Select>
           </FormControl>
 
-          <IconButton onClick={loadOrders} title="Refresh">
+          {/* Label means: enable a polling fallback (in addition to sockets) */}
+          <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
+          <FormControl size="small" sx={{ minWidth: 130 }}>
+            <InputLabel id="poll-ms">Every</InputLabel>
+            <Select labelId="poll-ms" label="Every" value={pollMs} onChange={(e) => setPollMs(Number(e.target.value))} disabled={!realtime}>
+              <MenuItem value={10000}>10s</MenuItem>
+              <MenuItem value={30000}>30s</MenuItem>
+              <MenuItem value={60000}>60s</MenuItem>
+            </Select>
+          </FormControl>
+
+          <Tooltip title={soundOn ? "Sound on" : "Sound off"}>
+            <IconButton onClick={() => setSoundOn((s) => !s)}>
+              {soundOn ? <VolumeUpIcon /> : <VolumeOffIcon />}
+            </IconButton>
+          </Tooltip>
+
+          <IconButton onClick={() => loadOrders()} title="Refresh now">
             <RefreshIcon />
           </IconButton>
 
@@ -307,17 +409,9 @@ export default function VendorOrders() {
 
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  <CircularProgress size={24} />
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={24} /></TableCell></TableRow>
             ) : visibleOrders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  No orders found
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={7} align="center">No orders found</TableCell></TableRow>
             ) : (
               visibleOrders.map((o) => {
                 const disabled = updatingId === o.id;
@@ -332,42 +426,29 @@ export default function VendorOrders() {
                           {expandedRow ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                         </IconButton>
                       </TableCell>
-                      <TableCell>
-                        {o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}
-                      </TableCell>
+                      <TableCell>{o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}</TableCell>
                       <TableCell>{o.User?.name || "-"}</TableCell>
                       <TableCell>{itemsToText(o)}</TableCell>
                       <TableCell>₹{o.totalAmount}</TableCell>
-                      <TableCell>
-                        <Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} />
-                      </TableCell>
+                      <TableCell><Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
                       <TableCell>
                         <Box sx={{ display: "flex", gap: 1 }}>
                           {o.status === "pending" && (
                             <>
-                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>
-                                Accept
-                              </Button>
-                              <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>
-                                Reject
-                              </Button>
+                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
+                              <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>Reject</Button>
                             </>
                           )}
                           {o.status === "accepted" && (
-                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>
-                              Mark Ready
-                            </Button>
+                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>Mark Ready</Button>
                           )}
                           {o.status === "ready" && (
-                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>
-                              Mark Delivered
-                            </Button>
+                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
                           )}
                         </Box>
                       </TableCell>
                     </TableRow>
 
-                    {/* Expanded details */}
                     <TableRow>
                       <TableCell colSpan={7} sx={{ p: 0, border: 0 }}>
                         <Collapse in={expandedRow} timeout="auto" unmountOnExit>
