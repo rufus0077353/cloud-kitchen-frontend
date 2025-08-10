@@ -5,6 +5,7 @@ import {
   FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import DownloadIcon from "@mui/icons-material/Download";
 import { toast } from "react-toastify";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
@@ -23,9 +24,9 @@ export default function VendorOrders() {
   const [updatingId, setUpdatingId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("created_desc");
-  const [search, setSearch] = useState("");          // NEW: search by user/item
-  const [dateFrom, setDateFrom] = useState("");      // NEW: yyyy-mm-dd
-  const [dateTo, setDateTo] = useState("");          // NEW: yyyy-mm-dd
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -142,7 +143,7 @@ export default function VendorOrders() {
     return ok;
   };
 
-  // Pipeline: filter by status -> search -> date range -> sort
+  // Pipeline: status -> search -> date -> sort
   const filtered = (Array.isArray(orders) ? orders : [])
     .filter(o => (statusFilter === "all" ? true : o.status === statusFilter))
     .filter(o => matchesSearch(o, search))
@@ -156,16 +157,64 @@ export default function VendorOrders() {
 
     switch (sortBy) {
       case "created_asc":
-        return aTime - bTime;            // oldest first
+        return aTime - bTime;
       case "total_desc":
-        return bTotal - aTotal;          // high → low
+        return bTotal - aTotal;
       case "total_asc":
-        return aTotal - bTotal;          // low → high
+        return aTotal - bTotal;
       case "created_desc":
       default:
-        return bTime - aTime;            // newest first
+        return bTime - aTime;
     }
   });
+
+  // ⬇️ Export to CSV (filtered + sorted view)
+  const exportCsv = () => {
+    const rows = visibleOrders.map(o => {
+      const itemsText = renderItemsCell(o);
+      return {
+        id: o.id,
+        user: o.User?.name || "",
+        items: itemsText,
+        total: o.totalAmount,
+        status: o.status,
+        createdAt: o.createdAt
+      };
+    });
+
+    const headers = ["Order ID", "User", "Items", "Total", "Status", "Created At"];
+    const csv = [
+      headers.join(","),
+      ...rows.map(r => [
+        r.id,
+        safeCsv(r.user),
+        safeCsv(r.items),
+        r.total,
+        r.status,
+        r.createdAt ? new Date(r.createdAt).toLocaleString() : ""
+      ].join(","))
+    ].join("\n");
+
+    // Add BOM for Excel, build blob & download
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+    a.href = url;
+    a.download = `vendor-orders-${stamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const safeCsv = (val) => {
+    if (val == null) return "";
+    const s = String(val);
+    // wrap if contains comma/quote/newline; escape quotes
+    if (/[",\n]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
 
   return (
     <Container sx={{ py: 3 }}>
@@ -236,6 +285,14 @@ export default function VendorOrders() {
           <IconButton onClick={loadOrders} title="Refresh">
             <RefreshIcon />
           </IconButton>
+
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={exportCsv}
+          >
+            Export CSV
+          </Button>
         </Stack>
       </Stack>
 
