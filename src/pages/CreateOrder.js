@@ -1,172 +1,181 @@
-// src/pages/CreateOrder.js
-import React, { useState, useEffect } from "react";
-import { toast } from "react-toastify";
-import {
-  Box,
-  Button,
-  TextField,
-  Typography,
-  MenuItem,
-  IconButton,
-} from "@mui/material";
-import LogoutIcon from "@mui/icons-material/Logout";
-import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Box, Button, Container, FormControl, InputLabel, MenuItem, Select,
+  Table, TableHead, TableRow, TableCell, TableBody, TextField, Typography, Paper
+} from "@mui/material";
+import { toast } from "react-toastify";
+import api from "../utils/api";
 
 const CreateOrder = () => {
-  const navigate = useNavigate();
-  const [userId, setUserId] = useState("");
+  const [vendors, setVendors] = useState([]);          // [{id, name}]
   const [vendorId, setVendorId] = useState("");
-  const [menuItems, setMenuItems] = useState([]);
-  const [items, setItems] = useState([{ menuItemId: "", quantity: 1 }]);
-  const [totalAmount, setTotalAmount] = useState(0);
-  const [message, setMessage] = useState("");
+  const [menu, setMenu] = useState([]);                // vendor menu items
+  const [quantities, setQuantities] = useState({});    // { [menuItemId]: qty }
 
-  
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-  const fetchMenuItems = async () => {
-    const res = await fetch(`${API}/api/menu-items`);
-    const data = await res.json();
-    setMenuItems(data);
+  // ---- Load vendors (adjust endpoint if different) ----
+  const loadVendors = async () => {
+    try {
+      const { data } = await api.get("/vendors"); // or /api/vendors on your server
+      setVendors(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast.error("Failed to load vendors");
+      setVendors([]);
+    }
+  };
+
+  // ---- Load menu for selected vendor ----
+  const loadMenu = async (vId) => {
+    if (!vId) return;
+    try {
+      // If your route is different, update it here:
+      // You mentioned earlier a path like /api/vendors/:vendorId/menu
+      const { data } = await api.get(`/vendors/${vId}/menu`);
+      setMenu(Array.isArray(data) ? data : []);
+      setQuantities({});
+    } catch (e) {
+      toast.error("Failed to load menu");
+      setMenu([]);
+      setQuantities({});
+    }
   };
 
   useEffect(() => {
-    fetchMenuItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadVendors();
   }, []);
 
-  const handleItemChange = (index, field, value) => {
-    const updatedItems = [...items];
-    updatedItems[index][field] = value;
-    setItems(updatedItems);
-  };
-
-  const calculateTotal = () => {
-    let total = 0;
-    for (let item of items) {
-      const menuItem = menuItems.find((m) => m.id === parseInt(item.menuItemId));
-      if (menuItem) {
-        total += menuItem.price * item.quantity;
-      }
-    }
-    setTotalAmount(total);
-  };
-
   useEffect(() => {
-    calculateTotal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+    if (vendorId) loadMenu(vendorId);
+  }, [vendorId]);
 
-  const handleAddItem = () => {
-    setItems([...items, { menuItemId: "", quantity: 1 }]);
+  // ---- Build items array + compute total ----
+  const cartItems = useMemo(() => {
+    return menu
+      .filter(it => Number(quantities[it.id]) > 0)
+      .map(it => ({
+        MenuItemId: it.id,
+        quantity: Number(quantities[it.id]),
+        lineTotal: Number(it.price) * Number(quantities[it.id]),
+        name: it.name,
+        price: Number(it.price),
+      }));
+  }, [menu, quantities]);
+
+  const totalAmount = useMemo(
+    () => cartItems.reduce((sum, it) => sum + it.lineTotal, 0),
+    [cartItems]
+  );
+
+  const handleQtyChange = (id, val) => {
+    const n = Math.max(0, Number(val || 0));
+    setQuantities(q => ({ ...q, [id]: n }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API}/api/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ UserId: userId, VendorId: vendorId, totalAmount, items }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        toast.success("Order created succesfully");
-        setMessage("Order created successfully");
-      } else {
-        setMessage(data.message || "Error creating order");
-        toast.error("Order creation failed");
-      }
-    } catch (err) {
-      toast.error("Server error");
-      setMessage("Server error");
+  const submitOrder = async () => {
+    if (!user?.id) {
+      toast.error("Please log in");
+      return;
     }
-  };
+    if (!vendorId) {
+      toast.error("Select a vendor");
+      return;
+    }
+    if (cartItems.length === 0) {
+      toast.error("Add at least one item");
+      return;
+    }
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    navigate("/login");
+    // Backend expects: UserId, VendorId, totalAmount, items[{MenuItemId, quantity}]
+    const payload = {
+      UserId: user.id,
+      VendorId: Number(vendorId),
+      totalAmount: Number(totalAmount.toFixed(2)),
+      items: cartItems.map(({ MenuItemId, quantity }) => ({ MenuItemId, quantity })),
+    };
+
+    try {
+      await api.post("/orders", payload); // maps to POST /api/orders
+      toast.success("Order placed!");
+      // Optionally redirect:
+      // navigate('/orders/success');
+      setQuantities({});
+    } catch (e) {
+      const msg = e?.response?.data?.message || "Failed to place order";
+      toast.error(msg);
+    }
   };
 
   return (
-    <Box sx={{ maxWidth: 600, margin: "auto", mt: 4 }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center">
-        <Typography variant="h5">Create Order</Typography>
-        <IconButton onClick={handleLogout} title="Logout">
-          <LogoutIcon />
-        </IconButton>
-      </Box>
+    <Container sx={{ py: 4 }}>
+      <Typography variant="h5" gutterBottom>Create Order</Typography>
 
-      <form onSubmit={handleSubmit}>
-        <TextField
-          fullWidth
-          margin="normal"
-          label="User ID"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          required
-        />
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Vendor ID"
-          value={vendorId}
-          onChange={(e) => setVendorId(e.target.value)}
-          required
-        />
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <FormControl fullWidth>
+          <InputLabel>Vendor</InputLabel>
+          <Select
+            label="Vendor"
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+          >
+            {vendors.map(v => (
+              <MenuItem key={v.id} value={v.id}>{v.name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Paper>
 
-        {items.map((item, index) => (
-          <Box key={index} sx={{ display: "flex", gap: 2, mb: 2 }}>
-            <TextField
-              select
-              label="Menu Item"
-              value={item.menuItemId}
-              onChange={(e) => handleItemChange(index, "menuItemId", e.target.value)}
-              fullWidth
-              required
-            >
-              {menuItems.map((menuItem) => (
-                <MenuItem key={menuItem.id} value={menuItem.id}>
-                  {menuItem.name} - ₹{menuItem.price}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Quantity"
-              type="number"
-              value={item.quantity}
-              onChange={(e) => handleItemChange(index, "quantity", parseInt(e.target.value))}
-              required
-            />
-          </Box>
-        ))}
-
-        <Button variant="outlined" onClick={handleAddItem}>
-          Add Item
-        </Button>
-
-        <Typography mt={2}>Total Amount: ₹{totalAmount}</Typography>
-
-        <Button
-          type="submit"
-          variant="contained"
-          color="primary"
-          fullWidth
-          sx={{ mt: 2 }}
-        >
-          Submit Order
-        </Button>
-      </form>
-
-      {message && (
-        <Typography mt={2} color="secondary">
-          {message}
-        </Typography>
+      {vendorId && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>Menu</Typography>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Item</TableCell>
+                <TableCell>Price</TableCell>
+                <TableCell>Qty</TableCell>
+                <TableCell align="right">Line Total</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {menu.map(item => {
+                const qty = Number(quantities[item.id] || 0);
+                const line = qty * Number(item.price || 0);
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell>₹{item.price}</TableCell>
+                    <TableCell width={120}>
+                      <TextField
+                        type="number"
+                        size="small"
+                        value={qty}
+                        onChange={(e) => handleQtyChange(item.id, e.target.value)}
+                        inputProps={{ min: 0 }}
+                      />
+                    </TableCell>
+                    <TableCell align="right">₹{line.toFixed(2)}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {menu.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} align="center">No items available</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Paper>
       )}
-    </Box>
+
+      <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Typography variant="h6">Total: ₹{totalAmount.toFixed(2)}</Typography>
+        <Button variant="contained" onClick={submitOrder} disabled={cartItems.length === 0}>
+          Place Order
+        </Button>
+      </Box>
+    </Container>
   );
 };
 
