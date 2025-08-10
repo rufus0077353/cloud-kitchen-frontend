@@ -22,13 +22,10 @@ import OrderForm from "./pages/OrderForm";
 import OrderHistory from "./pages/OrderHistory";
 import Invoice from "./pages/Invoice";
 import VendorOrders from "./pages/VendorOrders";
-
-// eslint-disable-next-line no-unused-vars
-import Navbar from "./components/Navbar";
-
 import VendorMenu from "./pages/VendorMenu";
 
 // Components
+import Navbar from "./components/Navbar";
 import PrivateRoute from "./components/PrivateRoute";
 import AdminRoute from "./components/AdminRoute";
 
@@ -39,7 +36,8 @@ function App() {
       <Container maxWidth="lg">
         <Navbar />
         <Routes>
-          <Route path="/" element={<Navigate to="/login" />} />
+          {/* Auth */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
@@ -57,8 +55,28 @@ function App() {
           <Route
             path="/vendor/dashboard"
             element={
-              <PrivateRoute role ="vendor">
+              <PrivateRoute role="vendor">
                 <VendorDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Vendor Menu (gated) */}
+          <Route
+            path="/vendor/menu"
+            element={
+              <PrivateRoute role="vendor">
+                <VendorMenu />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Vendor Orders (fixed path; previously duplicated /orders) */}
+          <Route
+            path="/vendor/orders"
+            element={
+              <PrivateRoute role="vendor">
+                <VendorOrders />
               </PrivateRoute>
             }
           />
@@ -79,7 +97,7 @@ function App() {
           <Route
             path="/admin/users"
             element={
-              <PrivateRoute>
+              <PrivateRoute role="admin">
                 <AdminRoute>
                   <AdminUsers />
                 </AdminRoute>
@@ -89,7 +107,7 @@ function App() {
           <Route
             path="/admin/users/edit/:id"
             element={
-              <PrivateRoute>
+              <PrivateRoute role="admin">
                 <AdminRoute>
                   <EditUser />
                 </AdminRoute>
@@ -99,7 +117,7 @@ function App() {
           <Route
             path="/admin/vendors"
             element={
-              <PrivateRoute>
+              <PrivateRoute role="admin">
                 <AdminRoute>
                   <AdminVendors />
                 </AdminRoute>
@@ -109,7 +127,7 @@ function App() {
           <Route
             path="/admin/menu-items"
             element={
-              <PrivateRoute>
+              <PrivateRoute role="admin">
                 <AdminRoute>
                   <AdminMenuItems />
                 </AdminRoute>
@@ -117,7 +135,7 @@ function App() {
             }
           />
 
-          {/* Orders */}
+          {/* Orders (user-facing) */}
           <Route
             path="/orders"
             element={
@@ -125,14 +143,6 @@ function App() {
                 <UserOrders />
               </PrivateRoute>
             }
-          />
-          <Route
-            path="/vendor/orders"
-            element={
-              <PrivateRoute>
-                <VendorOrders />
-              </PrivateRoute>
-            }  
           />
           <Route
             path="/create-order"
@@ -174,16 +184,9 @@ function App() {
               </PrivateRoute>
             }
           />
-          <Route
-            path="/vendor/menu"
-            element={
-              <PrivateRoute>
-                  <VendorMenu/>
-              </PrivateRoute>
-            }
-         />
         </Routes>
-        <ToastContainer position="top-right" autoClose={5000} />    
+
+        <ToastContainer position="top-right" autoClose={5000} />
       </Container>
     </Router>
   );

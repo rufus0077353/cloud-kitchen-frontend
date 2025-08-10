@@ -1,21 +1,33 @@
-// src/components/PrivateRoute.js
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
-const PrivateRoute = ({ children, role }) => {
-  const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user"));
+/**
+ * Usage:
+ * <PrivateRoute><UserDashboard/></PrivateRoute>
+ * <PrivateRoute role="vendor"><VendorDashboard/></PrivateRoute>
+ * <PrivateRoute role="admin"><AdminDashboard/></PrivateRoute>
+ */
+export default function PrivateRoute({ children, role }) {
+  const location = useLocation();
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const user = typeof window !== "undefined"
+    ? JSON.parse(localStorage.getItem("user") || "{}")
+    : {};
 
-  if (!token || !user) {
-    return <Navigate to="/login" />;
+  // Not logged in -> send to login and remember where we were going
+  if (!token || !user?.id) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (role && user.role !== role) {
-    // Unauthorized for this route
-    return <Navigate to="/dashboard" />;
+  // If this route requires a role, verify it
+  if (role && user?.role !== role) {
+    // redirect to a sensible dashboard based on their role
+    const fallback =
+      user.role === "vendor" ? "/vendor/dashboard" :
+      user.role === "admin"  ? "/admin/dashboard"  :
+      "/dashboard";
+    return <Navigate to={fallback} replace />;
   }
 
   return children;
-};
-
-export default PrivateRoute;
+}
