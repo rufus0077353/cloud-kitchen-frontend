@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Container, Typography, Table, TableHead, TableRow,
   TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Stack, IconButton
+  FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { toast } from "react-toastify";
@@ -22,7 +22,10 @@ export default function VendorOrders() {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("created_desc"); // NEW
+  const [sortBy, setSortBy] = useState("created_desc");
+  const [search, setSearch] = useState("");          // NEW: search by user/item
+  const [dateFrom, setDateFrom] = useState("");      // NEW: yyyy-mm-dd
+  const [dateTo, setDateTo] = useState("");          // NEW: yyyy-mm-dd
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -113,12 +116,38 @@ export default function VendorOrders() {
     return "-";
   };
 
-  // Filter first
-  const filtered = (Array.isArray(orders) ? orders : []).filter(o =>
-    statusFilter === "all" ? true : o.status === statusFilter
-  );
+  // Helpers for search & date filtering
+  const matchesSearch = (order, q) => {
+    if (!q) return true;
+    const needle = q.toLowerCase();
+    const userName = (order?.User?.name || "").toLowerCase();
+    const itemsStr = renderItemsCell(order).toLowerCase();
+    return userName.includes(needle) || itemsStr.includes(needle);
+  };
 
-  // Then sort
+  const withinDateRange = (order) => {
+    if (!dateFrom && !dateTo) return true;
+    const ts = new Date(order.createdAt).getTime();
+    if (Number.isNaN(ts)) return false;
+
+    let ok = true;
+    if (dateFrom) {
+      const from = new Date(dateFrom + "T00:00:00").getTime();
+      ok = ok && ts >= from;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + "T23:59:59").getTime();
+      ok = ok && ts <= to;
+    }
+    return ok;
+  };
+
+  // Pipeline: filter by status -> search -> date range -> sort
+  const filtered = (Array.isArray(orders) ? orders : [])
+    .filter(o => (statusFilter === "all" ? true : o.status === statusFilter))
+    .filter(o => matchesSearch(o, search))
+    .filter(o => withinDateRange(o));
+
   const visibleOrders = [...filtered].sort((a, b) => {
     const aTime = new Date(a.createdAt).getTime() || 0;
     const bTime = new Date(b.createdAt).getTime() || 0;
@@ -129,9 +158,9 @@ export default function VendorOrders() {
       case "created_asc":
         return aTime - bTime;            // oldest first
       case "total_desc":
-        return bTotal - aTotal;          // highest total first
+        return bTotal - aTotal;          // high → low
       case "total_asc":
-        return aTotal - bTotal;          // lowest total first
+        return aTotal - bTotal;          // low → high
       case "created_desc":
       default:
         return bTime - aTime;            // newest first
@@ -140,16 +169,42 @@ export default function VendorOrders() {
 
   return (
     <Container sx={{ py: 3 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
         <Typography variant="h5">Vendor Orders</Typography>
 
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
+          {/* Search */}
+          <TextField
+            size="small"
+            label="Search (user or item)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          {/* Date range */}
+          <TextField
+            size="small"
+            label="From"
+            type="date"
+            InputLabelProps={{ shrink: true }}
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <TextField
+            size="small"
+            label="To"
+            type="date"
+            InputLabelProps={{ shrink: true }}
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+
           {/* Status filter */}
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="status-filter-label">Filter by status</InputLabel>
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel id="status-filter-label">Status</InputLabel>
             <Select
               labelId="status-filter-label"
-              label="Filter by status"
+              label="Status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -207,19 +262,31 @@ export default function VendorOrders() {
             ) : visibleOrders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} align="center">
-                  No orders{statusFilter !== "all" ? ` (${statusFilter})` : ""}
+                  No orders found
                 </TableCell>
               </TableRow>
             ) : (
               visibleOrders.map((o) => {
                 const disabled = updatingId === o.id;
+                const itemsText = (() => {
+                  const fromOrderItems = Array.isArray(o?.OrderItems) ? o.OrderItems : null;
+                  if (fromOrderItems && fromOrderItems.length) {
+                    return fromOrderItems.map(oi => `${oi.MenuItem?.name || "Item"} x${oi.quantity}`).join(", ");
+                  }
+                  const fromMenuItems = Array.isArray(o?.MenuItems) ? o.MenuItems : null;
+                  if (fromMenuItems && fromMenuItems.length) {
+                    return fromMenuItems.map(mi => `${mi.name} x${mi.OrderItem?.quantity ?? "-"}`).join(", ");
+                  }
+                  return "-";
+                })();
+
                 return (
                   <TableRow key={o.id}>
                     <TableCell>
                       {o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}
                     </TableCell>
                     <TableCell>{o.User?.name || "-"}</TableCell>
-                    <TableCell>{renderItemsCell(o)}</TableCell>
+                    <TableCell>{itemsText}</TableCell>
                     <TableCell>₹{o.totalAmount}</TableCell>
                     <TableCell>
                       <Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} />
