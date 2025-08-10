@@ -1,7 +1,7 @@
+
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
-
 import {
   Container,
   Typography,
@@ -16,12 +16,9 @@ import {
   Box,
   AppBar,
   Toolbar,
- // eslint-disable-next-line no-unused-vars
-  getFormControlUtilityClasses
 } from "@mui/material";
 
-
-const API = process.env.REACT_APP_API_BASE_URL;
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
 const UserDashboard = () => {
   const [orders, setOrders] = useState([]);
@@ -32,31 +29,80 @@ const UserDashboard = () => {
   const [totalAmount, setTotalAmount] = useState(0);
 
   const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user"));
-
-  
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   const headers = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
 
+  const safeJson = async (res) => {
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
+
+  // -------- LOADERS (safe against non-arrays / non-200) --------
   const fetchOrders = async () => {
-    const res = await fetch(`${API}/api/orders/my`, { headers });
-    const data = await res.json();
-    setOrders(data);
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
+      if (!res.ok) {
+        const data = await safeJson(res);
+        console.error("orders/my failed:", res.status, data);
+        setOrders([]);
+        return;
+      }
+      const data = await res.json();
+      setOrders(Array.isArray(data) ? data : (data?.orders || []));
+    } catch (e) {
+      console.error("orders/my error:", e);
+      setOrders([]);
+    }
   };
 
   const fetchVendors = async () => {
-    const res = await fetch(`${API}/api/vendors`);
-    const data = await res.json();
-    setVendors(data);
+    try {
+      const res = await fetch(`${API_BASE}/api/vendors`);
+      if (!res.ok) {
+        const data = await safeJson(res);
+        console.error("vendors failed:", res.status, data);
+        setVendors([]);
+        return;
+      }
+      const data = await res.json();
+      setVendors(Array.isArray(data) ? data : (data?.vendors || []));
+    } catch (e) {
+      console.error("vendors error:", e);
+      setVendors([]);
+    }
   };
 
-  const fetchMenuItems = async (vendorId) => {
-    const res = await fetch(`${API}/api/menu-items?vendorId=${vendorId}`);
-    const data = await res.json();
-    setMenuItems(data);
+  const fetchMenuItemsForVendor = async (vId) => {
+    if (!vId) return;
+    try {
+      // If your backend exposes /api/vendors/:id/menu, prefer that:
+      // const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
+      // For now, keep your current query param endpoint:
+      const res = await fetch(`${API_BASE}/api/menu-items?vendorId=${vId}`);
+      if (!res.ok) {
+        const data = await safeJson(res);
+        console.error("menu-items failed:", res.status, data);
+        setMenuItems([]);
+        return;
+      }
+      const data = await res.json();
+      // accept a few common shapes
+      const arr =
+        Array.isArray(data)
+          ? data
+          : data?.items || data?.menu || data?.menuItems || [];
+      setMenuItems(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      console.error("menu-items error:", e);
+      setMenuItems([]);
+    }
   };
 
   useEffect(() => {
@@ -68,7 +114,7 @@ const UserDashboard = () => {
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
-    fetchMenuItems(selectedId);
+    fetchMenuItemsForVendor(selectedId);
     setItems([{ MenuItemId: "", quantity: 1 }]);
     setTotalAmount(0);
   };
@@ -82,11 +128,10 @@ const UserDashboard = () => {
 
   const calculateTotal = (orderItems) => {
     let total = 0;
+    const list = Array.isArray(menuItems) ? menuItems : [];
     orderItems.forEach((item) => {
-      const menuItem = menuItems.find((mi) => mi.id === parseInt(item.MenuItemId));
-      if (menuItem) {
-        total += menuItem.price * item.quantity;
-      }
+      const menuItem = list.find((mi) => mi.id === parseInt(item.MenuItemId));
+      if (menuItem) total += Number(menuItem.price) * Number(item.quantity || 0);
     });
     setTotalAmount(total);
   };
@@ -96,55 +141,80 @@ const UserDashboard = () => {
   };
 
   const handleSubmit = async () => {
+    if (!user?.id) {
+      toast.error("Please log in");
+      return;
+    }
+    if (!vendorId) {
+      toast.error("Select a vendor first");
+      return;
+    }
     const payload = {
       UserId: user.id,
       VendorId: parseInt(vendorId),
       totalAmount,
-      items: items.map((item) => ({
-        MenuItemId: parseInt(item.MenuItemId),
-        quantity: parseInt(item.quantity),
-      })),
+      items: items
+        .filter((it) => it.MenuItemId && Number(it.quantity) > 0)
+        .map((item) => ({
+          MenuItemId: parseInt(item.MenuItemId),
+          quantity: parseInt(item.quantity),
+        })),
     };
 
-    const res = await fetch(`${API}/api/orders`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
+    if (payload.items.length === 0) {
+      toast.error("Add at least one item");
+      return;
+    }
 
-    if (res.ok) {
+    try {
+      const res = await fetch(`${API_BASE}/api/orders`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const data = await safeJson(res);
+        toast.error(data?.message || "Failed to create order");
+        return;
+      }
       await fetchOrders();
-      alert("Order created successfully!");
-    } else {
-      alert("Failed to create order");
+      toast.success("Order created successfully!");
+      setItems([{ MenuItemId: "", quantity: 1 }]);
+      setTotalAmount(0);
+    } catch (e) {
+      console.error("create order error:", e);
+      toast.error("Network error while creating order");
     }
   };
 
   const deleteOrder = async (orderId) => {
-    const res = await fetch(`${API}/api/orders/${orderId}`, {
-      method: "DELETE",
-      headers,
-    });
-    if (res.ok) {
-      setOrders(orders.filter((order) => order.id !== orderId));
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (res.ok) {
+        setOrders((prev) => (Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []));
+      } else {
+        const data = await safeJson(res);
+        toast.error(data?.message || "Failed to delete");
+      }
+    } catch (e) {
+      console.error("delete order error:", e);
+      toast.error("Network error while deleting");
     }
   };
 
-  // eslint-disable-next-line no-unused-vars
-  const logout = () => {
-    localStorage.clear();
-    window.location.href = "/login";
-  };
+  const ordersSafe = Array.isArray(orders) ? orders : [];
 
   return (
     <Container>
       <AppBar position="static">
         <Toolbar>
-          <Navbar role="user"/>
+          <Navbar role="user" />
           <Typography variant="h6" style={{ flexGrow: 1 }}>
-            Welcome, {user.name}
+            Welcome, {user?.name || "User"}
           </Typography>
-          
         </Toolbar>
       </AppBar>
 
@@ -152,6 +222,7 @@ const UserDashboard = () => {
         <Typography variant="h5" gutterBottom>
           Place New Order
         </Typography>
+
         <TextField
           select
           label="Select Vendor"
@@ -160,9 +231,9 @@ const UserDashboard = () => {
           onChange={handleVendorChange}
           margin="normal"
         >
-          {vendors.map((v) => (
+          {(Array.isArray(vendors) ? vendors : []).map((v) => (
             <MenuItem key={v.id} value={v.id}>
-              {v.name} - {v.cuisine}
+              {v.name} {v.cuisine ? `- ${v.cuisine}` : ""}
             </MenuItem>
           ))}
         </TextField>
@@ -176,7 +247,7 @@ const UserDashboard = () => {
               onChange={(e) => handleItemChange(index, "MenuItemId", e.target.value)}
               style={{ flex: 1 }}
             >
-              {menuItems.map((m) => (
+              {(Array.isArray(menuItems) ? menuItems : []).map((m) => (
                 <MenuItem key={m.id} value={m.id}>
                   {m.name} - ₹{m.price}
                 </MenuItem>
@@ -188,6 +259,7 @@ const UserDashboard = () => {
               value={item.quantity}
               onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
               style={{ width: 100 }}
+              inputProps={{ min: 0 }}
             />
           </Box>
         ))}
@@ -199,7 +271,7 @@ const UserDashboard = () => {
         </Box>
 
         <Box mt={2}>
-          <Typography>Total: ₹{totalAmount}</Typography>
+          <Typography>Total: ₹{totalAmount.toFixed(2)}</Typography>
           <Button variant="contained" color="primary" onClick={handleSubmit}>
             Submit Order
           </Button>
@@ -222,13 +294,13 @@ const UserDashboard = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {orders.map((order) => (
+            {ordersSafe.map((order) => (
               <TableRow key={order.id}>
                 <TableCell>{order.id}</TableCell>
-                <TableCell>{order.Vendor?.name}</TableCell>
+                <TableCell>{order.Vendor?.name || "-"}</TableCell>
                 <TableCell>{order.status}</TableCell>
                 <TableCell>₹{order.totalAmount}</TableCell>
-                <TableCell>{new Date(order.createdAt).toLocaleString()}</TableCell>
+                <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
                 <TableCell>
                   <Button
                     color="error"
@@ -240,6 +312,11 @@ const UserDashboard = () => {
                 </TableCell>
               </TableRow>
             ))}
+            {ordersSafe.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} align="center">No orders yet</TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </Box>
