@@ -127,7 +127,7 @@ function App() {
             }
           />
           <Route
-            path="/orders"
+            path="/vendor/orders"
             element={
               <PrivateRoute>
                 <VendorOrders />

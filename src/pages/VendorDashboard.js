@@ -7,23 +7,34 @@ import {
 import { Delete, Edit } from "@mui/icons-material";
 import { toast } from "react-toastify";
 
-const API = process.env.REACT_APP_API_BASE_URL;
-
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
 const VendorDashboard = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ name: "", price: "", description: "" });
 
-  
+  const token = localStorage.getItem("token");
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   const fetchMenu = async () => {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`${API}/api/menu-items`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setMenuItems(data);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu-items/mine`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => ({}))).message || `Failed (${res.status})`;
+        toast.error(`Failed to load menu: ${msg}`);
+        setMenuItems([]);
+        return;
+      }
+      const data = await res.json();
+      setMenuItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch menu failed:", err);
+      toast.error("Failed to load menu");
+      setMenuItems([]);
+    }
   };
 
   const handleLogout = () => {
@@ -37,61 +48,64 @@ const VendorDashboard = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const token = localStorage.getItem("token");
-  const vendorId = localStorage.getItem("vendorId");
-
-  if (!vendorId) {
-    toast.error("Vendor ID not found. Please login again.");
-    return;
-  }
-
-  const method = editingItem ? "PUT" : "POST";
-  const url = editingItem
-    ? `${API}/api/menu-items/${editingItem.id}`
-    : `${API}/api/menu-items`;
-
-  const body = {
-    ...form,
-    VendorId: vendorId,  // 🔥 ADD VendorId here
-  };
-
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const data = await res.json();
-      toast.error(data.message || "Failed to save item");
+    if (!user || user.role !== "vendor") {
+      toast.error("Vendors only");
       return;
     }
 
-    toast.success(editingItem ? "Item updated" : "Item added");
-    setForm({ name: "", price: "", description: "" });
-    setEditingItem(null);
-    fetchMenu();
-  } catch (err) {
-    console.error("Menu item error:", err);
-    toast.error("Server error occurred");
-  }
-};
+    const method = editingItem ? "PUT" : "POST";
+    const url = editingItem
+      ? `${API_BASE}/api/menu-items/${editingItem.id}`
+      : `${API_BASE}/api/menu-items`;
+
+    const body = {
+      name: form.name,
+      price: form.price === "" ? null : parseFloat(form.price),
+      description: form.description,
+      // Do NOT send VendorId; backend derives from token
+    };
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.message || "Failed to save item");
+        return;
+      }
+
+      toast.success(editingItem ? "Item updated" : "Item added");
+      setForm({ name: "", price: "", description: "" });
+      setEditingItem(null);
+      fetchMenu();
+    } catch (err) {
+      console.error("Menu item save error:", err);
+      toast.error("Server error occurred");
+    }
+  };
+
   const handleEdit = (item) => {
-    setForm({ name: item.name, price: item.price, description: item.description });
+    setForm({
+      name: item.name ?? "",
+      price: item.price ?? "",
+      description: item.description ?? "",
+    });
     setEditingItem(item);
   };
 
   const handleDelete = async (id) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API}/api/menu-items/${id}`, {
+      const res = await fetch(`${API_BASE}/api/menu-items/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -99,16 +113,21 @@ const handleSubmit = async (e) => {
         toast.success("Item deleted!");
         fetchMenu();
       } else {
-        toast.error("Failed to delete");
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.message || "Failed to delete");
       }
     } catch (err) {
-      toast.error("server error");
+      console.error("Delete failed:", err);
+      toast.error("Server error");
     }
   };
 
   useEffect(() => {
     fetchMenu();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const rows = Array.isArray(menuItems) ? menuItems : [];
 
   return (
     <>
@@ -172,10 +191,10 @@ const handleSubmit = async (e) => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {menuItems.map((item) => (
+              {rows.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.name}</TableCell>
-                  <TableCell>₹{item.price}</TableCell>
+                  <TableCell>{item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}</TableCell>
                   <TableCell>{item.description}</TableCell>
                   <TableCell>
                     <IconButton onClick={() => handleEdit(item)} color="primary">
@@ -187,6 +206,11 @@ const handleSubmit = async (e) => {
                   </TableCell>
                 </TableRow>
               ))}
+              {rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} align="center">No items yet</TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>
