@@ -1,9 +1,10 @@
-
 import React, { useEffect, useState } from "react";
 import {
   Container, Typography, Table, TableHead, TableRow,
-  TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress
+  TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
+  FormControl, InputLabel, Select, MenuItem, Stack, IconButton
 } from "@mui/material";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { toast } from "react-toastify";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
@@ -19,7 +20,9 @@ const STATUS_COLORS = {
 export default function VendorOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState(null); // row-level loading
+  const [updatingId, setUpdatingId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("created_desc"); // NEW
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -57,7 +60,6 @@ export default function VendorOrders() {
   };
 
   const updateStatus = async (id, status) => {
-    // optimistic update
     const prev = orders;
     const next = prev.map((o) => (o.id === id ? { ...o, status } : o));
     setOrders(next);
@@ -82,7 +84,6 @@ export default function VendorOrders() {
         return;
       }
       toast.success("Status updated");
-      // pull latest snapshot
       loadOrders();
     } catch (e) {
       console.error("update status error:", e);
@@ -99,7 +100,6 @@ export default function VendorOrders() {
   }, []);
 
   const renderItemsCell = (order) => {
-    // Support either OrderItems include or MenuItems through pivot
     const fromOrderItems = Array.isArray(order?.OrderItems) ? order.OrderItems : null;
     if (fromOrderItems && fromOrderItems.length) {
       return fromOrderItems.map(oi => `${oi.MenuItem?.name || "Item"} x${oi.quantity}`).join(", ");
@@ -113,9 +113,76 @@ export default function VendorOrders() {
     return "-";
   };
 
+  // Filter first
+  const filtered = (Array.isArray(orders) ? orders : []).filter(o =>
+    statusFilter === "all" ? true : o.status === statusFilter
+  );
+
+  // Then sort
+  const visibleOrders = [...filtered].sort((a, b) => {
+    const aTime = new Date(a.createdAt).getTime() || 0;
+    const bTime = new Date(b.createdAt).getTime() || 0;
+    const aTotal = Number(a.totalAmount) || 0;
+    const bTotal = Number(b.totalAmount) || 0;
+
+    switch (sortBy) {
+      case "created_asc":
+        return aTime - bTime;            // oldest first
+      case "total_desc":
+        return bTotal - aTotal;          // highest total first
+      case "total_asc":
+        return aTotal - bTotal;          // lowest total first
+      case "created_desc":
+      default:
+        return bTime - aTime;            // newest first
+    }
+  });
+
   return (
     <Container sx={{ py: 3 }}>
-      <Typography variant="h5" gutterBottom>Vendor Orders</Typography>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h5">Vendor Orders</Typography>
+
+        <Stack direction="row" spacing={2} alignItems="center">
+          {/* Status filter */}
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel id="status-filter-label">Filter by status</InputLabel>
+            <Select
+              labelId="status-filter-label"
+              label="Filter by status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="pending">Pending</MenuItem>
+              <MenuItem value="accepted">Accepted</MenuItem>
+              <MenuItem value="ready">Ready</MenuItem>
+              <MenuItem value="delivered">Delivered</MenuItem>
+              <MenuItem value="rejected">Rejected</MenuItem>
+            </Select>
+          </FormControl>
+
+          {/* Sort by */}
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel id="sort-by-label">Sort by</InputLabel>
+            <Select
+              labelId="sort-by-label"
+              label="Sort by"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <MenuItem value="created_desc">Newest first</MenuItem>
+              <MenuItem value="created_asc">Oldest first</MenuItem>
+              <MenuItem value="total_desc">Total: high → low</MenuItem>
+              <MenuItem value="total_asc">Total: low → high</MenuItem>
+            </Select>
+          </FormControl>
+
+          <IconButton onClick={loadOrders} title="Refresh">
+            <RefreshIcon />
+          </IconButton>
+        </Stack>
+      </Stack>
 
       <Paper>
         <Table>
@@ -137,12 +204,14 @@ export default function VendorOrders() {
                   <CircularProgress size={24} />
                 </TableCell>
               </TableRow>
-            ) : (Array.isArray(orders) ? orders : []).length === 0 ? (
+            ) : visibleOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">No orders yet</TableCell>
+                <TableCell colSpan={6} align="center">
+                  No orders{statusFilter !== "all" ? ` (${statusFilter})` : ""}
+                </TableCell>
               </TableRow>
             ) : (
-              (Array.isArray(orders) ? orders : []).map((o) => {
+              visibleOrders.map((o) => {
                 const disabled = updatingId === o.id;
                 return (
                   <TableRow key={o.id}>
