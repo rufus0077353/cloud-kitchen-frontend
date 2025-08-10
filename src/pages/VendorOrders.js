@@ -2,10 +2,12 @@ import React, { useEffect, useState } from "react";
 import {
   Container, Typography, Table, TableHead, TableRow,
   TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField
+  FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField, Collapse, Divider
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import { toast } from "react-toastify";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
@@ -27,6 +29,7 @@ export default function VendorOrders() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [expanded, setExpanded] = useState(new Set());
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -103,26 +106,35 @@ export default function VendorOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const renderItemsCell = (order) => {
-    const fromOrderItems = Array.isArray(order?.OrderItems) ? order.OrderItems : null;
-    if (fromOrderItems && fromOrderItems.length) {
-      return fromOrderItems.map(oi => `${oi.MenuItem?.name || "Item"} x${oi.quantity}`).join(", ");
+  // ----- helpers -----
+  const getLineItems = (order) => {
+    // Prefer OrderItems include with nested MenuItem
+    if (Array.isArray(order?.OrderItems) && order.OrderItems.length) {
+      return order.OrderItems.map((oi) => ({
+        name: oi.MenuItem?.name || "Item",
+        price: oi.MenuItem?.price ?? null,
+        quantity: oi.quantity ?? oi.OrderItem?.quantity ?? 1,
+      }));
     }
-    const fromMenuItems = Array.isArray(order?.MenuItems) ? order.MenuItems : null;
-    if (fromMenuItems && fromMenuItems.length) {
-      return fromMenuItems
-        .map(mi => `${mi.name} x${mi.OrderItem?.quantity ?? "-"}`)
-        .join(", ");
+    // Fallback: through join (MenuItems with OrderItem)
+    if (Array.isArray(order?.MenuItems) && order.MenuItems.length) {
+      return order.MenuItems.map((mi) => ({
+        name: mi.name,
+        price: mi.price ?? null,
+        quantity: mi.OrderItem?.quantity ?? 1,
+      }));
     }
-    return "-";
+    return [];
   };
 
-  // Helpers for search & date filtering
+  const itemsToText = (order) =>
+    getLineItems(order).map((it) => `${it.name} x${it.quantity}`).join(", ") || "-";
+
   const matchesSearch = (order, q) => {
     if (!q) return true;
     const needle = q.toLowerCase();
     const userName = (order?.User?.name || "").toLowerCase();
-    const itemsStr = renderItemsCell(order).toLowerCase();
+    const itemsStr = itemsToText(order).toLowerCase();
     return userName.includes(needle) || itemsStr.includes(needle);
   };
 
@@ -130,7 +142,6 @@ export default function VendorOrders() {
     if (!dateFrom && !dateTo) return true;
     const ts = new Date(order.createdAt).getTime();
     if (Number.isNaN(ts)) return false;
-
     let ok = true;
     if (dateFrom) {
       const from = new Date(dateFrom + "T00:00:00").getTime();
@@ -143,77 +154,65 @@ export default function VendorOrders() {
     return ok;
   };
 
-  // Pipeline: status -> search -> date -> sort
   const filtered = (Array.isArray(orders) ? orders : [])
-    .filter(o => (statusFilter === "all" ? true : o.status === statusFilter))
-    .filter(o => matchesSearch(o, search))
-    .filter(o => withinDateRange(o));
+    .filter((o) => (statusFilter === "all" ? true : o.status === statusFilter))
+    .filter((o) => matchesSearch(o, search))
+    .filter((o) => withinDateRange(o));
 
   const visibleOrders = [...filtered].sort((a, b) => {
     const aTime = new Date(a.createdAt).getTime() || 0;
     const bTime = new Date(b.createdAt).getTime() || 0;
     const aTotal = Number(a.totalAmount) || 0;
     const bTotal = Number(b.totalAmount) || 0;
-
     switch (sortBy) {
-      case "created_asc":
-        return aTime - bTime;
-      case "total_desc":
-        return bTotal - aTotal;
-      case "total_asc":
-        return aTotal - bTotal;
+      case "created_asc": return aTime - bTime;
+      case "total_desc": return bTotal - aTotal;
+      case "total_asc":  return aTotal - bTotal;
       case "created_desc":
-      default:
-        return bTime - aTime;
+      default: return bTime - aTime;
     }
   });
 
-  // ⬇️ Export to CSV (filtered + sorted view)
-  const exportCsv = () => {
-    const rows = visibleOrders.map(o => {
-      const itemsText = renderItemsCell(o);
-      return {
-        id: o.id,
-        user: o.User?.name || "",
-        items: itemsText,
-        total: o.totalAmount,
-        status: o.status,
-        createdAt: o.createdAt
-      };
-    });
+  const safeCsv = (val) => {
+    if (val == null) return "";
+    const s = String(val);
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
 
+  const exportCsv = () => {
+    const rows = visibleOrders.map((o) => ({
+      id: o.id,
+      user: o.User?.name || "",
+      items: itemsToText(o),
+      total: o.totalAmount,
+      status: o.status,
+      createdAt: o.createdAt,
+    }));
     const headers = ["Order ID", "User", "Items", "Total", "Status", "Created At"];
     const csv = [
       headers.join(","),
-      ...rows.map(r => [
-        r.id,
-        safeCsv(r.user),
-        safeCsv(r.items),
-        r.total,
-        r.status,
-        r.createdAt ? new Date(r.createdAt).toLocaleString() : ""
-      ].join(","))
+      ...rows.map((r) =>
+        [r.id, safeCsv(r.user), safeCsv(r.items), r.total, r.status, r.createdAt ? new Date(r.createdAt).toLocaleString() : ""].join(",")
+      ),
     ].join("\n");
-
-    // Add BOM for Excel, build blob & download
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     a.href = url;
     a.download = `vendor-orders-${stamp}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const safeCsv = (val) => {
-    if (val == null) return "";
-    const s = String(val);
-    // wrap if contains comma/quote/newline; escape quotes
-    if (/[",\n]/.test(s)) {
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
+  const toggleExpand = (id) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   return (
@@ -286,11 +285,7 @@ export default function VendorOrders() {
             <RefreshIcon />
           </IconButton>
 
-          <Button
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            onClick={exportCsv}
-          >
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv}>
             Export CSV
           </Button>
         </Stack>
@@ -300,6 +295,7 @@ export default function VendorOrders() {
         <Table>
           <TableHead>
             <TableRow>
+              <TableCell />
               <TableCell>Order #</TableCell>
               <TableCell>User</TableCell>
               <TableCell>Items</TableCell>
@@ -312,71 +308,111 @@ export default function VendorOrders() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   <CircularProgress size={24} />
                 </TableCell>
               </TableRow>
             ) : visibleOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   No orders found
                 </TableCell>
               </TableRow>
             ) : (
               visibleOrders.map((o) => {
                 const disabled = updatingId === o.id;
-                const itemsText = (() => {
-                  const fromOrderItems = Array.isArray(o?.OrderItems) ? o.OrderItems : null;
-                  if (fromOrderItems && fromOrderItems.length) {
-                    return fromOrderItems.map(oi => `${oi.MenuItem?.name || "Item"} x${oi.quantity}`).join(", ");
-                  }
-                  const fromMenuItems = Array.isArray(o?.MenuItems) ? o.MenuItems : null;
-                  if (fromMenuItems && fromMenuItems.length) {
-                    return fromMenuItems.map(mi => `${mi.name} x${mi.OrderItem?.quantity ?? "-"}`).join(", ");
-                  }
-                  return "-";
-                })();
+                const lineItems = getLineItems(o);
+                const expandedRow = expanded.has(o.id);
 
                 return (
-                  <TableRow key={o.id}>
-                    <TableCell>
-                      {o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}
-                    </TableCell>
-                    <TableCell>{o.User?.name || "-"}</TableCell>
-                    <TableCell>{itemsText}</TableCell>
-                    <TableCell>₹{o.totalAmount}</TableCell>
-                    <TableCell>
-                      <Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} />
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: "flex", gap: 1 }}>
-                        {o.status === "pending" && (
-                          <>
-                            <Button size="small" disabled={disabled}
-                              onClick={() => updateStatus(o.id, "accepted")}>
-                              Accept
+                  <React.Fragment key={o.id}>
+                    <TableRow hover>
+                      <TableCell width={48}>
+                        <IconButton size="small" onClick={() => toggleExpand(o.id)} aria-label="expand">
+                          {expandedRow ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                        </IconButton>
+                      </TableCell>
+                      <TableCell>
+                        {o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}
+                      </TableCell>
+                      <TableCell>{o.User?.name || "-"}</TableCell>
+                      <TableCell>{itemsToText(o)}</TableCell>
+                      <TableCell>₹{o.totalAmount}</TableCell>
+                      <TableCell>
+                        <Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} />
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: "flex", gap: 1 }}>
+                          {o.status === "pending" && (
+                            <>
+                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>
+                                Accept
+                              </Button>
+                              <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                          {o.status === "accepted" && (
+                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>
+                              Mark Ready
                             </Button>
-                            <Button size="small" color="error" disabled={disabled}
-                              onClick={() => updateStatus(o.id, "rejected")}>
-                              Reject
+                          )}
+                          {o.status === "ready" && (
+                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>
+                              Mark Delivered
                             </Button>
-                          </>
-                        )}
-                        {o.status === "accepted" && (
-                          <Button size="small" disabled={disabled}
-                            onClick={() => updateStatus(o.id, "ready")}>
-                            Mark Ready
-                          </Button>
-                        )}
-                        {o.status === "ready" && (
-                          <Button size="small" disabled={disabled}
-                            onClick={() => updateStatus(o.id, "delivered")}>
-                            Mark Delivered
-                          </Button>
-                        )}
-                      </Box>
-                    </TableCell>
-                  </TableRow>
+                          )}
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expanded details */}
+                    <TableRow>
+                      <TableCell colSpan={7} sx={{ p: 0, border: 0 }}>
+                        <Collapse in={expandedRow} timeout="auto" unmountOnExit>
+                          <Box sx={{ px: 3, py: 2, bgcolor: "background.default" }}>
+                            <Typography variant="subtitle1" gutterBottom>Order Details</Typography>
+                            <Divider sx={{ mb: 2 }} />
+                            {lineItems.length === 0 ? (
+                              <Typography variant="body2" color="text.secondary">No line items</Typography>
+                            ) : (
+                              <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 1 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 600 }}>Item</Typography>
+                                <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Qty</Typography>
+                                <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Price</Typography>
+                                <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Line Total</Typography>
+
+                                {lineItems.map((it, idx) => (
+                                  <React.Fragment key={idx}>
+                                    <Typography variant="body2">{it.name}</Typography>
+                                    <Typography variant="body2" sx={{ textAlign: "right" }}>{it.quantity}</Typography>
+                                    <Typography variant="body2" sx={{ textAlign: "right" }}>
+                                      {it.price != null ? `₹${it.price}` : "-"}
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ textAlign: "right" }}>
+                                      {it.price != null ? `₹${(Number(it.price) * Number(it.quantity || 1)).toFixed(2)}` : "-"}
+                                    </Typography>
+                                  </React.Fragment>
+                                ))}
+                              </Box>
+                            )}
+
+                            <Divider sx={{ my: 2 }} />
+                            <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
+                              <Typography variant="body2" color="text.secondary">
+                                Placed: {o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}
+                              </Typography>
+                              <Typography variant="subtitle2">Total: ₹{o.totalAmount}</Typography>
+                            </Stack>
+                            {o.User?.email && (
+                              <Typography variant="body2" color="text.secondary">User Email: {o.User.email}</Typography>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
                 );
               })
             )}
