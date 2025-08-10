@@ -21,7 +21,8 @@ import { Delete, Edit, Logout } from "@mui/icons-material";
 import { toast } from "react-toastify";
 
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API_BASE = process.env.REACT_APP_API_BASE_URL;
+const token = localStorage.getItem("token");
 
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
@@ -29,32 +30,24 @@ const VendorMenu = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ name: "", price: "", description: "" });
 
-  const token = localStorage.getItem("token");
+  
   const user = JSON.parse(localStorage.getItem("user"));
 
   
 
   const fetchMenuItems = async () => {
-  try {
-    const res = await fetch(`${API}/api/vendors/${user.id}/menu`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json();
-
-    // Fix: Make sure it's an array
-    if (Array.isArray(data)) {
-      setMenuItems(data);
-    } else {
-      console.error("Expected array but got:", data);
-      setMenuItems([]);
-    }
-  } catch (err) {
-    console.error("Fetch menu failed:", err);
+    try {
+      const res = await fetch(`${API_BASE}/api/menu-items/mine`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      setMenuItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+    toast.error("Failed to load menu");
     setMenuItems([]);
-  }
-};
-
+    }
+  };
   const handleOpen = (item = null) => {
     setEditingItem(item);
     setFormData(item ? { ...item } : { name: "", price: "", description: "" });
@@ -72,35 +65,36 @@ const VendorMenu = () => {
   };
 
   const handleSubmit = async () => {
-    const url = editingItem
-      ? `${API}/api/menu-items/${editingItem.id}`
-      : `${API}/api/menu-items`;
+  const url = editingItem
+    ? `${API_BASE}/api/menu-items/${editingItem.id}`
+    : `${API_BASE}/api/menu-items`;
 
-    const method = editingItem ? "PUT" : "POST";
+  const method = editingItem ? "PUT" : "POST";
 
-    const body = {
-      ...formData,
-      VendorId: user.id,
-      price: parseFloat(formData.price),
-    };
-
-    try {
-      await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-      toast.success(editingItem ? "Menu item updated!" : "Item added!");
-      await fetchMenuItems();
-      handleClose();
-    } catch (err) {
-      toast.error("Failed to submit item");
-      console.error("Submit error:", err);
-    }
+  const body = {
+    name: formData.name,
+    price: parseFloat(formData.price),
+    description: formData.description,
   };
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    toast.success(editingItem ? "Menu item updated!" : "Item added!");
+    await fetchMenuItems();
+    handleClose();
+  } catch (err) {
+    toast.error("Failed to submit item");
+  }
+};
+
 
   const handleDelete = async (id) => {
     try {
