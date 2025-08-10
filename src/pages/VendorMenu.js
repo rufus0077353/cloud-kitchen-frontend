@@ -19,10 +19,11 @@ import {
 } from "@mui/material";
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { toast } from "react-toastify";
+import api from "../api";
 
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL;
-const token = localStorage.getItem("token");
+
 
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
@@ -30,7 +31,7 @@ const VendorMenu = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ name: "", price: "", description: "" });
 
-  
+  const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user"));
 
   
