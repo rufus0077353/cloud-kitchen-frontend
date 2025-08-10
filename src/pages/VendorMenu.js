@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { toast } from "react-toastify";
-import api from "../services/api";
+import api from "../utils/api";
 
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
