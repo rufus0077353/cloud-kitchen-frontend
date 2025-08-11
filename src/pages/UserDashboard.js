@@ -1,4 +1,5 @@
 
+// src/pages/UserDashboard.js
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -44,10 +45,16 @@ const UserDashboard = () => {
     }
   };
 
-  // -------- LOADERS (safe against non-arrays / non-200) --------
+  // ---------- LOADERS ----------
   const fetchOrders = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
       if (!res.ok) {
         const data = await safeJson(res);
         console.error("orders/my failed:", res.status, data);
@@ -55,7 +62,7 @@ const UserDashboard = () => {
         return;
       }
       const data = await res.json();
-      setOrders(Array.isArray(data) ? data : (data?.orders || []));
+      setOrders(Array.isArray(data) ? data : data?.orders || []);
     } catch (e) {
       console.error("orders/my error:", e);
       setOrders([]);
@@ -72,7 +79,7 @@ const UserDashboard = () => {
         return;
       }
       const data = await res.json();
-      setVendors(Array.isArray(data) ? data : (data?.vendors || []));
+      setVendors(Array.isArray(data) ? data : data?.vendors || []);
     } catch (e) {
       console.error("vendors error:", e);
       setVendors([]);
@@ -82,9 +89,7 @@ const UserDashboard = () => {
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
-      // If your backend exposes /api/vendors/:id/menu, prefer that:
-      // const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
-      // For now, keep your current query param endpoint:
+      // Your backend supports /api/menu-items?vendorId=...
       const res = await fetch(`${API_BASE}/api/menu-items?vendorId=${vId}`);
       if (!res.ok) {
         const data = await safeJson(res);
@@ -93,11 +98,9 @@ const UserDashboard = () => {
         return;
       }
       const data = await res.json();
-      // accept a few common shapes
-      const arr =
-        Array.isArray(data)
-          ? data
-          : data?.items || data?.menu || data?.menuItems || [];
+      const arr = Array.isArray(data)
+        ? data
+        : data?.items || data?.menu || data?.menuItems || [];
       setMenuItems(Array.isArray(arr) ? arr : []);
     } catch (e) {
       console.error("menu-items error:", e);
@@ -111,6 +114,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ---------- FORM HANDLERS ----------
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
@@ -120,10 +124,10 @@ const UserDashboard = () => {
   };
 
   const handleItemChange = (index, field, value) => {
-    const updatedItems = [...items];
-    updatedItems[index][field] = value;
-    setItems(updatedItems);
-    calculateTotal(updatedItems);
+    const updated = [...items];
+    updated[index][field] = value;
+    setItems(updated);
+    calculateTotal(updated);
   };
 
   const calculateTotal = (orderItems) => {
@@ -137,7 +141,7 @@ const UserDashboard = () => {
   };
 
   const addItem = () => {
-    setItems([...items, { MenuItemId: "", quantity: 1 }]);
+    setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
   };
 
   const handleSubmit = async () => {
@@ -149,15 +153,16 @@ const UserDashboard = () => {
       toast.error("Select a vendor first");
       return;
     }
+
     const payload = {
       UserId: user.id,
       VendorId: parseInt(vendorId),
       totalAmount,
       items: items
         .filter((it) => it.MenuItemId && Number(it.quantity) > 0)
-        .map((item) => ({
-          MenuItemId: parseInt(item.MenuItemId),
-          quantity: parseInt(item.quantity),
+        .map((it) => ({
+          MenuItemId: parseInt(it.MenuItemId),
+          quantity: parseInt(it.quantity),
         })),
     };
 
@@ -172,11 +177,18 @@ const UserDashboard = () => {
         headers,
         body: JSON.stringify(payload),
       });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
       if (!res.ok) {
         const data = await safeJson(res);
         toast.error(data?.message || "Failed to create order");
         return;
       }
+
       await fetchOrders();
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
@@ -193,8 +205,16 @@ const UserDashboard = () => {
         method: "DELETE",
         headers,
       });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
       if (res.ok) {
-        setOrders((prev) => (Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []));
+        setOrders((prev) =>
+          Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []
+        );
       } else {
         const data = await safeJson(res);
         toast.error(data?.message || "Failed to delete");
@@ -244,7 +264,9 @@ const UserDashboard = () => {
               select
               label="Menu Item"
               value={item.MenuItemId}
-              onChange={(e) => handleItemChange(index, "MenuItemId", e.target.value)}
+              onChange={(e) =>
+                handleItemChange(index, "MenuItemId", e.target.value)
+              }
               style={{ flex: 1 }}
             >
               {(Array.isArray(menuItems) ? menuItems : []).map((m) => (
@@ -253,12 +275,15 @@ const UserDashboard = () => {
                 </MenuItem>
               ))}
             </TextField>
+
             <TextField
               type="number"
               label="Quantity"
               value={item.quantity}
-              onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
-              style={{ width: 100 }}
+              onChange={(e) =>
+                handleItemChange(index, "quantity", e.target.value)
+              }
+              style={{ width: 110 }}
               inputProps={{ min: 0 }}
             />
           </Box>
@@ -282,6 +307,7 @@ const UserDashboard = () => {
         <Typography variant="h5" gutterBottom>
           Your Orders
         </Typography>
+
         <Table>
           <TableHead>
             <TableRow>
@@ -293,6 +319,7 @@ const UserDashboard = () => {
               <TableCell>Action</TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
             {ordersSafe.map((order) => (
               <TableRow key={order.id}>
@@ -300,7 +327,11 @@ const UserDashboard = () => {
                 <TableCell>{order.Vendor?.name || "-"}</TableCell>
                 <TableCell>{order.status}</TableCell>
                 <TableCell>₹{order.totalAmount}</TableCell>
-                <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
+                <TableCell>
+                  {order.createdAt
+                    ? new Date(order.createdAt).toLocaleString()
+                    : "-"}
+                </TableCell>
                 <TableCell>
                   <Button
                     color="error"
@@ -314,7 +345,9 @@ const UserDashboard = () => {
             ))}
             {ordersSafe.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} align="center">No orders yet</TableCell>
+                <TableCell colSpan={6} align="center">
+                  No orders yet
+                </TableCell>
               </TableRow>
             )}
           </TableBody>
