@@ -1,6 +1,5 @@
-
 // src/pages/UserDashboard.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
 import {
@@ -18,6 +17,7 @@ import {
   AppBar,
   Toolbar,
 } from "@mui/material";
+import { socket } from "../utils/socket";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -30,7 +30,10 @@ const UserDashboard = () => {
   const [totalAmount, setTotalAmount] = useState(0);
 
   const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const user = useMemo(
+    () => JSON.parse(localStorage.getItem("user") || "{}"),
+    []
+  );
 
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -89,7 +92,6 @@ const UserDashboard = () => {
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
-      // Your backend supports /api/menu-items?vendorId=...
       const res = await fetch(`${API_BASE}/api/menu-items?vendorId=${vId}`);
       if (!res.ok) {
         const data = await safeJson(res);
@@ -113,6 +115,49 @@ const UserDashboard = () => {
     fetchVendors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---------- SOCKET: join user room + live updates ----------
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // join the user room
+    socket.emit("user:join", user.id);
+
+    const onNew = (fullOrder) => {
+      // only process if it belongs to this user
+      if (Number(fullOrder?.UserId) !== Number(user.id)) return;
+
+      setOrders((prev) => {
+        // upsert by id
+        const exists = (prev || []).some((o) => o.id === fullOrder.id);
+        if (exists) {
+          return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
+        }
+        // prepend newest
+        return [fullOrder, ...(prev || [])];
+      });
+
+      // tiny toast (don’t spam if user is on the page)
+      toast.info(`New order #${fullOrder?.id ?? ""} placed`);
+    };
+
+    const onStatus = (payload) => {
+      if (Number(payload?.UserId) !== Number(user.id)) return;
+      setOrders((prev) =>
+        (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o))
+      );
+      toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
+    };
+
+    socket.on("order:new", onNew);
+    socket.on("order:status", onStatus);
+
+    return () => {
+      socket.off("order:new", onNew);
+      socket.off("order:status", onStatus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // ---------- FORM HANDLERS ----------
   const handleVendorChange = (e) => {
@@ -189,6 +234,8 @@ const UserDashboard = () => {
         return;
       }
 
+      // no need to refetch; vendor will see live new order
+      // but we fetch to refresh totals and ensure consistency
       await fetchOrders();
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
@@ -320,37 +367,37 @@ const UserDashboard = () => {
             </TableRow>
           </TableHead>
 
-          <TableBody>
-            {ordersSafe.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell>{order.id}</TableCell>
-                <TableCell>{order.Vendor?.name || "-"}</TableCell>
-                <TableCell>{order.status}</TableCell>
-                <TableCell>₹{order.totalAmount}</TableCell>
-                <TableCell>
-                  {order.createdAt
-                    ? new Date(order.createdAt).toLocaleString()
-                    : "-"}
-                </TableCell>
-                <TableCell>
-                  <Button
-                    color="error"
-                    variant="outlined"
-                    onClick={() => deleteOrder(order.id)}
-                  >
-                    Delete
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {ordersSafe.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  No orders yet
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
+        <TableBody>
+          {ordersSafe.map((order) => (
+            <TableRow key={order.id}>
+              <TableCell>{order.id}</TableCell>
+              <TableCell>{order.Vendor?.name || "-"}</TableCell>
+              <TableCell>{order.status}</TableCell>
+              <TableCell>₹{order.totalAmount}</TableCell>
+              <TableCell>
+                {order.createdAt
+                  ? new Date(order.createdAt).toLocaleString()
+                  : "-"}
+              </TableCell>
+              <TableCell>
+                <Button
+                  color="error"
+                  variant="outlined"
+                  onClick={() => deleteOrder(order.id)}
+                >
+                  Delete
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {ordersSafe.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={6} align="center">
+                No orders yet
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
         </Table>
       </Box>
     </Container>
