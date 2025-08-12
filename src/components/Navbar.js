@@ -1,13 +1,27 @@
 
 // src/components/Navbar.js
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useState, useMemo } from "react";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
+import {
+  AppBar,
+  Toolbar,
+  IconButton,
+  Typography,
+  Box,
+  Button,
+  Drawer,
+  List,
+  ListItemButton,
+  ListItemText,
+  Divider
+} from "@mui/material";
+import MenuIcon from "@mui/icons-material/Menu";
 
 const Navbar = () => {
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user"));
+  const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "null"), []);
   const token = localStorage.getItem("token");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const handleLogout = () => {
     localStorage.removeItem("user");
@@ -15,171 +29,168 @@ const Navbar = () => {
     navigate("/login");
   };
 
-  const goHome = () => {
-    if (!user?.role) return navigate("/");
-    if (user.role === "admin") return navigate("/admin/dashboard");
-    if (user.role === "vendor") return navigate("/vendor/dashboard");
-    return navigate("/dashboard");
+  const getHomePath = () => {
+    if (!user) return "/";
+    if (user.role === "admin") return "/admin/dashboard";
+    if (user.role === "vendor") return "/vendor/dashboard";
+    return "/dashboard";
   };
 
-  const isMobile = window.innerWidth <= 768;
+  const navLinks = () => {
+    if (!token || !user) return [];
+    if (user.role === "admin") {
+      return [
+        { to: "/admin/dashboard", label: "Dashboard" },
+        { to: "/admin/users", label: "Users" },
+      ];
+    }
+    if (user.role === "vendor") {
+      return [
+        { to: "/vendor/dashboard", label: "Vendor Panel" },
+        { to: "/vendor/orders", label: "Orders" },
+      ];
+    }
+    return [
+      { to: "/dashboard", label: "Home" },
+      { to: "/orders", label: "My Orders" },
+    ];
+  };
+
+  const links = navLinks();
 
   return (
-    <nav style={styles.nav}>
-      {/* Clickable logo (routes by role) */}
-      <button type="button" onClick={goHome} style={styles.logoBtn}>
-        <span style={styles.logoText}>Servezy</span>
-      </button>
+    <>
+      <AppBar position="static" sx={{ backgroundColor: "#ff6f00" }}>
+        <Toolbar sx={{ minHeight: 64, px: { xs: 1, sm: 2 } }}>
+          {/* Left: Logo */}
+          <Box
+            component={RouterLink}
+            to={getHomePath()}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              textDecoration: "none",
+              color: "inherit",
+              mr: 2,
+            }}
+          >
+            <Box
+              component="img"
+              src="/logo192.png" // ensure this exists in /public
+              alt="Servezy Logo"
+              sx={{ height: 36, width: "auto", mr: 1 }}
+            />
+            <Typography
+              variant="h6"
+              sx={{
+                display: { xs: "none", sm: "block" },
+                fontWeight: 700,
+                letterSpacing: 0.5,
+              }}
+            >
+              Servezy
+            </Typography>
+          </Box>
 
-      {/* Desktop Links */}
-      {!isMobile && (
-        <div style={styles.links}>
-          {token && user && (
-            <>
-              <span style={styles.welcome}>Welcome, {user.name || user.email}</span>
+          <Box sx={{ flexGrow: 1 }} />
 
-              {user.role === "admin" && (
-                <>
-                  <Link to="/admin/dashboard" style={styles.link}>Dashboard</Link>
-                  <Link to="/admin/users" style={styles.link}>Users</Link>
-                </>
-              )}
-              {user.role === "vendor" && (
-                <>
-                  <Link to="/vendor/dashboard" style={styles.link}>Vendor Panel</Link>
-                  <Link to="/vendor/orders" style={styles.link}>Orders</Link>
-                </>
-              )}
-              {user.role === "user" && (
-                <>
-                  <Link to="/dashboard" style={styles.link}>Home</Link>
-                  <Link to="/orders" style={styles.link}>My Orders</Link>
-                </>
-              )}
-              <button onClick={handleLogout} style={styles.button}>Logout</button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Mobile Menu Button */}
-      {isMobile && token && (
-        <button style={styles.menuButton} onClick={() => setMenuOpen(!menuOpen)}>
-          ☰
-        </button>
-      )}
-
-      {/* Mobile Drawer */}
-      {isMobile && menuOpen && (
-        <div style={styles.drawer}>
-          {token && user && (
-            <>
-              <div style={styles.drawerHeader}>
-                Welcome, {user.name || user.email}
-              </div>
-              {user.role === "admin" && (
-                <>
-                  <Link to="/admin/dashboard" style={styles.drawerLink} onClick={() => setMenuOpen(false)}>Dashboard</Link>
-                  <Link to="/admin/users" style={styles.drawerLink} onClick={() => setMenuOpen(false)}>Users</Link>
-                </>
-              )}
-              {user.role === "vendor" && (
-                <>
-                  <Link to="/vendor/dashboard" style={styles.drawerLink} onClick={() => setMenuOpen(false)}>Vendor Panel</Link>
-                  <Link to="/vendor/orders" style={styles.drawerLink} onClick={() => setMenuOpen(false)}>Orders</Link>
-                </>
-              )}
-              {user.role === "user" && (
-                <>
-                  <Link to="/dashboard" style={styles.drawerLink} onClick={() => setMenuOpen(false)}>Home</Link>
-                  <Link to="/orders" style={styles.drawerLink} onClick={() => setMenuOpen(false)}>My Orders</Link>
-                </>
-              )}
-              <button onClick={handleLogout} style={{ ...styles.button, margin: "10px" }}>
+          {/* Desktop links */}
+          {token && user ? (
+            <Box sx={{ display: { xs: "none", md: "flex" }, gap: 1, alignItems: "center" }}>
+              {links.map((l) => (
+                <Button
+                  key={l.to}
+                  component={RouterLink}
+                  to={l.to}
+                  sx={{
+                    color: "white",
+                    textTransform: "none",
+                    fontWeight: 500,
+                    "&:hover": { backgroundColor: "#e65100" },
+                  }}
+                >
+                  {l.label}
+                </Button>
+              ))}
+              <Button
+                onClick={handleLogout}
+                variant="contained"
+                sx={{
+                  backgroundColor: "#e53935",
+                  "&:hover": { backgroundColor: "#c62828" },
+                  textTransform: "none",
+                }}
+              >
                 Logout
-              </button>
-            </>
-          )}
-        </div>
-      )}
-    </nav>
-  );
-};
+              </Button>
+            </Box>
+          ) : null}
 
-const styles = {
-  nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "1rem 2rem",
-    background: "#333",
-    color: "white",
-    position: "relative"
-  },
-  logoBtn: {
-    background: "transparent",
-    border: "none",
-    padding: 0,
-    margin: 0,
-    cursor: "pointer",
-  },
-  logoText: {
-    fontWeight: "bold",
-    fontSize: "20px",
-    color: "white",
-  },
-  links: {
-    display: "flex",
-    alignItems: "center",
-    gap: "1rem",
-  },
-  welcome: {
-    marginRight: "1rem",
-    fontStyle: "italic",
-    color: "#ccc"
-  },
-  link: {
-    color: "white",
-    textDecoration: "none",
-  },
-  button: {
-    background: "#e74c3c",
-    color: "white",
-    border: "none",
-    padding: "8px 12px",
-    cursor: "pointer",
-  },
-  menuButton: {
-    background: "transparent",
-    color: "white",
-    fontSize: "20px",
-    border: "none",
-    cursor: "pointer",
-  },
-  drawer: {
-    position: "absolute",
-    top: "60px",
-    right: 0,
-    background: "#444",
-    padding: "1rem",
-    display: "flex",
-    flexDirection: "column",
-    width: "200px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-    zIndex: 10
-  },
-  drawerHeader: {
-    padding: "0.5rem 0",
-    borderBottom: "1px solid #666",
-    marginBottom: "0.5rem",
-    color: "#fff",
-    fontWeight: "bold"
-  },
-  drawerLink: {
-    color: "white",
-    textDecoration: "none",
-    padding: "0.5rem 0",
-  }
+          {/* Mobile menu button */}
+          {token && user ? (
+            <IconButton
+              edge="end"
+              color="inherit"
+              aria-label="menu"
+              onClick={() => setOpen(true)}
+              sx={{ display: { xs: "flex", md: "none" }, ml: 1 }}
+            >
+              <MenuIcon />
+            </IconButton>
+          ) : null}
+        </Toolbar>
+      </AppBar>
+
+      {/* Drawer (mobile) */}
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={() => setOpen(false)}
+        PaperProps={{ sx: { width: 260, backgroundColor: "#fafafa" } }}
+      >
+        <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 1 }}>
+          <Box component="img" src="/logo192.png" alt="Servezy" sx={{ height: 28 }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "#ff6f00" }}>
+            Servezy
+          </Typography>
+        </Box>
+        <Divider />
+        <List sx={{ py: 0 }}>
+          {links.map((l) => (
+            <ListItemButton
+              key={l.to}
+              component={RouterLink}
+              to={l.to}
+              onClick={() => setOpen(false)}
+              sx={{
+                "&:hover": { backgroundColor: "#ffe0b2" },
+              }}
+            >
+              <ListItemText primary={l.label} sx={{ color: "#333" }} />
+            </ListItemButton>
+          ))}
+        </List>
+        <Divider />
+        <Box sx={{ p: 2 }}>
+          <Button
+            fullWidth
+            variant="contained"
+            sx={{
+              backgroundColor: "#e53935",
+              "&:hover": { backgroundColor: "#c62828" },
+              textTransform: "none",
+            }}
+            onClick={() => {
+              setOpen(false);
+              handleLogout();
+            }}
+          >
+            Logout
+          </Button>
+        </Box>
+      </Drawer>
+    </>
+  );
 };
 
 export default Navbar;
