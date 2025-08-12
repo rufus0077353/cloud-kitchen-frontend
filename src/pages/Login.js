@@ -1,4 +1,5 @@
 
+// src/pages/Login.js
 import React, { useState } from "react";
 import { toast } from "react-toastify";
 import {
@@ -11,6 +12,7 @@ import {
   Link
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
+import { socket, refreshSocketAuth } from "../utils/socket"; // ✅ add this import
 
 const API = process.env.REACT_APP_API_BASE_URL;
 
@@ -20,52 +22,60 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
 
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setError("");
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-  try {
-    const res = await fetch(`${API}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+      const data = await res.json();
 
-    const data = await res.json();
+      if (res.ok) {
+        toast.success("Login successful");
 
-    if (res.ok) {
-      toast.success("Login successful");
+        // store auth
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+        // vendorId convenience
+        if (data.user.role === "vendor" && data.vendor?.id) {
+          localStorage.setItem("vendorId", data.vendor.id);
+        }
 
-      // ✅ If user is vendor, store vendorId for dashboard and menu operations
-      if (data.user.role === "vendor" && data.vendor?.id) {
-        localStorage.setItem("vendorId", data.vendor.id);
-      }
+        // ✅ attach token to the socket and (re)connect if needed
+        refreshSocketAuth(data.token);
 
-      // ✅ Navigate based on role
-      if (data.user.role === "admin") {
-        navigate("/admin/dashboard");
-      } else if (data.user.role === "vendor") {
-        navigate("/vendor/dashboard");
+        // ✅ join the appropriate room immediately
+        if (data.user.role === "vendor" && data.vendor?.id) {
+          socket.emit("vendor:join", data.vendor.id);
+        } else {
+          socket.emit("user:join", data.user.id);
+        }
+
+        // route
+        if (data.user.role === "admin") {
+          navigate("/admin/dashboard");
+        } else if (data.user.role === "vendor") {
+          navigate("/vendor/dashboard");
+        } else {
+          navigate("/dashboard");
+        }
       } else {
-        navigate("/dashboard");
+        toast.error(data.message || "Login failed");
+        setError(data.message || "Login failed");
       }
-
-    } else {
-      toast.error(data.message || "Login failed");
-      setError(data.message || "Login failed");
+    } catch (err) {
+      console.error("Login error:", err);
+      toast.error("Server error. Please try again later");
+      setError("Server error");
     }
+  };
 
-  } catch (err) {
-    console.error("Login error:", err);
-    toast.error("Server error. Please try again later");
-    setError("Server error");
-  }
-};
   return (
     <Container maxWidth="xs">
       <Box sx={{ mt: 8 }}>
@@ -92,24 +102,15 @@ const handleLogin = async (e) => {
             required
             onChange={(e) => setPassword(e.target.value)}
           />
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 2 }}
-          >
+          <Button type="submit" fullWidth variant="contained" sx={{ mt: 2 }}>
             Login
           </Button>
         </form>
 
         <Box sx={{ mt: 2, textAlign: "center" }}>
           <Typography variant="body2">
-            Don't have an account?{" "}
-            <Link
-              component="button"
-              variant="body2"
-              onClick={() => navigate("/register")}
-            >
+            Don&apos;t have an account?{" "}
+            <Link component="button" variant="body2" onClick={() => navigate("/register")}>
               Register Now
             </Link>
           </Typography>
