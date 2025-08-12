@@ -1,196 +1,224 @@
 
 // src/components/Navbar.js
-import React, { useState, useMemo } from "react";
-import { Link as RouterLink, useNavigate } from "react-router-dom";
-import {
-  AppBar,
-  Toolbar,
-  IconButton,
-  Typography,
-  Box,
-  Button,
-  Drawer,
-  List,
-  ListItemButton,
-  ListItemText,
-  Divider
-} from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { socket } from "../utils/socket";
+
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
 const Navbar = () => {
   const navigate = useNavigate();
-  const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "null"), []);
+  const location = useLocation();
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
   const token = localStorage.getItem("token");
-  const [open, setOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [vendorId, setVendorId] = useState(
+    localStorage.getItem("vendorId") || null
+  );
+
+  const headers = token
+    ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+    : { "Content-Type": "application/json" };
+
+  // ---- load pending count for vendors ----
+  const fetchPending = async () => {
+    if (!token || user?.role !== "vendor") return;
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/vendor`, { headers });
+      if (!res.ok) {
+        setPendingCount(0);
+        return;
+      }
+      const data = await res.json();
+      const arr = Array.isArray(data) ? data : [];
+      const count = arr.filter((o) => o.status === "pending").length;
+      setPendingCount(count);
+    } catch {
+      setPendingCount(0);
+    }
+  };
+
+  // ---- join vendor room once we know vendorId ----
+  useEffect(() => {
+    if (user?.role !== "vendor" || !token) return;
+
+    const ensureVendorId = async () => {
+      // if vendorId already stored from login, use it
+      if (vendorId) {
+        socket.emit("vendor:join", vendorId);
+        return;
+      }
+      // fallback: fetch /api/vendors/me to discover id
+      try {
+        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        if (r.ok) {
+          const me = await r.json();
+          if (me?.vendorId) {
+            localStorage.setItem("vendorId", me.vendorId);
+            setVendorId(me.vendorId);
+            socket.emit("vendor:join", me.vendorId);
+          }
+        }
+      } catch {}
+    };
+
+    ensureVendorId();
+    fetchPending();
+    // also refresh when route changes back to vendor pages
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role, token]);
+
+  // ---- live updates: on new or status change, refresh count ----
+  useEffect(() => {
+    if (user?.role !== "vendor") return;
+
+    const onNew = () => fetchPending();
+    const onStatus = () => fetchPending();
+
+    socket.on("order:new", onNew);
+    socket.on("order:status", onStatus);
+
+    return () => {
+      socket.off("order:new", onNew);
+      socket.off("order:status", onStatus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role]);
 
   const handleLogout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+    localStorage.removeItem("vendorId");
     navigate("/login");
   };
 
-  const getHomePath = () => {
-    if (!user) return "/";
-    if (user.role === "admin") return "/admin/dashboard";
-    if (user.role === "vendor") return "/vendor/dashboard";
-    return "/dashboard";
-  };
-
-  const navLinks = () => {
-    if (!token || !user) return [];
-    if (user.role === "admin") {
-      return [
-        { to: "/admin/dashboard", label: "Dashboard" },
-        { to: "/admin/users", label: "Users" },
-      ];
-    }
-    if (user.role === "vendor") {
-      return [
-        { to: "/vendor/dashboard", label: "Vendor Panel" },
-        { to: "/vendor/orders", label: "Orders" },
-      ];
-    }
-    return [
-      { to: "/dashboard", label: "Home" },
-      { to: "/orders", label: "My Orders" },
-    ];
-  };
-
-  const links = navLinks();
+  // highlight active link (subtle)
+  const isActive = (path) => location.pathname.startsWith(path);
 
   return (
-    <>
-      <AppBar position="static" sx={{ backgroundColor: "#ff6f00" }}>
-        <Toolbar sx={{ minHeight: 64, px: { xs: 1, sm: 2 } }}>
-          {/* Left: Logo */}
-          <Box
-            component={RouterLink}
-            to={getHomePath()}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              textDecoration: "none",
-              color: "inherit",
-              mr: 2,
-            }}
-          >
-            <Box
-              component="img"
-              src="/logo192.png" // ensure this exists in /public
-              alt="Servezy Logo"
-              sx={{ height: 36, width: "auto", mr: 1 }}
-            />
-            <Typography
-              variant="h6"
-              sx={{
-                display: { xs: "none", sm: "block" },
-                fontWeight: 700,
-                letterSpacing: 0.5,
-              }}
-            >
-              Servezy
-            </Typography>
-          </Box>
+    <nav style={styles.nav}>
+      <div style={styles.leftSide}>
+        <Link to={token ? (user?.role === "vendor" ? "/vendor/dashboard" :
+                            user?.role === "admin" ? "/admin/dashboard" : "/dashboard") : "/login"}
+              style={{ ...styles.logoLink }}>
+          <div style={styles.logo}>Servezy</div>
+        </Link>
+      </div>
 
-          <Box sx={{ flexGrow: 1 }} />
+      <div style={styles.links}>
+        {token && user && (
+          <>
+            {user.role === "admin" && (
+              <>
+                <Link to="/admin/dashboard" style={{ ...styles.link, ...(isActive("/admin/dashboard") ? styles.active : {}) }}>Dashboard</Link>
+                <Link to="/admin/users" style={{ ...styles.link, ...(isActive("/admin/users") ? styles.active : {}) }}>Users</Link>
+              </>
+            )}
 
-          {/* Desktop links */}
-          {token && user ? (
-            <Box sx={{ display: { xs: "none", md: "flex" }, gap: 1, alignItems: "center" }}>
-              {links.map((l) => (
-                <Button
-                  key={l.to}
-                  component={RouterLink}
-                  to={l.to}
-                  sx={{
-                    color: "white",
-                    textTransform: "none",
-                    fontWeight: 500,
-                    "&:hover": { backgroundColor: "#e65100" },
-                  }}
-                >
-                  {l.label}
-                </Button>
-              ))}
-              <Button
-                onClick={handleLogout}
-                variant="contained"
-                sx={{
-                  backgroundColor: "#e53935",
-                  "&:hover": { backgroundColor: "#c62828" },
-                  textTransform: "none",
-                }}
-              >
-                Logout
-              </Button>
-            </Box>
-          ) : null}
+            {user.role === "vendor" && (
+              <>
+                <Link to="/vendor/dashboard" style={{ ...styles.link, ...(isActive("/vendor/dashboard") ? styles.active : {}) }}>
+                  Vendor Panel
+                </Link>
 
-          {/* Mobile menu button */}
-          {token && user ? (
-            <IconButton
-              edge="end"
-              color="inherit"
-              aria-label="menu"
-              onClick={() => setOpen(true)}
-              sx={{ display: { xs: "flex", md: "none" }, ml: 1 }}
-            >
-              <MenuIcon />
-            </IconButton>
-          ) : null}
-        </Toolbar>
-      </AppBar>
+                <div style={{ position: "relative" }}>
+                  <Link to="/vendor/orders" style={{ ...styles.link, ...(isActive("/vendor/orders") ? styles.active : {}) }}>
+                    Orders
+                  </Link>
+                  {pendingCount > 0 && (
+                    <span style={styles.badge} aria-label={`${pendingCount} pending orders`}>
+                      {pendingCount > 99 ? "99+" : pendingCount}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
 
-      {/* Drawer (mobile) */}
-      <Drawer
-        anchor="right"
-        open={open}
-        onClose={() => setOpen(false)}
-        PaperProps={{ sx: { width: 260, backgroundColor: "#fafafa" } }}
-      >
-        <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 1 }}>
-          <Box component="img" src="/logo192.png" alt="Servezy" sx={{ height: 28 }} />
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "#ff6f00" }}>
-            Servezy
-          </Typography>
-        </Box>
-        <Divider />
-        <List sx={{ py: 0 }}>
-          {links.map((l) => (
-            <ListItemButton
-              key={l.to}
-              component={RouterLink}
-              to={l.to}
-              onClick={() => setOpen(false)}
-              sx={{
-                "&:hover": { backgroundColor: "#ffe0b2" },
-              }}
-            >
-              <ListItemText primary={l.label} sx={{ color: "#333" }} />
-            </ListItemButton>
-          ))}
-        </List>
-        <Divider />
-        <Box sx={{ p: 2 }}>
-          <Button
-            fullWidth
-            variant="contained"
-            sx={{
-              backgroundColor: "#e53935",
-              "&:hover": { backgroundColor: "#c62828" },
-              textTransform: "none",
-            }}
-            onClick={() => {
-              setOpen(false);
-              handleLogout();
-            }}
-          >
-            Logout
-          </Button>
-        </Box>
-      </Drawer>
-    </>
+            {user.role === "user" && (
+              <>
+                <Link to="/dashboard" style={{ ...styles.link, ...(isActive("/dashboard") ? styles.active : {}) }}>
+                  Home
+                </Link>
+                <Link to="/orders" style={{ ...styles.link, ...(isActive("/orders") ? styles.active : {}) }}>
+                  My Orders
+                </Link>
+              </>
+            )}
+
+            <button onClick={handleLogout} style={styles.button}>Logout</button>
+          </>
+        )}
+      </div>
+    </nav>
   );
+};
+
+const styles = {
+  nav: {
+    position: "sticky",
+    top: 0,
+    zIndex: 1100,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0.75rem 1.25rem",
+    background: "#333",
+    color: "#fff",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+  },
+  leftSide: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
+  },
+  logoLink: {
+    textDecoration: "none",
+  },
+  logo: {
+    fontWeight: 800,
+    fontSize: 22,
+    letterSpacing: 0.5,
+    color: "#fff",
+  },
+  links: {
+    display: "flex",
+    alignItems: "center",
+    gap: "1rem",
+  },
+  link: {
+    color: "white",
+    textDecoration: "none",
+    padding: "6px 8px",
+    borderRadius: 6,
+    transition: "background 0.2s ease",
+  },
+  active: {
+    background: "rgba(255,255,255,0.12)",
+  },
+  button: {
+    background: "#e74c3c",
+    color: "white",
+    border: "none",
+    padding: "8px 12px",
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+  badge: {
+    position: "absolute",
+    top: -6,
+    right: -10,
+    background: "#ff5252",
+    color: "#fff",
+    minWidth: 18,
+    height: 18,
+    padding: "0 5px",
+    borderRadius: 10,
+    fontSize: 11,
+    lineHeight: "18px",
+    textAlign: "center",
+    fontWeight: 700,
+    boxShadow: "0 0 0 2px #333",
+  },
 };
 
 export default Navbar;
