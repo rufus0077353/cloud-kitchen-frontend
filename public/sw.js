@@ -1,6 +1,7 @@
-/* ===== Servezy Service Worker (public/sw.js) =====
+/* ===================================================
+   Service Worker (public/sw.js)
    Scope: root (must be in /public to control the whole app)
-   Features: Push notifications, click handling, light lifecycle hooks
+   Features: Push notifications, click handling, lifecycle hooks
 =================================================== */
 
 // Make the newly installed SW take control ASAP
@@ -29,7 +30,7 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (_) {
-    // Fallback: sometimes payload can be text
+    // Fallback: payload might be text
     try { data = JSON.parse(event.data.text()); } catch {}
   }
 
@@ -45,7 +46,7 @@ self.addEventListener("push", (event) => {
       url: data.url || "/",   // relative or absolute
       ...data,
     },
-    // Replaces notifications with the same tag instead of stacking
+    // Replace notifications with the same tag instead of stacking
     renotify: true,
   };
 
