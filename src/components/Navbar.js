@@ -1,4 +1,3 @@
-
 // src/components/Navbar.js
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
@@ -32,7 +31,7 @@ import PeopleIcon from "@mui/icons-material/People";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
-// (served from /public — change to /logo192.png if you don’t have an SVG)
+// Brand config
 const BRAND = {
   src: "/servezy-logo.png",
   fallback: "/logo192.png",
@@ -53,9 +52,7 @@ export default function Navbar() {
   );
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [vendorId, setVendorId] = useState(
-    localStorage.getItem("vendorId") || null
-  );
+  const [vendorId, setVendorId] = useState(localStorage.getItem("vendorId") || null);
   const [vendorPendingCount, setVendorPendingCount] = useState(0);
   const [userActiveCount, setUserActiveCount] = useState(0);
 
@@ -68,7 +65,7 @@ export default function Navbar() {
   const isUser = token && role === "user";
   const isAdmin = token && role === "admin";
 
-  // ---------- Badge counters ----------
+  // --------- Badge counters ---------
   const fetchVendorPending = async () => {
     if (!isVendor) return;
     try {
@@ -98,14 +95,12 @@ export default function Navbar() {
     }
   };
 
-  // ---------- Socket room joins ----------
+  // --------- Socket room joins ---------
   useEffect(() => {
     if (!token) return;
 
-    // user room
     if (user?.id) socket.emit("user:join", user.id);
 
-    // vendor room
     const joinVendor = async () => {
       if (!isVendor) return;
       if (vendorId) {
@@ -125,28 +120,21 @@ export default function Navbar() {
       } catch {}
     };
     joinVendor();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user?.id, isVendor, vendorId]);
 
-  // initial badge load
   useEffect(() => {
     fetchVendorPending();
     fetchUserActive();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser]);
 
-  // live updates → refresh counts
   useEffect(() => {
     const onNew = (order) => {
-      if (isVendor && Number(order?.VendorId) === Number(vendorId))
-        fetchVendorPending();
-      if (isUser && Number(order?.UserId) === Number(user?.id))
-        fetchUserActive();
+      if (isVendor && Number(order?.VendorId) === Number(vendorId)) fetchVendorPending();
+      if (isUser && Number(order?.UserId) === Number(user?.id)) fetchUserActive();
     };
     const onStatus = (payload) => {
       if (isVendor) fetchVendorPending();
-      if (isUser && Number(payload?.UserId) === Number(user?.id))
-        fetchUserActive();
+      if (isUser && Number(payload?.UserId) === Number(user?.id)) fetchUserActive();
     };
     socket.on("order:new", onNew);
     socket.on("order:status", onStatus);
@@ -154,10 +142,8 @@ export default function Navbar() {
       socket.off("order:new", onNew);
       socket.off("order:status", onStatus);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser, vendorId, user?.id]);
 
-  // Close drawer on route change (mobile UX)
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
@@ -177,7 +163,7 @@ export default function Navbar() {
     navigate("/login");
   };
 
-  // ---------- Role-based links ----------
+  // --------- Role-based links ---------
   const links = useMemo(() => {
     if (!token || !role) return [];
     if (isAdmin) {
@@ -197,7 +183,6 @@ export default function Navbar() {
         },
       ];
     }
-    // user
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {
@@ -209,38 +194,21 @@ export default function Navbar() {
     ];
   }, [token, role, isAdmin, isVendor, vendorPendingCount, userActiveCount]);
 
-  // ---------- Brand (logo + text) ----------
-  const Brand = (
-    <Box
-      component={RouterLink}
-      to={homeLink}
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-        textDecoration: "none",
-        color: "inherit",
-      }}
-    >
-      <Avatar
-        component="img"
-        src={BRAND.src}
-        alt={BRAND.alt}
-        imgProps={{ onError: (e) => (e.currentTarget.src = BRAND.fallback) }}
-        sx={{ width: 30, height: 30 }}
-        variant="square"
-      />
-      <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: 0.3 }}>
-        Servezy
-      </Typography>
-    </Box>
+  // --------- Logo renderer ---------
+  const renderLogo = (size = 30) => (
+    <Avatar
+      src={BRAND.src}
+      alt={BRAND.alt}
+      imgProps={{ onError: (e) => (e.currentTarget.src = BRAND.fallback) }}
+      sx={{ width: size, height: size }}
+      variant="square"
+    />
   );
 
   return (
     <>
       <AppBar position="sticky" elevation={1} color="primary">
         <Toolbar sx={{ gap: 2 }}>
-          {/* Mobile: hamburger */}
           {token && (
             <IconButton
               color="inherit"
@@ -253,11 +221,25 @@ export default function Navbar() {
             </IconButton>
           )}
 
-          {Brand}
+          <Box
+            component={RouterLink}
+            to={homeLink}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              textDecoration: "none",
+              color: "inherit",
+            }}
+          >
+            {renderLogo(30)}
+            <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: 0.3 }}>
+              Servezy
+            </Typography>
+          </Box>
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {/* Desktop links */}
           {token && (
             <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", gap: 1 }}>
               {links.map((lnk) => {
@@ -307,13 +289,7 @@ export default function Navbar() {
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box sx={{ width: 270, display: "flex", flexDirection: "column", height: "100%" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, p: 2 }}>
-            <Avatar
-              src={BRAND.src}
-              alt={BRAND.alt}
-              imgProps={{ onError: (e) => (e.currentTarget.src = BRAND.fallback) }}
-              sx={{ width: 34, height: 34 }}
-              variant="square"
-            />
+            {renderLogo(34)}
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Servezy
             </Typography>
