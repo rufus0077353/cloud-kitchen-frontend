@@ -34,7 +34,7 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
 // (served from /public — change to /logo192.png if you don’t have an SVG)
 const BRAND = {
-  src: "/servezy-logo.svg",
+  src: "/servezy-logo.png",
   fallback: "/logo192.png",
   alt: "Servezy",
 };
@@ -223,6 +223,7 @@ export default function Navbar() {
       }}
     >
       <Avatar
+        component="img"
         src={BRAND.src}
         alt={BRAND.alt}
         imgProps={{ onError: (e) => (e.currentTarget.src = BRAND.fallback) }}
