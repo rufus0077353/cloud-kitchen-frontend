@@ -1,7 +1,11 @@
-
 // src/components/Navbar.js
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
+import AppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import Box from "@mui/material/Box";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -15,65 +19,76 @@ const Navbar = () => {
   };
 
   return (
-    <nav style={styles.nav}>
-      <div style={styles.logo}>Servezy</div>
-      <div style={styles.links}>
+    <AppBar position="static" sx={{ background: "#333" }}>
+      <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
+        {/* Logo */}
+        <Box
+          component={Link}
+          to="/"
+          sx={{ display: "flex", alignItems: "center", textDecoration: "none" }}
+        >
+          <Box
+            component="img"
+            src="/icon-192.png"
+            alt="Servezy Logo"
+            sx={{
+              width: 30,
+              height: 30,
+              mr: 1,
+              borderRadius: "4px",
+            }}
+          />
+          <Typography variant="h6" color="white">
+            Servezy
+          </Typography>
+        </Box>
+
+        {/* Links */}
         {token && user && (
-          <>
+          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
             {user.role === "admin" && (
               <>
-                <Link to="/admin/dashboard" style={styles.link}>Dashboard</Link>
-                <Link to="/admin/users" style={styles.link}>Users</Link>
+                <Button color="inherit" component={Link} to="/admin/dashboard">
+                  Dashboard
+                </Button>
+                <Button color="inherit" component={Link} to="/admin/users">
+                  Users
+                </Button>
               </>
             )}
             {user.role === "vendor" && (
               <>
-                <Link to="/vendor/dashboard" style={styles.link}>Vendor Panel</Link>
-                <Link to="/vendor/orders" style={styles.link}>Orders</Link> {/* Added orders link */}
+                <Button color="inherit" component={Link} to="/vendor/dashboard">
+                  Vendor Panel
+                </Button>
+                <Button color="inherit" component={Link} to="/vendor/orders">
+                  Orders
+                </Button>
               </>
             )}
             {user.role === "user" && (
               <>
-                <Link to="/dashboard" style={styles.link}>Home</Link>
-                <Link to="/orders" style={styles.link}>My Orders</Link> {/* Added My Orders link */}
+                <Button color="inherit" component={Link} to="/dashboard">
+                  Home
+                </Button>
+                <Button color="inherit" component={Link} to="/orders">
+                  My Orders
+                </Button>
               </>
             )}
-            <button onClick={handleLogout} style={styles.button}>Logout</button>
-          </>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleLogout}
+              sx={{ ml: 2 }}
+            >
+              Logout
+            </Button>
+          </Box>
         )}
-      </div>
-    </nav>
+      </Toolbar>
+    </AppBar>
   );
-};
-
-const styles = {
-  nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "1rem 2rem",
-    background: "#333",
-    color: "white",
-  },
-  logo: {
-    fontWeight: "bold",
-    fontSize: "20px",
-  },
-  links: {
-    display: "flex",
-    alignItems: "center",
-    gap: "1rem",
-  },
-  link: {
-    color: "white",
-    textDecoration: "none",
-  },
-  button: {
-    background: "#e74c3c",
-    color: "white",
-    border: "none",
-    padding: "8px 12px",
-    cursor: "pointer",
-  },
 };
 
 export default Navbar;
