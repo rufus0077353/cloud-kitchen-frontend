@@ -28,6 +28,8 @@ import VendorMenu from "./pages/VendorMenu";
 import Navbar from "./components/Navbar";
 import PrivateRoute from "./components/PrivateRoute";
 import AdminRoute from "./components/AdminRoute";
+import ConnectionBar from "./components/ConnectionBar";
+import ErrorBoundary from "./ErrorBoundary"; // Custom error boundary
 
 function App() {
   return (
@@ -35,6 +37,7 @@ function App() {
       <CssBaseline />
       <Container maxWidth="lg">
         <Navbar />
+        <ConnectionBar />
         <Routes>
           {/* Auth */}
           <Route path="/" element={<Navigate to="/login" replace />} />

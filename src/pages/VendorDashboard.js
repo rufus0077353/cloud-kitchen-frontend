@@ -1,11 +1,14 @@
 
-import React, { useState, useEffect } from "react";
+// src/pages/VendorDashboard.js
+import React, { useEffect, useState } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Stack
 } from "@mui/material";
 import { Delete, Edit } from "@mui/icons-material";
+import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
+import { socket } from "../utils/socket";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -13,6 +16,7 @@ const VendorDashboard = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ name: "", price: "", description: "" });
+  const [vendorId, setVendorId] = useState(null);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -36,6 +40,47 @@ const VendorDashboard = () => {
       setMenuItems([]);
     }
   };
+
+  // ---- socket: join vendor room + notify on new orders ----
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+  useEffect(() => {
+    const getMeAndJoin = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        if (!r.ok) return;
+        const me = await r.json();
+        if (me?.vendorId) {
+          setVendorId(me.vendorId);
+          socket.emit("vendor:join", me.vendorId);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    getMeAndJoin();
+
+    const onReconnect = () => {
+      if (vendorId) socket.emit("vendor:join", vendorId);
+    };
+
+    const onNewOrder = (order) => {
+      // Only toast if it’s for this vendor
+      if (Number(order?.VendorId) === Number(vendorId)) {
+        toast.info(`🆕 New order #${order?.id ?? ""} received`);
+      }
+    };
+
+    socket.on("connect", onReconnect);
+    socket.on("order:new", onNewOrder);
+
+    return () => {
+      socket.off("connect", onReconnect);
+      socket.off("order:new", onNewOrder);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, token]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -136,7 +181,17 @@ const VendorDashboard = () => {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Vendor Dashboard
           </Typography>
-          <Button color="inherit" onClick={handleLogout}>Logout</Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              color="inherit"
+              component={Link}
+              to="/vendor/orders"
+              sx={{ textTransform: "none" }}
+            >
+              View Orders
+            </Button>
+            <Button color="inherit" onClick={handleLogout}>Logout</Button>
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -194,7 +249,9 @@ const VendorDashboard = () => {
               {rows.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}</TableCell>
+                  <TableCell>
+                    {item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}
+                  </TableCell>
                   <TableCell>{item.description}</TableCell>
                   <TableCell>
                     <IconButton onClick={() => handleEdit(item)} color="primary">
