@@ -20,6 +20,7 @@ import {
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { toast } from "react-toastify";
 import api from "../utils/api";
+import { Switch } from "@mui/material";
 
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
@@ -58,7 +59,7 @@ const VendorMenu = () => {
   const handleSubmit = async () => {
     const body = {
       name: formData.name,
-      price: formData.price === "" ? null : parseFloat(formData.price),
+      price: formData.price === "" ? null : Number(formData.price),
       description: formData.description,
     };
 
@@ -133,6 +134,22 @@ const VendorMenu = () => {
               <TableCell>{item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}</TableCell>
               <TableCell>{item.description}</TableCell>
               <TableCell>
+                <Switch
+                  checked={item.isAvailable}
+                  onChange={async (e) => {
+                    try {
+                      await api.put(`/menu-items/${item.id}`, { isAvailable: e.target.checked });
+                      setMenuItems((prev) =>
+                        prev.map((m) => (m.id === item.id ? { ...m, isAvailable: e.target.checked } : m ))
+                      );
+                      toast.success("Availability updated");
+                    } catch (err) {
+                      toast.error("Failed to update availability");
+                    }
+                  }}
+                />
+              </TableCell>
+              <TableCell>
                 <IconButton onClick={() => handleOpen(item)} color="primary" aria-label="edit">
                   <Edit />
                 </IconButton>
@@ -144,7 +161,7 @@ const VendorMenu = () => {
           ))}
           {menuItems.length === 0 && (
             <TableRow>
-              <TableCell colSpan={4} align="center">No items yet</TableCell>
+              <TableCell colSpan={5} align="center">No items yet</TableCell>
             </TableRow>
           )}
         </TableBody>

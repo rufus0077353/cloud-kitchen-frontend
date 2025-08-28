@@ -184,6 +184,7 @@ export default function Navbar() {
       return [
         { to: "/admin/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
         { to: "/admin/users", label: "Users", icon: <PeopleIcon /> },
+        { to: "/admin/orders", label: "Orders", icon: <ListAltIcon />},
       ];
     }
     if (isVendor) {

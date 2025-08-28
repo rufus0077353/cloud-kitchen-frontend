@@ -23,6 +23,7 @@ import OrderHistory from "./pages/OrderHistory";
 import Invoice from "./pages/Invoice";
 import VendorOrders from "./pages/VendorOrders";
 import VendorMenu from "./pages/VendorMenu";
+import AdminOrders from "./pages/AdminOrders";
 
 // Components
 import Navbar from "./components/Navbar";
@@ -133,6 +134,16 @@ function App() {
               <PrivateRoute role="admin">
                 <AdminRoute>
                   <AdminMenuItems />
+                </AdminRoute>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/orders"
+            element={
+              <PrivateRoute role="admin">
+                <AdminRoute>
+                  <AdminOrders />
                 </AdminRoute>
               </PrivateRoute>
             }
