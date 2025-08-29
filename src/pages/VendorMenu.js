@@ -16,11 +16,11 @@ import {
   TableRow,
   TextField,
   Typography,
+  Switch,
 } from "@mui/material";
 import { Delete, Edit, Logout } from "@mui/icons-material";
 import { toast } from "react-toastify";
 import api from "../utils/api";
-import { Switch } from "@mui/material";
 
 const VendorMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
@@ -42,7 +42,11 @@ const VendorMenu = () => {
 
   const handleOpen = (item = null) => {
     setEditingItem(item);
-    setFormData(item ? { name: item.name ?? "", price: item.price ?? "", description: item.description ?? "" } : { name: "", price: "", description: "" });
+    setFormData(item ? {
+      name: item.name ?? "",
+      price: item.price ?? "",
+      description: item.description ?? ""
+    } : { name: "", price: "", description: "" });
     setOpen(true);
   };
 
@@ -57,9 +61,14 @@ const VendorMenu = () => {
   };
 
   const handleSubmit = async () => {
+    const priceNum = formData.price === "" ? null : Number(formData.price);
+    if (!formData.name || priceNum == null || Number.isNaN(priceNum)) {
+      toast.error("Name and valid price are required");
+      return;
+    }
     const body = {
       name: formData.name,
-      price: formData.price === "" ? null : Number(formData.price),
+      price: priceNum,
       description: formData.description,
     };
 
@@ -95,7 +104,6 @@ const VendorMenu = () => {
   };
 
   useEffect(() => {
-    // Optional: gate the page if not vendor
     if (user?.role !== "vendor") {
       toast.error("Vendors only");
       window.location.replace("/");
@@ -124,6 +132,7 @@ const VendorMenu = () => {
             <TableCell>Name</TableCell>
             <TableCell>Price</TableCell>
             <TableCell>Description</TableCell>
+            <TableCell>Available</TableCell>
             <TableCell>Actions</TableCell>
           </TableRow>
         </TableHead>
@@ -131,16 +140,16 @@ const VendorMenu = () => {
           {menuItems.map((item) => (
             <TableRow key={item.id}>
               <TableCell>{item.name}</TableCell>
-              <TableCell>{item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}</TableCell>
+              <TableCell>{item.price != null ? `₹${item.price}` : "-"}</TableCell>
               <TableCell>{item.description}</TableCell>
               <TableCell>
                 <Switch
-                  checked={item.isAvailable}
+                  checked={!!item.isAvailable}
                   onChange={async (e) => {
                     try {
                       await api.put(`/menu-items/${item.id}`, { isAvailable: e.target.checked });
                       setMenuItems((prev) =>
-                        prev.map((m) => (m.id === item.id ? { ...m, isAvailable: e.target.checked } : m ))
+                        prev.map((m) => (m.id === item.id ? { ...m, isAvailable: e.target.checked } : m))
                       );
                       toast.success("Availability updated");
                     } catch (err) {

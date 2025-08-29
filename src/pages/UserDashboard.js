@@ -1,5 +1,4 @@
 
-// src/pages/UserDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -19,7 +18,7 @@ import {
   Toolbar,
 } from "@mui/material";
 import { socket } from "../utils/socket";
-import { subscribePush } from "../utils/push"; // ok to keep even if you don't use push yet
+import { subscribePush } from "../utils/push";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -32,10 +31,7 @@ const UserDashboard = () => {
   const [totalAmount, setTotalAmount] = useState(0);
 
   const token = localStorage.getItem("token");
-  const user = useMemo(
-    () => JSON.parse(localStorage.getItem("user") || "{}"),
-    []
-  );
+  const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
 
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -43,11 +39,7 @@ const UserDashboard = () => {
   };
 
   const safeJson = async (res) => {
-    try {
-      return await res.json();
-    } catch {
-      return null;
-    }
+    try { return await res.json(); } catch { return null; }
   };
 
   // ---------- LOADERS ----------
@@ -94,18 +86,16 @@ const UserDashboard = () => {
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/menu-items?vendorId=${vId}`);
+      // Use vendor menu route so only available items show up
+      const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       if (!res.ok) {
         const data = await safeJson(res);
-        console.error("menu-items failed:", res.status, data);
+        console.error("vendor menu failed:", res.status, data);
         setMenuItems([]);
         return;
       }
       const data = await res.json();
-      const arr = Array.isArray(data)
-        ? data
-        : data?.items || data?.menu || data?.menuItems || [];
-      setMenuItems(Array.isArray(arr) ? arr : []);
+      setMenuItems(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("menu-items error:", e);
       setMenuItems([]);
@@ -115,7 +105,6 @@ const UserDashboard = () => {
   useEffect(() => {
     fetchOrders();
     fetchVendors();
-    // optional web‑push subscription (safe no-op if you haven't wired push yet)
     try { subscribePush?.(); } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -125,17 +114,13 @@ const UserDashboard = () => {
     if (!user?.id) return;
 
     const join = () => socket.emit("user:join", user.id);
-    join(); // initial join
+    join();
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
       setOrders((prev) => {
         const exists = (prev || []).some((o) => o.id === fullOrder.id);
-        if (exists) {
-          return (prev || []).map((o) =>
-            o.id === fullOrder.id ? { ...o, ...fullOrder } : o
-          );
-        }
+        if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
         return [fullOrder, ...(prev || [])];
       });
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
@@ -143,11 +128,7 @@ const UserDashboard = () => {
 
     const onStatus = (payload) => {
       if (Number(payload?.UserId) !== Number(user.id)) return;
-      setOrders((prev) =>
-        (prev || []).map((o) =>
-          o.id === payload.id ? { ...o, status: payload.status } : o
-        )
-      );
+      setOrders((prev) => (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)));
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
@@ -206,9 +187,7 @@ const UserDashboard = () => {
     }
 
     const payload = {
-      UserId: user.id,
       VendorId: parseInt(vendorId),
-      totalAmount,
       items: items
         .filter((it) => it.MenuItemId && Number(it.quantity) > 0)
         .map((it) => ({
@@ -240,7 +219,6 @@ const UserDashboard = () => {
         return;
       }
 
-      // Refresh to keep totals consistent
       await fetchOrders();
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
@@ -264,9 +242,7 @@ const UserDashboard = () => {
         return;
       }
       if (res.ok) {
-        setOrders((prev) =>
-          Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []
-        );
+        setOrders((prev) => (Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []));
       } else {
         const data = await safeJson(res);
         toast.error(data?.message || "Failed to delete");
@@ -316,9 +292,7 @@ const UserDashboard = () => {
               select
               label="Menu Item"
               value={item.MenuItemId}
-              onChange={(e) =>
-                handleItemChange(index, "MenuItemId", e.target.value)
-              }
+              onChange={(e) => handleItemChange(index, "MenuItemId", e.target.value)}
               style={{ flex: 1 }}
             >
               {(Array.isArray(menuItems) ? menuItems : []).map((m) => (
@@ -332,9 +306,7 @@ const UserDashboard = () => {
               type="number"
               label="Quantity"
               value={item.quantity}
-              onChange={(e) =>
-                handleItemChange(index, "quantity", e.target.value)
-              }
+              onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
               style={{ width: 110 }}
               inputProps={{ min: 0 }}
             />
@@ -380,9 +352,7 @@ const UserDashboard = () => {
                 <TableCell>{order.status}</TableCell>
                 <TableCell>₹{order.totalAmount}</TableCell>
                 <TableCell>
-                  {order.createdAt
-                    ? new Date(order.createdAt).toLocaleString()
-                    : "-"}
+                  {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
                 </TableCell>
                 <TableCell>
                   <Button

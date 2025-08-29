@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Button, Container, FormControl, InputLabel, MenuItem, Select,
@@ -8,17 +7,15 @@ import { toast } from "react-toastify";
 import api from "../utils/api";
 
 const CreateOrder = () => {
-  const [vendors, setVendors] = useState([]);          // [{id, name}]
+  const [vendors, setVendors] = useState([]);
   const [vendorId, setVendorId] = useState("");
-  const [menu, setMenu] = useState([]);                // vendor menu items
-  const [quantities, setQuantities] = useState({});    // { [menuItemId]: qty }
+  const [menu, setMenu] = useState([]);
+  const [quantities, setQuantities] = useState({});
 
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-
-  // ---- Load vendors (adjust endpoint if different) ----
+  // Load vendors
   const loadVendors = async () => {
     try {
-      const { data } = await api.get("/vendors"); // or /api/vendors on your server
+      const { data } = await api.get("/vendors");
       setVendors(Array.isArray(data) ? data : []);
     } catch (e) {
       toast.error("Failed to load vendors");
@@ -26,12 +23,10 @@ const CreateOrder = () => {
     }
   };
 
-  // ---- Load menu for selected vendor ----
+  // Load menu (only available items)
   const loadMenu = async (vId) => {
     if (!vId) return;
     try {
-      // If your route is different, update it here:
-      // You mentioned earlier a path like /api/vendors/:vendorId/menu
       const { data } = await api.get(`/vendors/${vId}/menu`);
       setMenu(Array.isArray(data) ? data : []);
       setQuantities({});
@@ -42,15 +37,9 @@ const CreateOrder = () => {
     }
   };
 
-  useEffect(() => {
-    loadVendors();
-  }, []);
+  useEffect(() => { loadVendors(); }, []);
+  useEffect(() => { if (vendorId) loadMenu(vendorId); }, [vendorId]);
 
-  useEffect(() => {
-    if (vendorId) loadMenu(vendorId);
-  }, [vendorId]);
-
-  // ---- Build items array + compute total ----
   const cartItems = useMemo(() => {
     return menu
       .filter(it => Number(quantities[it.id]) > 0)
@@ -74,10 +63,6 @@ const CreateOrder = () => {
   };
 
   const submitOrder = async () => {
-    if (!user?.id) {
-      toast.error("Please log in");
-      return;
-    }
     if (!vendorId) {
       toast.error("Select a vendor");
       return;
@@ -87,19 +72,15 @@ const CreateOrder = () => {
       return;
     }
 
-    // Backend expects: UserId, VendorId, totalAmount, items[{MenuItemId, quantity}]
+    // Backend needs only VendorId and items; it computes totals and takes UserId from JWT
     const payload = {
-      UserId: user.id,
       VendorId: Number(vendorId),
-      totalAmount: Number(totalAmount.toFixed(2)),
       items: cartItems.map(({ MenuItemId, quantity }) => ({ MenuItemId, quantity })),
     };
 
     try {
-      await api.post("/orders", payload); // maps to POST /api/orders
+      await api.post("/orders", payload);
       toast.success("Order placed!");
-      // Optionally redirect:
-      // navigate('/orders/success');
       setQuantities({});
     } catch (e) {
       const msg = e?.response?.data?.message || "Failed to place order";
