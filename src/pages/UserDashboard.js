@@ -1,21 +1,9 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
 import {
-  Container,
-  Typography,
-  Button,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  TextField,
-  MenuItem,
-  Box,
-  AppBar,
-  Toolbar,
+  Container, Typography, Button, Table, TableHead, TableRow,
+  TableCell, TableBody, TextField, MenuItem, Box, AppBar, Toolbar,
 } from "@mui/material";
 import { socket } from "../utils/socket";
 import { subscribePush } from "../utils/push";
@@ -86,7 +74,7 @@ const UserDashboard = () => {
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
-      // Use vendor menu route so only available items show up
+      // only available items
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       if (!res.ok) {
         const data = await safeJson(res);
@@ -109,7 +97,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- SOCKET: join user room + live updates ----------
+  // ---------- SOCKET ----------
   useEffect(() => {
     if (!user?.id) return;
 
@@ -166,7 +154,7 @@ const UserDashboard = () => {
     let total = 0;
     const list = Array.isArray(menuItems) ? menuItems : [];
     orderItems.forEach((item) => {
-      const menuItem = list.find((mi) => mi.id === parseInt(item.MenuItemId));
+      const menuItem = list.find((mi) => mi.id === Number(item.MenuItemId));
       if (menuItem) total += Number(menuItem.price) * Number(item.quantity || 0);
     });
     setTotalAmount(total);
@@ -186,13 +174,14 @@ const UserDashboard = () => {
       return;
     }
 
+    // Make sure we coerce to numbers cleanly
     const payload = {
-      VendorId: parseInt(vendorId),
+      VendorId: Number(vendorId),
       items: items
-        .filter((it) => it.MenuItemId && Number(it.quantity) > 0)
+        .filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0)
         .map((it) => ({
-          MenuItemId: parseInt(it.MenuItemId),
-          quantity: parseInt(it.quantity),
+          MenuItemId: Number(it.MenuItemId),
+          quantity: Number(it.quantity),
         })),
     };
 
@@ -201,12 +190,16 @@ const UserDashboard = () => {
       return;
     }
 
+    // helpful debug to see exactly what we send
+    console.log("[create order] payload:", payload);
+
     try {
       const res = await fetch(`${API_BASE}/api/orders`, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
       });
+      const data = await safeJson(res);
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -214,9 +207,13 @@ const UserDashboard = () => {
         return;
       }
       if (!res.ok) {
-        const data = await safeJson(res);
-        const extra = data?.invalidItems ?. length ? ` (bad ids: ${data.invalidItems.join(", ")})` : "";
-        toast.error(data?.message || "Failed to create order");
+        // show server’s exact explanation (we added details in the backend)
+        const msg =
+          data?.message ||
+          (typeof data === "string" ? data : "") ||
+          "Failed to create order";
+        toast.error(msg);
+        console.warn("[create order] server said:", data);
         return;
       }
 
