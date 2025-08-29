@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Button, Container, FormControl, InputLabel, MenuItem, Select,
@@ -12,7 +13,6 @@ const CreateOrder = () => {
   const [menu, setMenu] = useState([]);
   const [quantities, setQuantities] = useState({});
 
-  // Load vendors
   const loadVendors = async () => {
     try {
       const { data } = await api.get("/vendors");
@@ -23,7 +23,6 @@ const CreateOrder = () => {
     }
   };
 
-  // Load menu (only available items)
   const loadMenu = async (vId) => {
     if (!vId) return;
     try {
@@ -72,7 +71,6 @@ const CreateOrder = () => {
       return;
     }
 
-    // Backend needs only VendorId and items; it computes totals and takes UserId from JWT
     const payload = {
       VendorId: Number(vendorId),
       items: cartItems.map(({ MenuItemId, quantity }) => ({ MenuItemId, quantity })),
@@ -84,7 +82,6 @@ const CreateOrder = () => {
       setQuantities({});
     } catch (e) {
       const msg = e?.response?.data?.message || "Failed to place order";
-      const extra = e?.response?.data?.invalidItems ?. length ? ` (bad ids: ${e.response.data.invalidItems.join(", ")})` : "";
       toast.error(msg);
     }
   };
@@ -96,14 +93,8 @@ const CreateOrder = () => {
       <Paper sx={{ p: 2, mb: 3 }}>
         <FormControl fullWidth>
           <InputLabel>Vendor</InputLabel>
-          <Select
-            label="Vendor"
-            value={vendorId}
-            onChange={(e) => setVendorId(e.target.value)}
-          >
-            {vendors.map(v => (
-              <MenuItem key={v.id} value={v.id}>{v.name}</MenuItem>
-            ))}
+          <Select label="Vendor" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+            {vendors.map(v => (<MenuItem key={v.id} value={v.id}>{v.name}</MenuItem>))}
           </Select>
         </FormControl>
       </Paper>
@@ -130,9 +121,7 @@ const CreateOrder = () => {
                     <TableCell>₹{item.price}</TableCell>
                     <TableCell width={120}>
                       <TextField
-                        type="number"
-                        size="small"
-                        value={qty}
+                        type="number" size="small" value={qty}
                         onChange={(e) => handleQtyChange(item.id, e.target.value)}
                         inputProps={{ min: 0 }}
                       />
@@ -142,9 +131,7 @@ const CreateOrder = () => {
                 );
               })}
               {menu.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} align="center">No items available</TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={4} align="center">No items available</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

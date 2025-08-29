@@ -1,14 +1,15 @@
-import axios from 'axios';
-import { toast } from 'react-toastify';
+
+import axios from "axios";
+import { toast } from "react-toastify";
 
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL || '/api',
+  baseURL: process.env.REACT_APP_API_BASE_URL || "/api",
   withCredentials: false,
 });
 
 // Attach token on each request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -18,11 +19,11 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err?.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      toast.error('Session expired. Please log in again.');
-      if (window.location.pathname !== '/login') {
-        window.location.replace('/login');
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      toast.error("Session expired. Please log in again.");
+      if (window.location.pathname !== "/login") {
+        window.location.replace("/login");
       }
     }
     return Promise.reject(err);

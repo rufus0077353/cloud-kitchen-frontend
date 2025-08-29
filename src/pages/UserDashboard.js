@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -26,11 +27,9 @@ const UserDashboard = () => {
     "Content-Type": "application/json",
   };
 
-  const safeJson = async (res) => {
-    try { return await res.json(); } catch { return null; }
-  };
+  const safeJson = async (res) => { try { return await res.json(); } catch { return null; } };
 
-  // ---------- LOADERS ----------
+  // loaders
   const fetchOrders = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -74,7 +73,6 @@ const UserDashboard = () => {
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
-      // only available items
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       if (!res.ok) {
         const data = await safeJson(res);
@@ -97,7 +95,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- SOCKET ----------
+  // socket
   useEffect(() => {
     if (!user?.id) return;
 
@@ -134,7 +132,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // ---------- FORM HANDLERS ----------
+  // form handlers
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
@@ -160,9 +158,7 @@ const UserDashboard = () => {
     setTotalAmount(total);
   };
 
-  const addItem = () => {
-    setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
-  };
+  const addItem = () => setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
 
   const handleSubmit = async () => {
     if (!user?.id) {
@@ -174,15 +170,11 @@ const UserDashboard = () => {
       return;
     }
 
-    // Make sure we coerce to numbers cleanly
     const payload = {
       VendorId: Number(vendorId),
       items: items
         .filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0)
-        .map((it) => ({
-          MenuItemId: Number(it.MenuItemId),
-          quantity: Number(it.quantity),
-        })),
+        .map((it) => ({ MenuItemId: Number(it.MenuItemId), quantity: Number(it.quantity) })),
     };
 
     if (payload.items.length === 0) {
@@ -190,7 +182,6 @@ const UserDashboard = () => {
       return;
     }
 
-    // helpful debug to see exactly what we send
     console.log("[create order] payload:", payload);
 
     try {
@@ -200,6 +191,7 @@ const UserDashboard = () => {
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
+
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -207,12 +199,7 @@ const UserDashboard = () => {
         return;
       }
       if (!res.ok) {
-        // show server’s exact explanation (we added details in the backend)
-        const msg =
-          data?.message ||
-          (typeof data === "string" ? data : "") ||
-          "Failed to create order";
-        toast.error(msg);
+        toast.error(data?.message || "Failed to create order");
         console.warn("[create order] server said:", data);
         return;
       }
@@ -229,10 +216,7 @@ const UserDashboard = () => {
 
   const deleteOrder = async (orderId) => {
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, {
-        method: "DELETE",
-        headers,
-      });
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, { method: "DELETE", headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -265,17 +249,11 @@ const UserDashboard = () => {
       </AppBar>
 
       <Box mt={4}>
-        <Typography variant="h5" gutterBottom>
-          Place New Order
-        </Typography>
+        <Typography variant="h5" gutterBottom>Place New Order</Typography>
 
         <TextField
-          select
-          label="Select Vendor"
-          fullWidth
-          value={vendorId}
-          onChange={handleVendorChange}
-          margin="normal"
+          select label="Select Vendor" fullWidth value={vendorId}
+          onChange={handleVendorChange} margin="normal"
         >
           {(Array.isArray(vendors) ? vendors : []).map((v) => (
             <MenuItem key={v.id} value={v.id}>
@@ -287,9 +265,7 @@ const UserDashboard = () => {
         {items.map((item, index) => (
           <Box key={index} display="flex" gap={2} alignItems="center" mt={2}>
             <TextField
-              select
-              label="Menu Item"
-              value={item.MenuItemId}
+              select label="Menu Item" value={item.MenuItemId}
               onChange={(e) => handleItemChange(index, "MenuItemId", e.target.value)}
               style={{ flex: 1 }}
             >
@@ -301,20 +277,15 @@ const UserDashboard = () => {
             </TextField>
 
             <TextField
-              type="number"
-              label="Quantity"
-              value={item.quantity}
+              type="number" label="Quantity" value={item.quantity}
               onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
-              style={{ width: 110 }}
-              inputProps={{ min: 0 }}
+              style={{ width: 110 }} inputProps={{ min: 0 }}
             />
           </Box>
         ))}
 
         <Box mt={2}>
-          <Button variant="outlined" onClick={addItem}>
-            Add Another Item
-          </Button>
+          <Button variant="outlined" onClick={() => addItem()}>Add Another Item</Button>
         </Box>
 
         <Box mt={2}>
@@ -326,9 +297,7 @@ const UserDashboard = () => {
       </Box>
 
       <Box mt={5}>
-        <Typography variant="h5" gutterBottom>
-          Your Orders
-        </Typography>
+        <Typography variant="h5" gutterBottom>Your Orders</Typography>
 
         <Table>
           <TableHead>
@@ -353,22 +322,14 @@ const UserDashboard = () => {
                   {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
                 </TableCell>
                 <TableCell>
-                  <Button
-                    color="error"
-                    variant="outlined"
-                    onClick={() => deleteOrder(order.id)}
-                  >
+                  <Button color="error" variant="outlined" onClick={() => deleteOrder(order.id)}>
                     Delete
                   </Button>
                 </TableCell>
               </TableRow>
             ))}
             {ordersSafe.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  No orders yet
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={6} align="center">No orders yet</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
