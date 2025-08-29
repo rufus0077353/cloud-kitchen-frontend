@@ -215,6 +215,7 @@ const UserDashboard = () => {
       }
       if (!res.ok) {
         const data = await safeJson(res);
+        const extra = data?.invalidItems ?. length ? ` (bad ids: ${data.invalidItems.join(", ")})` : "";
         toast.error(data?.message || "Failed to create order");
         return;
       }

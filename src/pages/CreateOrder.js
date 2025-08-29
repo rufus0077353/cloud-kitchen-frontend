@@ -84,6 +84,7 @@ const CreateOrder = () => {
       setQuantities({});
     } catch (e) {
       const msg = e?.response?.data?.message || "Failed to place order";
+      const extra = e?.response?.data?.invalidItems ?. length ? ` (bad ids: ${e.response.data.invalidItems.join(", ")})` : "";
       toast.error(msg);
     }
   };
