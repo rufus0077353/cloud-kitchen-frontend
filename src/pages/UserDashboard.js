@@ -108,71 +108,85 @@ const UserDashboard = () => {
   }, []);
 
   // SOCKET
-  useEffect(() => {
-    if (!user?.id) return;
+useEffect(() => {
+  if (!user?.id) return;
 
-    const join = () => socket.emit("user:join", user.id);
-    join();
+  // always (re)join your user room when connected
+  const join = () => {
+    try { socket.emit("user:join", user.id); } catch {}
+  };
 
-    const onNew = (fullOrder) => {
-      if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => {
-        const exists = (prev || []).some((o) => o.id === fullOrder.id);
-        if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
-        return [fullOrder, ...(prev || [])];
-      });
-      toast.info(`New order #${fullOrder?.id ?? ""} placed`);
-    };
+  // initial join
+  join();
 
-    const onStatus = (payload) => {
-      if (Number(payload?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)));
-      toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
-    };
+  // ---- handlers ----
+  const onConnect = () => join();
 
-    const onVendorStatus = (payload) => {
-      if (!payload?.vendorId) return;
-      setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
-    };
+  const onConnectError = (err) => {
+    console.warn("socket connect_error:", err?.message || err);
+  };
 
-    // mock payment events
-    const onPayProcessing = (p) => {
-      if (!p?.id) return;
-      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
-      toast.info(`Payment processing for order #${p.id}`);
-    };
-    const onPaySuccess = (p) => {
-      if (!p?.id) return;
-      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
-      toast.success(`Payment succeeded for order #${p.id}`);
-    };
-    const onPayFailed = (p) => {
-      if (!p?.id) return;
-      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
-      toast.error(`Payment failed for order #${p.id}`);
-    };
+  const onNew = (fullOrder) => {
+    if (Number(fullOrder?.UserId) !== Number(user.id)) return;
+    setOrders((prev) => {
+      const exists = (prev || []).some((o) => o.id === fullOrder.id);
+      if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
+      return [fullOrder, ...(prev || [])];
+    });
+    toast.info(`New order #${fullOrder?.id ?? ""} placed`);
+  };
 
-    const onReconnect = () => join();
+  const onStatus = (payload) => {
+    if (Number(payload?.UserId) !== Number(user.id)) return;
+    setOrders((prev) => (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)));
+    toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
+  };
 
-    socket.on("order:new", onNew);
-    socket.on("order:status", onStatus);
-    socket.on("vendor:status", onVendorStatus);
-    socket.on("payment:processing", onPayProcessing);
-    socket.on("payment:success", onPaySuccess);
-    socket.on("payment:failed", onPayFailed);
-    socket.on("connect", onReconnect);
+  const onVendorStatus = (payload) => {
+    if (!payload?.vendorId) return;
+    setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
+  };
 
-    return () => {
-      socket.off("order:new", onNew);
-      socket.off("order:status", onStatus);
-      socket.off("vendor:status", onVendorStatus);
-      socket.off("payment:processing", onPayProcessing);
-      socket.off("payment:success", onPaySuccess);
-      socket.off("payment:failed", onPayFailed);
-      socket.off("connect", onReconnect);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  // mock payment events
+  const onPayProcessing = (p) => {
+    if (!p?.id) return;
+    setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
+    toast.info(`Payment processing for order #${p.id}`);
+  };
+  const onPaySuccess = (p) => {
+    if (!p?.id) return;
+    setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
+    toast.success(`Payment succeeded for order #${p.id}`);
+  };
+  const onPayFailed = (p) => {
+    if (!p?.id) return;
+    setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
+    toast.error(`Payment failed for order #${p.id}`);
+  };
+
+  // ---- wire up ----
+  socket.on("connect", onConnect);
+  socket.on("connect_error", onConnectError);
+  socket.on("order:new", onNew);
+  socket.on("order:status", onStatus);
+  socket.on("vendor:status", onVendorStatus);
+  socket.on("payment:processing", onPayProcessing);
+  socket.on("payment:success", onPaySuccess);
+  socket.on("payment:failed", onPayFailed);
+
+  // ---- cleanup ----
+  return () => {
+    socket.off("connect", onConnect);
+    socket.off("connect_error", onConnectError);
+    socket.off("order:new", onNew);
+    socket.off("order:status", onStatus);
+    socket.off("vendor:status", onVendorStatus);
+    socket.off("payment:processing", onPayProcessing);
+    socket.off("payment:success", onPaySuccess);
+    socket.off("payment:failed", onPayFailed);
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user?.id]);
 
   // FORM HANDLERS
   const handleVendorChange = (e) => {
