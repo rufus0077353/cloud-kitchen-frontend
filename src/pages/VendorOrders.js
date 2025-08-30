@@ -14,12 +14,15 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";   // ⬅️ useNavigate
 import { toast } from "react-toastify";
 import { io } from "socket.io-client";
 
 const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE;
+
+// Fallback dashboard route if history back isn't available
+const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
 
 const STATUS_COLORS = {
   pending:   "default",
@@ -30,6 +33,7 @@ const STATUS_COLORS = {
 };
 
 export default function VendorOrders() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
@@ -94,7 +98,6 @@ export default function VendorOrders() {
       const incoming = parseOrders(data);
       setOrders(incoming);
 
-      // detect new pending orders
       const currentPendingIds = new Set(
         (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
       );
@@ -139,7 +142,7 @@ export default function VendorOrders() {
         return;
       }
       toast.success("Status updated");
-      loadOrders({ silent: true }); // quick sync
+      loadOrders({ silent: true });
     } catch (e) {
       setOrders(prev); // rollback
       toast.error("Network error");
@@ -155,9 +158,7 @@ export default function VendorOrders() {
         const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
         if (!r.ok) return;
         const me = await r.json();
-        if (me?.vendorId) {
-          setVendorId(me.vendorId);
-        }
+        if (me?.vendorId) setVendorId(me.vendorId);
       } catch {}
     };
     getMe();
@@ -335,27 +336,28 @@ export default function VendorOrders() {
     });
   };
 
+  // ⬇️ Robust back handler: go back if possible, else go to a known dashboard route
+  const handleBack = () => {
+    const canGoBack = (window.history?.state && window.history.state.idx > 0) || window.history.length > 1;
+    if (canGoBack) navigate(-1);
+    else navigate(DASHBOARD_PATH);
+  };
+
   return (
     <>
-      {/* NEW: top bar with Back to Vendor Dashboard */}
+      {/* Top bar with robust Back */}
       <AppBar position="static" color="default" elevation={0}>
         <Toolbar sx={{ gap: 1 }}>
-          <IconButton
-            component={Link}
-            to="/vendor"           // <-- change this if your VendorDashboard route is different
-            edge="start"
-            aria-label="Back to vendor dashboard"
-          >
+          <IconButton edge="start" aria-label="Back to vendor dashboard" onClick={handleBack}>
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Vendor Orders
           </Typography>
 
-          {/* Quick link on the right too (optional) */}
+          {/* Optional direct button to dashboard using the same fallback path */}
           <Button
-            component={Link}
-            to="/vendor"          // <-- same route as above
+            onClick={() => navigate(DASHBOARD_PATH)}
             variant="outlined"
             size="small"
             sx={{ textTransform: "none" }}
@@ -397,7 +399,6 @@ export default function VendorOrders() {
               </Select>
             </FormControl>
 
-            {/* Label means: enable a polling fallback (in addition to sockets) */}
             <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
             <FormControl size="small" sx={{ minWidth: 130 }}>
               <InputLabel id="poll-ms">Every</InputLabel>
