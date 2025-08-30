@@ -14,10 +14,9 @@ import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { toast } from "react-toastify";
-import { io } from "socket.io-client";
+import { socket } from "../utils/socket"; // ✅ use the shared socket
 
-const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE;
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
 const STATUS_COLORS = {
   pending:   "default",
@@ -37,16 +36,15 @@ export default function VendorOrders() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expanded, setExpanded] = useState(new Set());
-  const [realtime, setRealtime] = useState(true);
+  const [pollingOn, setPollingOn] = useState(false); // label says "Polling fallback"
   const [pollMs, setPollMs] = useState(30000);
   const [soundOn, setSoundOn] = useState(true);
   const [vendorId, setVendorId] = useState(null);
 
   const prevPendingIdsRef = useRef(new Set());
-  const socketRef = useRef(null);
+  const audioRef = useRef(null);
 
   // tiny beep
-  const audioRef = useRef(null);
   const beepSrc = useMemo(
     () =>
       "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAChAAAAAAAaAAAAPwAAAB8AAACAgICAAAAAA" +
@@ -146,16 +144,14 @@ export default function VendorOrders() {
     }
   };
 
-  // 1) Get vendorId then join the socket room
+  // 1) Get vendorId (so we can join room)
   useEffect(() => {
     const getMe = async () => {
       try {
         const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
         if (!r.ok) return;
         const me = await r.json();
-        if (me?.vendorId) {
-          setVendorId(me.vendorId);
-        }
+        if (me?.vendorId) setVendorId(me.vendorId);
       } catch {}
     };
     getMe();
@@ -168,23 +164,18 @@ export default function VendorOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 3) Socket connect + listeners
+  // 3) Socket listeners (shared socket instance)
   useEffect(() => {
-    if (!token) return;
+    if (!socket) return;
 
-    const s = io(SOCKET_URL, {
-      transports: ["websocket"],
-      auth: { token },
-      withCredentials: true,
-      reconnectionAttempts: 5,
-    });
-    socketRef.current = s;
-
-    s.on("connect_error", (err) => {
-      console.warn("socket connect_error:", err?.message || err);
-    });
+    const onConnect = () => {
+      // Attempt re-join on reconnect when we know the vendorId
+      if (vendorId) socket.emit("vendor:join", vendorId);
+    };
 
     const onNew = (fullOrder) => {
+      // extra guard: only accept events for my vendor
+      if (vendorId && Number(fullOrder?.VendorId) !== Number(vendorId)) return;
       setOrders((prev) => [fullOrder, ...prev]);
       playBeep();
       toast.info(`New order #${fullOrder?.id || ""}`);
@@ -196,35 +187,36 @@ export default function VendorOrders() {
       );
     };
 
-    s.on("order:new", onNew);
-    s.on("order:status", onStatus);
-    s.on("orders:refresh", () => loadOrders({ silent: true }));
+    const onRefresh = () => loadOrders({ silent: true });
+
+    socket.on("connect", onConnect);
+    socket.on("order:new", onNew);
+    socket.on("order:status", onStatus);
+    socket.on("orders:refresh", onRefresh);
 
     return () => {
-      try {
-        s.off("order:new", onNew);
-        s.off("order:status", onStatus);
-        s.off("orders:refresh");
-        s.disconnect();
-      } catch {}
+      socket.off("connect", onConnect);
+      socket.off("order:new", onNew);
+      socket.off("order:status", onStatus);
+      socket.off("orders:refresh", onRefresh);
     };
-  }, [token]);
+  }, [vendorId]); // rebind when vendorId known
 
-  // 4) Once we know the vendorId, join its room
+  // 4) Join vendor room once we know the id
   useEffect(() => {
-    if (!vendorId || !socketRef.current) return;
+    if (!vendorId) return;
     try {
-      socketRef.current.emit("vendor:join", vendorId);
+      socket.emit("vendor:join", vendorId);
     } catch {}
   }, [vendorId]);
 
-  // 5) Optional polling fallback (when realtime is toggled ON here it means "enable polling")
+  // 5) Optional polling fallback (in addition to sockets)
   useEffect(() => {
-    if (!realtime) return; // sockets doing the job; toggle label is "Polling fallback"
+    if (!pollingOn) return;
     const id = setInterval(() => loadOrders({ silent: true }), pollMs);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [realtime, pollMs]);
+  }, [pollingOn, pollMs]);
 
   // ----- helpers -----
   const getLineItems = (order) => {
@@ -367,10 +359,13 @@ export default function VendorOrders() {
           </FormControl>
 
           {/* Label means: enable a polling fallback (in addition to sockets) */}
-          <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
+          <FormControlLabel
+            control={<Switch checked={pollingOn} onChange={(e) => setPollingOn(e.target.checked)} />}
+            label="Polling fallback"
+          />
           <FormControl size="small" sx={{ minWidth: 130 }}>
             <InputLabel id="poll-ms">Every</InputLabel>
-            <Select labelId="poll-ms" label="Every" value={pollMs} onChange={(e) => setPollMs(Number(e.target.value))} disabled={!realtime}>
+            <Select labelId="poll-ms" label="Every" value={pollMs} onChange={(e) => setPollMs(Number(e.target.value))} disabled={!pollingOn}>
               <MenuItem value={10000}>10s</MenuItem>
               <MenuItem value={30000}>30s</MenuItem>
               <MenuItem value={60000}>60s</MenuItem>

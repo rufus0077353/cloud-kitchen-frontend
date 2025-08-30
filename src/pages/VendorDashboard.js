@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Stack
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  IconButton, Stack, Chip, Box, CircularProgress
 } from "@mui/material";
 import { Delete, Edit } from "@mui/icons-material";
 import { Link } from "react-router-dom";
@@ -12,20 +13,30 @@ import { socket } from "../utils/socket";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
+const STATUS_COLORS = {
+  pending:   "default",
+  accepted:  "primary",
+  rejected:  "error",
+  ready:     "warning",
+  delivered: "success",
+};
+
 const VendorDashboard = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ name: "", price: "", description: "" });
   const [vendorId, setVendorId] = useState(null);
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [updatingId, setUpdatingId] = useState(null);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
+  // ---- MENU ----
   const fetchMenu = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/menu-items/mine`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API_BASE}/api/menu-items/mine`, { headers });
       if (!res.ok) {
         const msg = (await res.json().catch(() => ({}))).message || `Failed (${res.status})`;
         toast.error(`Failed to load menu: ${msg}`);
@@ -41,9 +52,44 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---- socket: join vendor room + notify on new orders ----
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  // ---- RECENT ORDERS ----
+  const fetchRecentOrders = async () => {
+    if (!vendorId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/vendor/${vendorId}`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      const orders = Array.isArray(data) ? data : [];
+      setRecentOrders(orders.slice(0, 5)); // only last 5
+    } catch (e) {
+      console.error("Recent orders fetch failed:", e);
+    }
+  };
 
+  const updateStatus = async (id, status) => {
+    setUpdatingId(id);
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/${id}/status`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => ({}))).message || "Failed to update";
+        toast.error(msg);
+        return;
+      }
+      toast.success("Status updated");
+      fetchRecentOrders();
+    } catch (e) {
+      console.error("Status update error:", e);
+      toast.error("Network error");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // ---- SOCKET ----
   useEffect(() => {
     const getMeAndJoin = async () => {
       try {
@@ -54,11 +100,8 @@ const VendorDashboard = () => {
           setVendorId(me.vendorId);
           socket.emit("vendor:join", me.vendorId);
         }
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
     };
-
     getMeAndJoin();
 
     const onReconnect = () => {
@@ -66,22 +109,30 @@ const VendorDashboard = () => {
     };
 
     const onNewOrder = (order) => {
-      // Only toast if it’s for this vendor
-      if (Number(order?.VendorId) === Number(vendorId)) {
+      if (vendorId && Number(order?.VendorId) === Number(vendorId)) {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
+        setRecentOrders((prev) => [order, ...prev].slice(0, 5));
       }
+    };
+
+    const onStatus = (payload) => {
+      setRecentOrders((prev) =>
+        prev.map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o))
+      );
     };
 
     socket.on("connect", onReconnect);
     socket.on("order:new", onNewOrder);
+    socket.on("order:status", onStatus);
 
     return () => {
       socket.off("connect", onReconnect);
       socket.off("order:new", onNewOrder);
+      socket.off("order:status", onStatus);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId, token]);
+  }, [vendorId]);
 
+  // ---- AUTH + LOGOUT ----
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -89,13 +140,11 @@ const VendorDashboard = () => {
     window.location.href = "/login";
   };
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  // ---- FORM ----
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (!user || user.role !== "vendor") {
       toast.error("Vendors only");
       return;
@@ -110,25 +159,15 @@ const VendorDashboard = () => {
       name: form.name,
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
-      // Do NOT send VendorId; backend derives from token
     };
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-
+      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         toast.error(data.message || "Failed to save item");
         return;
       }
-
       toast.success(editingItem ? "Item updated" : "Item added");
       setForm({ name: "", price: "", description: "" });
       setEditingItem(null);
@@ -150,10 +189,7 @@ const VendorDashboard = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/api/menu-items/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API_BASE}/api/menu-items/${id}`, { method: "DELETE", headers });
       if (res.ok) {
         toast.success("Item deleted!");
         fetchMenu();
@@ -167,10 +203,11 @@ const VendorDashboard = () => {
     }
   };
 
+  // ---- INIT ----
   useEffect(() => {
     fetchMenu();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => { fetchRecentOrders(); }, [vendorId]);
 
   const rows = Array.isArray(menuItems) ? menuItems : [];
 
@@ -196,46 +233,24 @@ const VendorDashboard = () => {
       </AppBar>
 
       <Container sx={{ mt: 4 }}>
+        {/* MENU FORM */}
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6">
             {editingItem ? "Edit Menu Item" : "Add New Menu Item"}
           </Typography>
           <form onSubmit={handleSubmit}>
-            <TextField
-              label="Name"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Price"
-              name="price"
-              type="number"
-              value={form.price}
-              onChange={handleChange}
-              required
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Description"
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              fullWidth
-              sx={{ mb: 2 }}
-            />
+            <TextField label="Name" name="name" value={form.name} onChange={handleChange} required fullWidth sx={{ mb: 2 }} />
+            <TextField label="Price" name="price" type="number" value={form.price} onChange={handleChange} required fullWidth sx={{ mb: 2 }} />
+            <TextField label="Description" name="description" value={form.description} onChange={handleChange} fullWidth sx={{ mb: 2 }} />
             <Button type="submit" variant="contained" color="primary">
               {editingItem ? "Update" : "Add"}
             </Button>
           </form>
         </Paper>
 
+        {/* MENU TABLE */}
         <Typography variant="h6" sx={{ mb: 2 }}>Your Menu</Typography>
-        <TableContainer component={Paper}>
+        <TableContainer component={Paper} sx={{ mb: 4 }}>
           <Table>
             <TableHead>
               <TableRow>
@@ -249,24 +264,62 @@ const VendorDashboard = () => {
               {rows.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.name}</TableCell>
-                  <TableCell>
-                    {item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}
-                  </TableCell>
+                  <TableCell>{item.price != null ? `₹${item.price}` : "-"}</TableCell>
                   <TableCell>{item.description}</TableCell>
                   <TableCell>
-                    <IconButton onClick={() => handleEdit(item)} color="primary">
-                      <Edit />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(item.id)} color="error">
-                      <Delete />
-                    </IconButton>
+                    <IconButton onClick={() => handleEdit(item)} color="primary"><Edit /></IconButton>
+                    <IconButton onClick={() => handleDelete(item.id)} color="error"><Delete /></IconButton>
                   </TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} align="center">No items yet</TableCell>
+                <TableRow><TableCell colSpan={4} align="center">No items yet</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* RECENT ORDERS */}
+        <Typography variant="h6" sx={{ mb: 2 }}>Recent Orders</Typography>
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Order #</TableCell>
+                <TableCell>User</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Total</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {recentOrders.map((o) => (
+                <TableRow key={o.id}>
+                  <TableCell>{o.id}</TableCell>
+                  <TableCell>{o.User?.name || "-"}</TableCell>
+                  <TableCell>
+                    <Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} size="small" />
+                  </TableCell>
+                  <TableCell>₹{o.totalAmount}</TableCell>
+                  <TableCell>
+                    {updatingId === o.id && <CircularProgress size={18} sx={{ mr: 1 }} />}
+                    {o.status === "pending" && (
+                      <>
+                        <Button size="small" onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
+                        <Button size="small" color="error" onClick={() => updateStatus(o.id, "rejected")}>Reject</Button>
+                      </>
+                    )}
+                    {o.status === "accepted" && (
+                      <Button size="small" onClick={() => updateStatus(o.id, "ready")}>Mark Ready</Button>
+                    )}
+                    {o.status === "ready" && (
+                      <Button size="small" onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
+                    )}
+                  </TableCell>
                 </TableRow>
+              ))}
+              {recentOrders.length === 0 && (
+                <TableRow><TableCell colSpan={5} align="center">No orders yet</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
