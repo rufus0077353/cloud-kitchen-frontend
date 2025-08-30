@@ -175,11 +175,11 @@ export default function VendorOrders() {
     }
   };
 
-  // 👇 NEW: open invoice with Authorization header
+  // 👇 View/print invoice with Authorization header (works with authenticateToken)
   const openInvoice = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/${id}/invoice`, {
-        headers: { Authorization: `Bearer ${token}` }, // send token!
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -196,7 +196,6 @@ export default function VendorOrders() {
       const blob = new Blob([html], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
-      // tidy up later
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       toast.error("Network error while opening invoice");
@@ -540,6 +539,11 @@ export default function VendorOrders() {
                         <TableCell>{paymentChip(o)}</TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                            {/* View/Print Receipt */}
+                            <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
+                              Receipt
+                            </Button>
+
                             {o.status === "pending" && (
                               <>
                                 <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
@@ -556,11 +560,6 @@ export default function VendorOrders() {
                             {o.paymentMethod === "cod" && o.paymentStatus === "unpaid" && (
                               <Button size="small" variant="outlined" onClick={() => markPaid(o.id)}>Mark Paid</Button>
                             )}
-
-                            {/* OPEN INVOICE with auth header */}
-                            <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
-                              Receipt
-                            </Button>
                           </Box>
                         </TableCell>
                       </TableRow>

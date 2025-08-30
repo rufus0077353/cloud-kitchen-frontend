@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -15,7 +14,7 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 const UserDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [vendors, setVendors] = useState([]);
-  const [vendorStatus, setVendorStatus] = useState({}); // id -> isOpen
+  const [vendorStatus, setVendorStatus] = useState({});
   const [menuItems, setMenuItems] = useState([]);
   const [vendorId, setVendorId] = useState("");
   const [items, setItems] = useState([{ MenuItemId: "", quantity: 1 }]);
@@ -34,7 +33,7 @@ const UserDashboard = () => {
     try { return await res.json(); } catch { return null; }
   };
 
-  // ---------- LOADERS ----------
+  // LOADERS
   const fetchOrders = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -71,9 +70,8 @@ const UserDashboard = () => {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setVendors(list);
-      // build quick lookup map: id -> isOpen (default true if missing)
       const vs = {};
-      for (const v of list) vs[Number(v.id)] = v.isOpen !== false; // treat undefined as true
+      for (const v of list) vs[Number(v.id)] = v.isOpen !== false;
       setVendorStatus(vs);
     } catch (e) {
       console.error("vendors error:", e);
@@ -85,7 +83,6 @@ const UserDashboard = () => {
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
-      // only available items
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       if (!res.ok) {
         const data = await safeJson(res);
@@ -96,8 +93,6 @@ const UserDashboard = () => {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setMenuItems(list);
-
-      // Recalculate total in case prices differ after vendor switch
       calculateTotal(items, list);
     } catch (e) {
       console.error("menu-items error:", e);
@@ -112,7 +107,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- SOCKET ----------
+  // SOCKET
   useEffect(() => {
     if (!user?.id) return;
 
@@ -136,12 +131,11 @@ const UserDashboard = () => {
     };
 
     const onVendorStatus = (payload) => {
-      // payload: { vendorId, isOpen }
       if (!payload?.vendorId) return;
       setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
     };
 
-    // --- mock payment events ---
+    // mock payment events
     const onPayProcessing = (p) => {
       if (!p?.id) return;
       setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
@@ -180,7 +174,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // ---------- FORM HANDLERS ----------
+  // FORM HANDLERS
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
@@ -210,7 +204,6 @@ const UserDashboard = () => {
     setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
   };
 
-  // ---- Open/Closed helpers
   const isSelectedVendorOpen = vendorId ? Boolean(vendorStatus[Number(vendorId)]) : true;
 
   const handleSubmit = async () => {
@@ -229,7 +222,7 @@ const UserDashboard = () => {
 
     const payload = {
       VendorId: Number(vendorId),
-      paymentMethod, // ⬅️ include payment method
+      paymentMethod,
       items: items
         .filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0)
         .map((it) => ({
@@ -257,12 +250,8 @@ const UserDashboard = () => {
         return;
       }
       if (!res.ok) {
-        const msg =
-          data?.message ||
-          (typeof data === "string" ? data : "") ||
-          "Failed to create order";
+        const msg = data?.message || (typeof data === "string" ? data : "") || "Failed to create order";
         toast.error(msg);
-        console.warn("[create order] server said:", data);
         return;
       }
 
@@ -300,7 +289,34 @@ const UserDashboard = () => {
     }
   };
 
-  // ---------- MOCK PAYMENT HELPERS ----------
+  // 🔎 Open invoice with Authorization header
+  const openInvoice = async (orderId) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
+      if (!res.ok) {
+        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+        toast.error(msg);
+        return;
+      }
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      toast.error("Network error while opening invoice");
+    }
+  };
+
+  // mock payment helpers (unchanged)
   const postJson = async (path, body) => {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "POST",
@@ -310,43 +326,28 @@ const UserDashboard = () => {
     const data = await safeJson(res);
     return { ok: res.ok, status: res.status, data };
   };
-
   const startMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/orders/mock-payment/start", { orderId });
-    if (!ok) {
-      toast.error(data?.message || "Failed to start mock payment");
-      return;
-    }
+    if (!ok) { toast.error(data?.message || "Failed to start mock payment"); return; }
     toast.info("Payment started");
     fetchOrders();
   };
-
   const succeedMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/orders/mock-payment/succeed", { orderId });
-    if (!ok) {
-      toast.error(data?.message || "Failed to mark success");
-      return;
-    }
+    if (!ok) { toast.error(data?.message || "Failed to mark success"); return; }
     toast.success("Payment marked as success");
     fetchOrders();
   };
-
   const failMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/orders/mock-payment/fail", { orderId });
-    if (!ok) {
-      toast.error(data?.message || "Failed to mark failure");
-      return;
-    }
+    if (!ok) { toast.error(data?.message || "Failed to mark failure"); return; }
     toast.error("Payment marked as failed");
     fetchOrders();
   };
 
   const ordersSafe = Array.isArray(orders) ? orders : [];
-
-  // convenience for button disable + tooltip
   const hasValidItems = items.some((it) => it.MenuItemId && Number(it.quantity) > 0);
   const disableSubmit = !vendorId || !isSelectedVendorOpen || !hasValidItems;
-
   const selectedVendor = vendors.find(v => Number(v.id) === Number(vendorId));
 
   return (
@@ -395,7 +396,7 @@ const UserDashboard = () => {
           margin="normal"
         >
           {(Array.isArray(vendors) ? vendors : []).map((v) => {
-            const open = v.isOpen !== false; // default true
+            const open = v.isOpen !== false;
             return (
               <MenuItem key={v.id} value={v.id}>
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -505,11 +506,7 @@ const UserDashboard = () => {
                   <TableCell>{order.status}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip
-                        size="small"
-                        label={payMethod}
-                        variant="outlined"
-                      />
+                      <Chip size="small" label={payMethod} variant="outlined" />
                       <Chip
                         size="small"
                         label={payStatus}
@@ -528,10 +525,20 @@ const UserDashboard = () => {
                   </TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1}>
-                      {/* Delete always available */}
+                      {/* View/Print Receipt */}
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => openInvoice(order.id)}
+                      >
+                        Receipt
+                      </Button>
+
+                      {/* Delete */}
                       <Button
                         color="error"
                         variant="outlined"
+                        size="small"
                         onClick={() => deleteOrder(order.id)}
                       >
                         Delete
