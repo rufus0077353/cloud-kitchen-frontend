@@ -1,9 +1,11 @@
+
 // src/pages/VendorDashboard.js
 import React, { useEffect, useState } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  IconButton, Stack, Chip, Grid, Box, Divider, Tooltip
+  IconButton, Stack, Chip, Grid, Box, Divider, Tooltip,
+  FormControlLabel, Switch, // 👈 added
 } from "@mui/material";
 import { Delete, Edit, Refresh } from "@mui/icons-material";
 import { Link } from "react-router-dom";
@@ -50,10 +52,10 @@ const VendorDashboard = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ name: "", price: "", description: "" });
 
-  // ----- summary state -----
+  // ----- summary / vendor state -----
   const [summary, setSummary] = useState(null);
   const [vendorId, setVendorId] = useState(null);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(true); // 👈 vendor open/closed
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -62,7 +64,9 @@ const VendorDashboard = () => {
   // ---------- MENU LOAD ----------
   const fetchMenu = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/menu-items/mine`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/api/menu-items/mine`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) {
         const msg = (await res.json().catch(() => ({}))).message || `Failed (${res.status})`;
         toast.error(`Failed to load menu: ${msg}`);
@@ -96,7 +100,7 @@ const VendorDashboard = () => {
       }
       const data = await res.json();
       setSummary(data);
-    } catch (e) {
+    } catch {
       toast.error("Network error while loading summary");
       setSummary(null);
     }
@@ -111,10 +115,10 @@ const VendorDashboard = () => {
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
-          setIsOpen(Boolean(me.isOpen));
+          setIsOpen(Boolean(me.isOpen)); // 👈 read initial open state from backend
           socket.emit("vendor:join", me.vendorId);
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
     };
@@ -190,7 +194,7 @@ const VendorDashboard = () => {
       setForm({ name: "", price: "", description: "" });
       setEditingItem(null);
       fetchMenu();
-      fetchSummary(); // revenue may change with orders, but safe to refresh
+      fetchSummary();
     } catch (err) {
       console.error("Menu item save error:", err);
       toast.error("Server error occurred");
@@ -226,6 +230,30 @@ const VendorDashboard = () => {
     }
   };
 
+  // ---- NEW: Toggle vendor open/closed ----
+  const toggleOpen = async (checked) => {
+    const prev = isOpen;
+    setIsOpen(checked);
+    try {
+      if (!vendorId) return;
+      const res = await fetch(`${API_BASE}/api/vendors/${vendorId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ isOpen: checked }),
+      });
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => ({}))).message || "Failed to update status";
+        setIsOpen(prev); // rollback
+        toast.error(msg);
+        return;
+      }
+      toast.success(`Vendor is now ${checked ? "Open" : "Closed"}`);
+    } catch {
+      setIsOpen(prev); // rollback
+      toast.error("Network error while updating status");
+    }
+  };
+
   useEffect(() => {
     fetchMenu();
     fetchSummary();
@@ -239,10 +267,33 @@ const VendorDashboard = () => {
     <>
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          <Typography
+            variant="h6"
+            sx={{ flexGrow: 1, display: "flex", alignItems: "center", gap: 1 }}
+          >
             Vendor Dashboard
+            <Chip
+              size="small"
+              label={isOpen ? "Open" : "Closed"}
+              color={isOpen ? "success" : "default"}
+              variant="outlined"
+            />
           </Typography>
-          <Stack direction="row" spacing={1}>
+
+          <Stack direction="row" spacing={1} alignItems="center">
+            {/* 👇 NEW: Open/Closed switch */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isOpen}
+                  onChange={(e) => toggleOpen(e.target.checked)}
+                  disabled={!vendorId}
+                />
+              }
+              label={isOpen ? "Open" : "Closed"}
+              sx={{ mr: 1 }}
+            />
+
             <Button
               color="inherit"
               component={Link}
@@ -261,8 +312,13 @@ const VendorDashboard = () => {
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box sx={{ mb: 3 }}>
             <VendorSalesTrend />
-          </Box>  
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+          </Box>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ mb: 2 }}
+          >
             <Typography variant="h6">Summary</Typography>
             <Tooltip title="Refresh summary">
               <IconButton onClick={fetchSummary}><Refresh /></IconButton>
@@ -273,13 +329,25 @@ const VendorDashboard = () => {
             <Grid item xs={12} md={8}>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard title="Today" value={summary?.today?.revenue} sub={`${summary?.today?.orders || 0} orders`} />
+                  <SummaryCard
+                    title="Today"
+                    value={summary?.today?.revenue}
+                    sub={`${summary?.today?.orders || 0} orders`}
+                  />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard title="This Week" value={summary?.week?.revenue} sub={`${summary?.week?.orders || 0} orders`} />
+                  <SummaryCard
+                    title="This Week"
+                    value={summary?.week?.revenue}
+                    sub={`${summary?.week?.orders || 0} orders`}
+                  />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard title="This Month" value={summary?.month?.revenue} sub={`${summary?.month?.orders || 0} orders`} />
+                  <SummaryCard
+                    title="This Month"
+                    value={summary?.month?.revenue}
+                    sub={`${summary?.month?.orders || 0} orders`}
+                  />
                 </Grid>
               </Grid>
             </Grid>
