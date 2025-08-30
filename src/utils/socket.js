@@ -1,4 +1,4 @@
-
+// src/utils/socket.js
 import { io } from "socket.io-client";
 
 function normalizeBase(u) {
@@ -17,13 +17,15 @@ if (!BASE) {
   console.warn("[socket] No REACT_APP_SOCKET_URL / REACT_APP_API_BASE_URL set");
 }
 
+// capture token once; you can refresh later via refreshSocketAuth()
 const initialToken = (() => {
   try { return localStorage.getItem("token") || null; } catch { return null; }
 })();
 
 export const socket = io(BASE, {
   path: "/socket.io",
-  transports: ["websocket", "polling"],
+  // IMPORTANT: start with polling, then upgrade to websocket
+  transports: ["polling", "websocket"],
   withCredentials: true,
   reconnection: true,
   reconnectionAttempts: 10,
