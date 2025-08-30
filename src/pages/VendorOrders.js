@@ -2,21 +2,24 @@
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Container, Typography, Table, TableHead, TableRow,
+  AppBar, Toolbar, Container, Typography, Table, TableHead, TableRow,
   TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField,
   Collapse, Divider, Switch, FormControlLabel, Tooltip
 } from "@mui/material";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
-import { socket } from "../utils/socket"; // ✅ use the shared socket
+import { io } from "socket.io-client";
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE;
 
 const STATUS_COLORS = {
   pending:   "default",
@@ -36,15 +39,16 @@ export default function VendorOrders() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expanded, setExpanded] = useState(new Set());
-  const [pollingOn, setPollingOn] = useState(false); // label says "Polling fallback"
+  const [realtime, setRealtime] = useState(true);
   const [pollMs, setPollMs] = useState(30000);
   const [soundOn, setSoundOn] = useState(true);
   const [vendorId, setVendorId] = useState(null);
 
   const prevPendingIdsRef = useRef(new Set());
-  const audioRef = useRef(null);
+  const socketRef = useRef(null);
 
   // tiny beep
+  const audioRef = useRef(null);
   const beepSrc = useMemo(
     () =>
       "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAChAAAAAAAaAAAAPwAAAB8AAACAgICAAAAAA" +
@@ -90,7 +94,7 @@ export default function VendorOrders() {
       const incoming = parseOrders(data);
       setOrders(incoming);
 
-      // detect new pending orders (beep once we have a baseline)
+      // detect new pending orders
       const currentPendingIds = new Set(
         (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
       );
@@ -144,14 +148,16 @@ export default function VendorOrders() {
     }
   };
 
-  // 1) Get vendorId (so we can join room)
+  // 1) Get vendorId then join the socket room
   useEffect(() => {
     const getMe = async () => {
       try {
         const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
         if (!r.ok) return;
         const me = await r.json();
-        if (me?.vendorId) setVendorId(me.vendorId);
+        if (me?.vendorId) {
+          setVendorId(me.vendorId);
+        }
       } catch {}
     };
     getMe();
@@ -164,18 +170,23 @@ export default function VendorOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 3) Socket listeners (shared socket instance)
+  // 3) Socket connect + listeners
   useEffect(() => {
-    if (!socket) return;
+    if (!token) return;
 
-    const onConnect = () => {
-      // Attempt re-join on reconnect when we know the vendorId
-      if (vendorId) socket.emit("vendor:join", vendorId);
-    };
+    const s = io(SOCKET_URL, {
+      transports: ["websocket"],
+      auth: { token },
+      withCredentials: true,
+      reconnectionAttempts: 5,
+    });
+    socketRef.current = s;
+
+    s.on("connect_error", (err) => {
+      console.warn("socket connect_error:", err?.message || err);
+    });
 
     const onNew = (fullOrder) => {
-      // extra guard: only accept events for my vendor
-      if (vendorId && Number(fullOrder?.VendorId) !== Number(vendorId)) return;
       setOrders((prev) => [fullOrder, ...prev]);
       playBeep();
       toast.info(`New order #${fullOrder?.id || ""}`);
@@ -187,36 +198,35 @@ export default function VendorOrders() {
       );
     };
 
-    const onRefresh = () => loadOrders({ silent: true });
-
-    socket.on("connect", onConnect);
-    socket.on("order:new", onNew);
-    socket.on("order:status", onStatus);
-    socket.on("orders:refresh", onRefresh);
+    s.on("order:new", onNew);
+    s.on("order:status", onStatus);
+    s.on("orders:refresh", () => loadOrders({ silent: true }));
 
     return () => {
-      socket.off("connect", onConnect);
-      socket.off("order:new", onNew);
-      socket.off("order:status", onStatus);
-      socket.off("orders:refresh", onRefresh);
+      try {
+        s.off("order:new", onNew);
+        s.off("order:status", onStatus);
+        s.off("orders:refresh");
+        s.disconnect();
+      } catch {}
     };
-  }, [vendorId]); // rebind when vendorId known
+  }, [token]);
 
-  // 4) Join vendor room once we know the id
+  // 4) Once we know the vendorId, join its room
   useEffect(() => {
-    if (!vendorId) return;
+    if (!vendorId || !socketRef.current) return;
     try {
-      socket.emit("vendor:join", vendorId);
+      socketRef.current.emit("vendor:join", vendorId);
     } catch {}
   }, [vendorId]);
 
-  // 5) Optional polling fallback (in addition to sockets)
+  // 5) Optional polling fallback
   useEffect(() => {
-    if (!pollingOn) return;
+    if (!realtime) return;
     const id = setInterval(() => loadOrders({ silent: true }), pollMs);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollingOn, pollMs]);
+  }, [realtime, pollMs]);
 
   // ----- helpers -----
   const getLineItems = (order) => {
@@ -326,175 +336,202 @@ export default function VendorOrders() {
   };
 
   return (
-    <Container sx={{ py: 3 }}>
-      <audio ref={audioRef} src={beepSrc} preload="auto" />
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
-        <Typography variant="h5">Vendor Orders</Typography>
-
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
-          <TextField size="small" label="Search (user or item)" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <TextField size="small" label="From" type="date" InputLabelProps={{ shrink: true }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel id="status-filter-label">Status</InputLabel>
-            <Select labelId="status-filter-label" label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <MenuItem value="all">All</MenuItem>
-              <MenuItem value="pending">Pending</MenuItem>
-              <MenuItem value="accepted">Accepted</MenuItem>
-              <MenuItem value="ready">Ready</MenuItem>
-              <MenuItem value="delivered">Delivered</MenuItem>
-              <MenuItem value="rejected">Rejected</MenuItem>
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel id="sort-by-label">Sort by</InputLabel>
-            <Select labelId="sort-by-label" label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-              <MenuItem value="created_desc">Newest first</MenuItem>
-              <MenuItem value="created_asc">Oldest first</MenuItem>
-              <MenuItem value="total_desc">Total: high → low</MenuItem>
-              <MenuItem value="total_asc">Total: low → high</MenuItem>
-            </Select>
-          </FormControl>
-
-          {/* Label means: enable a polling fallback (in addition to sockets) */}
-          <FormControlLabel
-            control={<Switch checked={pollingOn} onChange={(e) => setPollingOn(e.target.checked)} />}
-            label="Polling fallback"
-          />
-          <FormControl size="small" sx={{ minWidth: 130 }}>
-            <InputLabel id="poll-ms">Every</InputLabel>
-            <Select labelId="poll-ms" label="Every" value={pollMs} onChange={(e) => setPollMs(Number(e.target.value))} disabled={!pollingOn}>
-              <MenuItem value={10000}>10s</MenuItem>
-              <MenuItem value={30000}>30s</MenuItem>
-              <MenuItem value={60000}>60s</MenuItem>
-            </Select>
-          </FormControl>
-
-          <Tooltip title={soundOn ? "Sound on" : "Sound off"}>
-            <IconButton onClick={() => setSoundOn((s) => !s)}>
-              {soundOn ? <VolumeUpIcon /> : <VolumeOffIcon />}
-            </IconButton>
-          </Tooltip>
-
-          <IconButton onClick={() => loadOrders()} title="Refresh now">
-            <RefreshIcon />
+    <>
+      {/* NEW: top bar with Back to Vendor Dashboard */}
+      <AppBar position="static" color="default" elevation={0}>
+        <Toolbar sx={{ gap: 1 }}>
+          <IconButton
+            component={Link}
+            to="/vendor"           // <-- change this if your VendorDashboard route is different
+            edge="start"
+            aria-label="Back to vendor dashboard"
+          >
+            <ArrowBackIcon />
           </IconButton>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Vendor Orders
+          </Typography>
 
-          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv}>
-            Export CSV
+          {/* Quick link on the right too (optional) */}
+          <Button
+            component={Link}
+            to="/vendor"          // <-- same route as above
+            variant="outlined"
+            size="small"
+            sx={{ textTransform: "none" }}
+          >
+            Back to Dashboard
           </Button>
+        </Toolbar>
+      </AppBar>
+
+      <Container sx={{ py: 3 }}>
+        <audio ref={audioRef} src={beepSrc} preload="auto" />
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
+          <Typography variant="h5">Orders</Typography>
+
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
+            <TextField size="small" label="Search (user or item)" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <TextField size="small" label="From" type="date" InputLabelProps={{ shrink: true }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel id="status-filter-label">Status</InputLabel>
+              <Select labelId="status-filter-label" label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+                <MenuItem value="accepted">Accepted</MenuItem>
+                <MenuItem value="ready">Ready</MenuItem>
+                <MenuItem value="delivered">Delivered</MenuItem>
+                <MenuItem value="rejected">Rejected</MenuItem>
+              </Select>
+            </FormControl>
+
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel id="sort-by-label">Sort by</InputLabel>
+              <Select labelId="sort-by-label" label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <MenuItem value="created_desc">Newest first</MenuItem>
+                <MenuItem value="created_asc">Oldest first</MenuItem>
+                <MenuItem value="total_desc">Total: high → low</MenuItem>
+                <MenuItem value="total_asc">Total: low → high</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Label means: enable a polling fallback (in addition to sockets) */}
+            <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
+            <FormControl size="small" sx={{ minWidth: 130 }}>
+              <InputLabel id="poll-ms">Every</InputLabel>
+              <Select labelId="poll-ms" label="Every" value={pollMs} onChange={(e) => setPollMs(Number(e.target.value))} disabled={!realtime}>
+                <MenuItem value={10000}>10s</MenuItem>
+                <MenuItem value={30000}>30s</MenuItem>
+                <MenuItem value={60000}>60s</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Tooltip title={soundOn ? "Sound on" : "Sound off"}>
+              <IconButton onClick={() => setSoundOn((s) => !s)}>
+                {soundOn ? <VolumeUpIcon /> : <VolumeOffIcon />}
+              </IconButton>
+            </Tooltip>
+
+            <IconButton onClick={() => loadOrders()} title="Refresh now">
+              <RefreshIcon />
+            </IconButton>
+
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv}>
+              Export CSV
+            </Button>
+          </Stack>
         </Stack>
-      </Stack>
 
-      <Paper>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell />
-              <TableCell>Order #</TableCell>
-              <TableCell>User</TableCell>
-              <TableCell>Items</TableCell>
-              <TableCell>Total</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
+        <Paper>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell />
+                <TableCell>Order #</TableCell>
+                <TableCell>User</TableCell>
+                <TableCell>Items</TableCell>
+                <TableCell>Total</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
 
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={24} /></TableCell></TableRow>
-            ) : visibleOrders.length === 0 ? (
-              <TableRow><TableCell colSpan={7} align="center">No orders found</TableCell></TableRow>
-            ) : (
-              visibleOrders.map((o) => {
-                const disabled = updatingId === o.id;
-                const lineItems = getLineItems(o);
-                const expandedRow = expanded.has(o.id);
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={24} /></TableCell></TableRow>
+              ) : visibleOrders.length === 0 ? (
+                <TableRow><TableCell colSpan={7} align="center">No orders found</TableCell></TableRow>
+              ) : (
+                visibleOrders.map((o) => {
+                  const disabled = updatingId === o.id;
+                  const lineItems = getLineItems(o);
+                  const expandedRow = expanded.has(o.id);
 
-                return (
-                  <React.Fragment key={o.id}>
-                    <TableRow hover>
-                      <TableCell width={48}>
-                        <IconButton size="small" onClick={() => toggleExpand(o.id)} aria-label="expand">
-                          {expandedRow ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
-                        </IconButton>
-                      </TableCell>
-                      <TableCell>{o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}</TableCell>
-                      <TableCell>{o.User?.name || "-"}</TableCell>
-                      <TableCell>{itemsToText(o)}</TableCell>
-                      <TableCell>₹{o.totalAmount}</TableCell>
-                      <TableCell><Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
-                      <TableCell>
-                        <Box sx={{ display: "flex", gap: 1 }}>
-                          {o.status === "pending" && (
-                            <>
-                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
-                              <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>Reject</Button>
-                            </>
-                          )}
-                          {o.status === "accepted" && (
-                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>Mark Ready</Button>
-                          )}
-                          {o.status === "ready" && (
-                            <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
-                          )}
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-
-                    <TableRow>
-                      <TableCell colSpan={7} sx={{ p: 0, border: 0 }}>
-                        <Collapse in={expandedRow} timeout="auto" unmountOnExit>
-                          <Box sx={{ px: 3, py: 2, bgcolor: "background.default" }}>
-                            <Typography variant="subtitle1" gutterBottom>Order Details</Typography>
-                            <Divider sx={{ mb: 2 }} />
-                            {lineItems.length === 0 ? (
-                              <Typography variant="body2" color="text.secondary">No line items</Typography>
-                            ) : (
-                              <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 1 }}>
-                                <Typography variant="caption" sx={{ fontWeight: 600 }}>Item</Typography>
-                                <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Qty</Typography>
-                                <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Price</Typography>
-                                <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Line Total</Typography>
-
-                                {lineItems.map((it, idx) => (
-                                  <React.Fragment key={idx}>
-                                    <Typography variant="body2">{it.name}</Typography>
-                                    <Typography variant="body2" sx={{ textAlign: "right" }}>{it.quantity}</Typography>
-                                    <Typography variant="body2" sx={{ textAlign: "right" }}>
-                                      {it.price != null ? `₹${it.price}` : "-"}
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ textAlign: "right" }}>
-                                      {it.price != null ? `₹${(Number(it.price) * Number(it.quantity || 1)).toFixed(2)}` : "-"}
-                                    </Typography>
-                                  </React.Fragment>
-                                ))}
-                              </Box>
+                  return (
+                    <React.Fragment key={o.id}>
+                      <TableRow hover>
+                        <TableCell width={48}>
+                          <IconButton size="small" onClick={() => toggleExpand(o.id)} aria-label="expand">
+                            {expandedRow ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                          </IconButton>
+                        </TableCell>
+                        <TableCell>{o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}</TableCell>
+                        <TableCell>{o.User?.name || "-"}</TableCell>
+                        <TableCell>{itemsToText(o)}</TableCell>
+                        <TableCell>₹{o.totalAmount}</TableCell>
+                        <TableCell><Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
+                        <TableCell>
+                          <Box sx={{ display: "flex", gap: 1 }}>
+                            {o.status === "pending" && (
+                              <>
+                                <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
+                                <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>Reject</Button>
+                              </>
                             )}
-
-                            <Divider sx={{ my: 2 }} />
-                            <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                              <Typography variant="body2" color="text.secondary">
-                                Placed: {o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}
-                              </Typography>
-                              <Typography variant="subtitle2">Total: ₹{o.totalAmount}</Typography>
-                            </Stack>
-                            {o.User?.email && (
-                              <Typography variant="body2" color="text.secondary">User Email: {o.User.email}</Typography>
+                            {o.status === "accepted" && (
+                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>Mark Ready</Button>
+                            )}
+                            {o.status === "ready" && (
+                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
                             )}
                           </Box>
-                        </Collapse>
-                      </TableCell>
-                    </TableRow>
-                  </React.Fragment>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </Paper>
-    </Container>
+                        </TableCell>
+                      </TableRow>
+
+                      <TableRow>
+                        <TableCell colSpan={7} sx={{ p: 0, border: 0 }}>
+                          <Collapse in={expandedRow} timeout="auto" unmountOnExit>
+                            <Box sx={{ px: 3, py: 2, bgcolor: "background.default" }}>
+                              <Typography variant="subtitle1" gutterBottom>Order Details</Typography>
+                              <Divider sx={{ mb: 2 }} />
+                              {lineItems.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">No line items</Typography>
+                              ) : (
+                                <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 1 }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 600 }}>Item</Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Qty</Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Price</Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Line Total</Typography>
+
+                                  {lineItems.map((it, idx) => (
+                                    <React.Fragment key={idx}>
+                                      <Typography variant="body2">{it.name}</Typography>
+                                      <Typography variant="body2" sx={{ textAlign: "right" }}>{it.quantity}</Typography>
+                                      <Typography variant="body2" sx={{ textAlign: "right" }}>
+                                        {it.price != null ? `₹${it.price}` : "-"}
+                                      </Typography>
+                                      <Typography variant="body2" sx={{ textAlign: "right" }}>
+                                        {it.price != null ? `₹${(Number(it.price) * Number(it.quantity || 1)).toFixed(2)}` : "-"}
+                                      </Typography>
+                                    </React.Fragment>
+                                  ))}
+                                </Box>
+                              )}
+
+                              <Divider sx={{ my: 2 }} />
+                              <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                  Placed: {o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}
+                                </Typography>
+                                <Typography variant="subtitle2">Total: ₹{o.totalAmount}</Typography>
+                              </Stack>
+                              {o.User?.email && (
+                                <Typography variant="body2" color="text.secondary">User Email: {o.User.email}</Typography>
+                              )}
+                            </Box>
+                          </Collapse>
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </Paper>
+      </Container>
+    </>
   );
 }
