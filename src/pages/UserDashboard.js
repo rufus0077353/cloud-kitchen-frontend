@@ -1,18 +1,21 @@
+
+// src/pages/UserDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
 import {
   Container, Typography, Button, Table, TableHead, TableRow,
   TableCell, TableBody, TextField, MenuItem, Box, AppBar, Toolbar,
-  Chip, Stack, Tooltip
+  Chip, Stack, Tooltip, CircularProgress
 } from "@mui/material";
 import { socket } from "../utils/socket";
 import { subscribePush } from "../utils/push";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
-const UserDashboard = () => {
+export default function UserDashboard() {
   const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [vendors, setVendors] = useState([]);
   const [vendorStatus, setVendorStatus] = useState({});
   const [menuItems, setMenuItems] = useState([]);
@@ -33,8 +36,16 @@ const UserDashboard = () => {
     try { return await res.json(); } catch { return null; }
   };
 
-  // LOADERS
+  const parseOrderList = (data) => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.orders)) return data.orders;
+    if (Array.isArray(data?.items))  return data.items;
+    return [];
+  };
+
+  // ---------- LOADERS ----------
   const fetchOrders = async () => {
+    setLoadingOrders(true);
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
       if (res.status === 401) {
@@ -43,35 +54,35 @@ const UserDashboard = () => {
         window.location.href = "/login";
         return;
       }
+      const data = await safeJson(res);
       if (!res.ok) {
-        const data = await safeJson(res);
         console.error("orders/my failed:", res.status, data);
         setOrders([]);
         return;
       }
-      const data = await res.json();
-      setOrders(Array.isArray(data) ? data : data?.orders || []);
+      setOrders(parseOrderList(data));
     } catch (e) {
       console.error("orders/my error:", e);
       setOrders([]);
+    } finally {
+      setLoadingOrders(false);
     }
   };
 
   const fetchVendors = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/vendors`);
+      const data = await safeJson(res);
       if (!res.ok) {
-        const data = await safeJson(res);
         console.error("vendors failed:", res.status, data);
         setVendors([]);
         setVendorStatus({});
         return;
       }
-      const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setVendors(list);
       const vs = {};
-      for (const v of list) vs[Number(v.id)] = v.isOpen !== false;
+      for (const v of list) vs[Number(v.id)] = v.isOpen !== false; // default true
       setVendorStatus(vs);
     } catch (e) {
       console.error("vendors error:", e);
@@ -84,15 +95,15 @@ const UserDashboard = () => {
     if (!vId) return;
     try {
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
+      const data = await safeJson(res);
       if (!res.ok) {
-        const data = await safeJson(res);
         console.error("vendor menu failed:", res.status, data);
         setMenuItems([]);
         return;
       }
-      const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setMenuItems(list);
+      // recompute total with the new vendor's prices
       calculateTotal(items, list);
     } catch (e) {
       console.error("menu-items error:", e);
@@ -107,88 +118,79 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // SOCKET
-useEffect(() => {
-  if (!user?.id) return;
+  // ---------- SOCKET ----------
+  useEffect(() => {
+    if (!user?.id) return;
 
-  // always (re)join your user room when connected
-  const join = () => {
-    try { socket.emit("user:join", user.id); } catch {}
-  };
+    const join = () => {
+      try { socket.emit("user:join", user.id); } catch {}
+    };
 
-  // initial join
-  join();
+    // initial + on reconnect
+    join();
+    const onConnect   = () => { join(); fetchOrders(); };
+    const onConnErr   = (err) => console.warn("socket connect_error:", err?.message || err);
 
-  // ---- handlers ----
-  const onConnect = () => join();
+    const onNew = (fullOrder) => {
+      if (Number(fullOrder?.UserId) !== Number(user.id)) return;
+      // Ensure latest state by refetching; also merge optimistically
+      setOrders((prev) => {
+        const exists = (prev || []).some((o) => o.id === fullOrder.id);
+        if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
+        return [fullOrder, ...(prev || [])];
+      });
+      fetchOrders();
+      toast.info(`New order #${fullOrder?.id ?? ""} placed`);
+    };
 
-  const onConnectError = (err) => {
-    console.warn("socket connect_error:", err?.message || err);
-  };
+    const onStatus = (payload) => {
+      if (Number(payload?.UserId) !== Number(user.id)) return;
+      setOrders((prev) => (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)));
+      toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
+    };
 
-  const onNew = (fullOrder) => {
-    if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-    setOrders((prev) => {
-      const exists = (prev || []).some((o) => o.id === fullOrder.id);
-      if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
-      return [fullOrder, ...(prev || [])];
-    });
-    toast.info(`New order #${fullOrder?.id ?? ""} placed`);
-  };
+    const onVendorStatus = (payload) => {
+      if (!payload?.vendorId) return;
+      setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
+    };
 
-  const onStatus = (payload) => {
-    if (Number(payload?.UserId) !== Number(user.id)) return;
-    setOrders((prev) => (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)));
-    toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
-  };
+    // mock payment events
+    const onPayProcessing = (p) => {
+      if (!p?.id) return;
+      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
+    };
+    const onPaySuccess = (p) => {
+      if (!p?.id) return;
+      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
+    };
+    const onPayFailed = (p) => {
+      if (!p?.id) return;
+      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
+    };
 
-  const onVendorStatus = (payload) => {
-    if (!payload?.vendorId) return;
-    setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
-  };
+    socket.on("connect", onConnect);
+    socket.on("connect_error", onConnErr);
+    socket.on("order:new", onNew);
+    socket.on("order:status", onStatus);
+    socket.on("vendor:status", onVendorStatus);
+    socket.on("payment:processing", onPayProcessing);
+    socket.on("payment:success", onPaySuccess);
+    socket.on("payment:failed", onPayFailed);
 
-  // mock payment events
-  const onPayProcessing = (p) => {
-    if (!p?.id) return;
-    setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
-    toast.info(`Payment processing for order #${p.id}`);
-  };
-  const onPaySuccess = (p) => {
-    if (!p?.id) return;
-    setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
-    toast.success(`Payment succeeded for order #${p.id}`);
-  };
-  const onPayFailed = (p) => {
-    if (!p?.id) return;
-    setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
-    toast.error(`Payment failed for order #${p.id}`);
-  };
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("connect_error", onConnErr);
+      socket.off("order:new", onNew);
+      socket.off("order:status", onStatus);
+      socket.off("vendor:status", onVendorStatus);
+      socket.off("payment:processing", onPayProcessing);
+      socket.off("payment:success", onPaySuccess);
+      socket.off("payment:failed", onPayFailed);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
-  // ---- wire up ----
-  socket.on("connect", onConnect);
-  socket.on("connect_error", onConnectError);
-  socket.on("order:new", onNew);
-  socket.on("order:status", onStatus);
-  socket.on("vendor:status", onVendorStatus);
-  socket.on("payment:processing", onPayProcessing);
-  socket.on("payment:success", onPaySuccess);
-  socket.on("payment:failed", onPayFailed);
-
-  // ---- cleanup ----
-  return () => {
-    socket.off("connect", onConnect);
-    socket.off("connect_error", onConnectError);
-    socket.off("order:new", onNew);
-    socket.off("order:status", onStatus);
-    socket.off("vendor:status", onVendorStatus);
-    socket.off("payment:processing", onPayProcessing);
-    socket.off("payment:success", onPaySuccess);
-    socket.off("payment:failed", onPayFailed);
-  };
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [user?.id]);
-
-  // FORM HANDLERS
+  // ---------- FORM HANDLERS ----------
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
@@ -214,41 +216,23 @@ useEffect(() => {
     setTotalAmount(total);
   };
 
-  const addItem = () => {
-    setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
-  };
+  const addItem = () => setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
 
   const isSelectedVendorOpen = vendorId ? Boolean(vendorStatus[Number(vendorId)]) : true;
 
   const handleSubmit = async () => {
-    if (!user?.id) {
-      toast.error("Please log in");
-      return;
-    }
-    if (!vendorId) {
-      toast.error("Select a vendor first");
-      return;
-    }
-    if (!isSelectedVendorOpen) {
-      toast.error("This vendor is currently closed.");
-      return;
-    }
+    if (!user?.id) { toast.error("Please log in"); return; }
+    if (!vendorId) { toast.error("Select a vendor first"); return; }
+    if (!isSelectedVendorOpen) { toast.error("This vendor is currently closed."); return; }
 
     const payload = {
       VendorId: Number(vendorId),
       paymentMethod,
       items: items
         .filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0)
-        .map((it) => ({
-          MenuItemId: Number(it.MenuItemId),
-          quantity: Number(it.quantity),
-        })),
+        .map((it) => ({ MenuItemId: Number(it.MenuItemId), quantity: Number(it.quantity) })),
     };
-
-    if (payload.items.length === 0) {
-      toast.error("Add at least one item");
-      return;
-    }
+    if (payload.items.length === 0) { toast.error("Add at least one item"); return; }
 
     try {
       const res = await fetch(`${API_BASE}/api/orders`, {
@@ -281,10 +265,7 @@ useEffect(() => {
 
   const deleteOrder = async (orderId) => {
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, {
-        method: "DELETE",
-        headers,
-      });
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, { method: "DELETE", headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -303,7 +284,7 @@ useEffect(() => {
     }
   };
 
-  // 🔎 Open invoice with Authorization header
+  // ---------- INVOICE ----------
   const openInvoice = async (orderId) => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/${orderId}/invoice`, {
@@ -330,7 +311,7 @@ useEffect(() => {
     }
   };
 
-  // mock payment helpers (unchanged)
+  // ---------- MOCK PAYMENT HELPERS ----------
   const postJson = async (path, body) => {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "POST",
@@ -377,9 +358,7 @@ useEffect(() => {
 
       <Box mt={4}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Typography variant="h5" gutterBottom>
-            Place New Order
-          </Typography>
+          <Typography variant="h5" gutterBottom>Place New Order</Typography>
           {selectedVendor && (
             <Chip
               label={isSelectedVendorOpen ? "Open" : "Closed"}
@@ -390,24 +369,16 @@ useEffect(() => {
         </Stack>
 
         <TextField
-          select
-          label="Payment Method"
-          fullWidth
-          value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value)}
-          margin="normal"
+          select label="Payment Method" fullWidth value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value)} margin="normal"
         >
           <MenuItem value="mock_online">Mock Online Payment</MenuItem>
           <MenuItem value="cod">Cash on Delivery (COD)</MenuItem>
         </TextField>
 
         <TextField
-          select
-          label="Select Vendor"
-          fullWidth
-          value={vendorId}
-          onChange={handleVendorChange}
-          margin="normal"
+          select label="Select Vendor" fullWidth value={vendorId}
+          onChange={handleVendorChange} margin="normal"
         >
           {(Array.isArray(vendors) ? vendors : []).map((v) => {
             const open = v.isOpen !== false;
@@ -415,15 +386,9 @@ useEffect(() => {
               <MenuItem key={v.id} value={v.id}>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <span>
-                    {v.name} {v.cuisine ? `- ${v.cuisine}` : ""}
-                    {!open ? " (Closed)" : ""}
+                    {v.name} {v.cuisine ? `- ${v.cuisine}` : ""}{!open ? " (Closed)" : ""}
                   </span>
-                  <Chip
-                    size="small"
-                    label={open ? "Open" : "Closed"}
-                    color={open ? "success" : "default"}
-                    variant={open ? "filled" : "outlined"}
-                  />
+                  <Chip size="small" label={open ? "Open" : "Closed"} color={open ? "success" : "default"} variant={open ? "filled" : "outlined"} />
                 </Stack>
               </MenuItem>
             );
@@ -433,56 +398,38 @@ useEffect(() => {
         {items.map((item, index) => (
           <Box key={index} display="flex" gap={2} alignItems="center" mt={2}>
             <TextField
-              select
-              label="Menu Item"
-              value={item.MenuItemId}
+              select label="Menu Item" value={item.MenuItemId}
               onChange={(e) => handleItemChange(index, "MenuItemId", e.target.value)}
-              style={{ flex: 1 }}
-              disabled={!isSelectedVendorOpen}
+              style={{ flex: 1 }} disabled={!isSelectedVendorOpen}
             >
               {(Array.isArray(menuItems) ? menuItems : []).map((m) => (
-                <MenuItem key={m.id} value={m.id}>
-                  {m.name} - ₹{m.price}
-                </MenuItem>
+                <MenuItem key={m.id} value={m.id}>{m.name} - ₹{m.price}</MenuItem>
               ))}
             </TextField>
 
             <TextField
-              type="number"
-              label="Quantity"
-              value={item.quantity}
+              type="number" label="Quantity" value={item.quantity}
               onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
-              style={{ width: 110 }}
-              inputProps={{ min: 0 }}
-              disabled={!isSelectedVendorOpen}
+              style={{ width: 110 }} inputProps={{ min: 0 }} disabled={!isSelectedVendorOpen}
             />
           </Box>
         ))}
 
         <Box mt={2} display="flex" alignItems="center" gap={2}>
-          <Button variant="outlined" onClick={addItem} disabled={!isSelectedVendorOpen}>
+          <Button variant="outlined" onClick={() => addItem()} disabled={!isSelectedVendorOpen}>
             Add Another Item
           </Button>
 
           <Typography sx={{ ml: "auto" }}>Total: ₹{totalAmount.toFixed(2)}</Typography>
           <Tooltip
             title={
-              !vendorId
-                ? "Choose a vendor"
-                : !isSelectedVendorOpen
-                ? "This vendor is closed"
-                : !hasValidItems
-                ? "Add at least one item"
-                : ""
+              !vendorId ? "Choose a vendor"
+                : !isSelectedVendorOpen ? "This vendor is closed"
+                : !hasValidItems ? "Add at least one item" : ""
             }
           >
             <span>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleSubmit}
-                disabled={disableSubmit}
-              >
+              <Button variant="contained" color="primary" onClick={handleSubmit} disabled={disableSubmit}>
                 Submit Order
               </Button>
             </span>
@@ -491,117 +438,82 @@ useEffect(() => {
       </Box>
 
       <Box mt={5}>
-        <Typography variant="h5" gutterBottom>
-          Your Orders
-        </Typography>
+        <Typography variant="h5" gutterBottom>Your Orders</Typography>
 
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Order ID</TableCell>
-              <TableCell>Vendor</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Payment</TableCell>
-              <TableCell>Total</TableCell>
-              <TableCell>Created</TableCell>
-              <TableCell>Action</TableCell>
-            </TableRow>
-          </TableHead>
-
-          <TableBody>
-            {ordersSafe.map((order) => {
-              const payMethod = order.paymentMethod || "-";
-              const payStatus = order.paymentStatus || "-";
-              const isMock = payMethod === "mock_online";
-              return (
-                <TableRow key={order.id}>
-                  <TableCell>{order.id}</TableCell>
-                  <TableCell>{order.Vendor?.name || "-"}</TableCell>
-                  <TableCell>{order.status}</TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip size="small" label={payMethod} variant="outlined" />
-                      <Chip
-                        size="small"
-                        label={payStatus}
-                        color={
-                          payStatus === "paid" ? "success" :
-                          payStatus === "processing" ? "warning" :
-                          payStatus === "failed" ? "error" :
-                          "default"
-                        }
-                      />
-                    </Stack>
-                  </TableCell>
-                  <TableCell>₹{order.totalAmount}</TableCell>
-                  <TableCell>
-                    {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1}>
-                      {/* View/Print Receipt */}
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() => openInvoice(order.id)}
-                      >
-                        Receipt
-                      </Button>
-
-                      {/* Delete */}
-                      <Button
-                        color="error"
-                        variant="outlined"
-                        size="small"
-                        onClick={() => deleteOrder(order.id)}
-                      >
-                        Delete
-                      </Button>
-
-                      {/* Mock payment controls */}
-                      {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
-                        <Button
-                          variant="contained"
-                          onClick={() => startMockPayment(order.id)}
-                        >
-                          {payStatus === "failed" ? "Retry Payment" : "Pay Now (Mock)"}
-                        </Button>
-                      )}
-                      {isMock && payStatus === "processing" && (
-                        <>
-                          <Button
-                            variant="contained"
-                            color="success"
-                            onClick={() => succeedMockPayment(order.id)}
-                          >
-                            Succeed
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={() => failMockPayment(order.id)}
-                          >
-                            Fail
-                          </Button>
-                        </>
-                      )}
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {ordersSafe.length === 0 && (
+        {loadingOrders ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : (
+          <Table>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={7} align="center">
-                  No orders yet
-                </TableCell>
+                <TableCell>Order ID</TableCell>
+                <TableCell>Vendor</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Payment</TableCell>
+                <TableCell>Total</TableCell>
+                <TableCell>Created</TableCell>
+                <TableCell>Action</TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHead>
+
+            <TableBody>
+              {ordersSafe.map((order) => {
+                const payMethod = order.paymentMethod || "-";
+                const payStatus = order.paymentStatus || "-";
+                const isMock = payMethod === "mock_online";
+                return (
+                  <TableRow key={order.id}>
+                    <TableCell>{order.id}</TableCell>
+                    <TableCell>{order.Vendor?.name || "-"}</TableCell>
+                    <TableCell>{order.status}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip size="small" label={payMethod} variant="outlined" />
+                        <Chip
+                          size="small"
+                          label={payStatus}
+                          color={
+                            payStatus === "paid" ? "success" :
+                            payStatus === "processing" ? "warning" :
+                            payStatus === "failed" ? "error" : "default"
+                          }
+                        />
+                      </Stack>
+                    </TableCell>
+                    <TableCell>₹{order.totalAmount}</TableCell>
+                    <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1}>
+                        <Button variant="outlined" size="small" onClick={() => openInvoice(order.id)}>Receipt</Button>
+                        <Button color="error" variant="outlined" size="small" onClick={() => deleteOrder(order.id)}>Delete</Button>
+
+                        {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
+                          <Button variant="contained" onClick={() => startMockPayment(order.id)}>
+                            {payStatus === "failed" ? "Retry Payment" : "Pay Now (Mock)"}
+                          </Button>
+                        )}
+                        {isMock && payStatus === "processing" && (
+                          <>
+                            <Button variant="contained" color="success" onClick={() => succeedMockPayment(order.id)}>Succeed</Button>
+                            <Button variant="outlined" color="error" onClick={() => failMockPayment(order.id)}>Fail</Button>
+                          </>
+                        )}
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {ordersSafe.length === 0 && !loadingOrders && (
+                <TableRow>
+                  <TableCell colSpan={7} align="center">No orders yet</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
       </Box>
     </Container>
   );
-};
-
-export default UserDashboard;
+}
