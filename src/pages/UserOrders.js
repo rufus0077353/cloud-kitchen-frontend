@@ -34,6 +34,7 @@ const UserOrders = () => {
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
+  const safeArray = (v) => (Array.isArray(v) ? v : []);
 
   
 
@@ -86,6 +87,24 @@ const UserOrders = () => {
     setOpenDialog(true);
   };
 
+  const getLineItems = (order) => {
+    if (Array.isArray(order?.OrderItems)) {
+      return order.OrderItems.map(oi => ({
+        name: oi.MenuItem?.name || "Item",
+        quantity: oi.quantity ?? 1,
+        price: oi.MenuItem?.price ?? 0,
+      }));
+    }
+    if (Array.isArray(order?.MenuItems)) {
+      return order.MenuItems.map(mi => ({
+        name: mi.name,
+        quantity: mi.OrderItem?.quantity ?? 1,
+        price: mi.price ?? 0,
+      }));
+    }
+    return [];
+  };
+      
   return (
     <Container>
       <Typography variant="h4" gutterBottom>
@@ -117,7 +136,7 @@ const UserOrders = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {orders.map((order) => (
+            {safeArray(orders).map((order) => (
               <TableRow key={order.id}>
                 <TableCell>{order.id}</TableCell>
                 <TableCell>{order.Vendor?.name}</TableCell>
