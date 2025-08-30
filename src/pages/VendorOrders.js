@@ -173,6 +173,30 @@ export default function VendorOrders() {
     }
   };
 
+  const refundOrder = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/payments/${id}/refund`, {
+        method: "PATCH",
+        headers,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.message || "Failed to refund");
+        return;
+      }
+      toast.success("Order refunded");
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id ? { ...o, paymentStatus: "refunded" } : o
+        )
+      );
+    } catch (e) {
+      toast.error("Network error");
+    }
+  };
+
+
+
   // 1) Get vendorId then join the socket room
   useEffect(() => {
     const getMe = async () => {
@@ -534,6 +558,15 @@ export default function VendorOrders() {
                               >
                                 Mark Paid
                               </Button>
+                            )}
+                            {/* NEW: Refund button for paid orders (either method) */}
+                            {o.paymentStatus === "paid" && (
+                              <Button
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                onClick={() => refundOrder(o.id)}
+                              > Refund</Button>
                             )}
                           </Box>
                         </TableCell>
