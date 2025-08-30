@@ -23,6 +23,8 @@ const UserDashboard = () => {
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
 
+  const isSelectedVendorOpen = Boolean(vendorStatus[vendorId]);
+
   const headers = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
@@ -298,7 +300,8 @@ const UserDashboard = () => {
 
         <Box mt={2}>
           <Typography>Total: ₹{totalAmount.toFixed(2)}</Typography>
-          <Button variant="contained" color="primary" onClick={handleSubmit}>
+          <Button variant="contained" color="primary" onClick={handleSubmit}
+            disabled={!vendorId || items.filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0).length === 0 || !isSelectedVendorOpen}>
             Submit Order
           </Button>
         </Box>
