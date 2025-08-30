@@ -5,7 +5,7 @@ import {
   AppBar, Toolbar, Container, Typography, Table, TableHead, TableRow,
   TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField,
-  Collapse, Divider, Switch, FormControlLabel, Tooltip
+  Collapse, Divider, Switch, FormControlLabel, Tooltip, TablePagination
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -19,7 +19,7 @@ import { toast } from "react-toastify";
 import { io } from "socket.io-client";
 
 const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE;
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL    || API_BASE;
 const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
 
 const STATUS_COLORS = {
@@ -33,6 +33,9 @@ const STATUS_COLORS = {
 export default function VendorOrders() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);               // 👈 total for pagination
+  const [page, setPage] = useState(0);                 // zero-based for MUI
+  const [rowsPerPage, setRowsPerPage] = useState(20);  // pageSize
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -70,32 +73,39 @@ export default function VendorOrders() {
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  const parseOrders = (data) => {
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.orders)) return data.orders;
-    return [];
-  };
-
-  const loadOrders = async ({ silent = false } = {}) => {
+  // fetch (paginated if backend supports)
+  const loadOrders = async ({ silent = false, toPage = page, size = rowsPerPage } = {}) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/orders/vendor`, { headers });
+      // ask backend for pagination
+      const q = new URLSearchParams({ page: String(toPage + 1), pageSize: String(size) }).toString();
+      const res = await fetch(`${API_BASE}/api/orders/vendor?${q}`, { headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
         window.location.href = "/login";
         return;
       }
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = (await res.json().catch(() => ({}))).message || `Failed (${res.status})`;
+        const msg = data?.message || `Failed (${res.status})`;
         if (!silent) toast.error(msg);
         setOrders([]);
+        setTotal(0);
         return;
       }
-      const data = await res.json();
-      const incoming = parseOrders(data);
-      setOrders(incoming);
 
+      // if backend returned legacy array
+      if (Array.isArray(data)) {
+        setOrders(data);
+        setTotal(data.length);
+      } else {
+        setOrders(Array.isArray(data.items) ? data.items : []);
+        setTotal(Number(data.total || 0));
+      }
+
+      // new pending detection
+      const incoming = Array.isArray(data) ? data : (data.items || []);
       const currentPendingIds = new Set(
         (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
       );
@@ -110,6 +120,7 @@ export default function VendorOrders() {
     } catch (e) {
       if (!silent) toast.error("Network error while loading orders");
       setOrders([]);
+      setTotal(0);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -162,40 +173,13 @@ export default function VendorOrders() {
         return;
       }
       toast.success("Payment marked as paid");
-      // quick sync local
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
-        )
+        prev.map((o) => (o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o))
       );
     } catch (e) {
       toast.error("Network error");
     }
   };
-
-  const refundOrder = async (id) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/payments/${id}/refund`, {
-        method: "PATCH",
-        headers,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data?.message || "Failed to refund");
-        return;
-      }
-      toast.success("Order refunded");
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === id ? { ...o, paymentStatus: "refunded" } : o
-        )
-      );
-    } catch (e) {
-      toast.error("Network error");
-    }
-  };
-
-
 
   // 1) Get vendorId then join the socket room
   useEffect(() => {
@@ -234,7 +218,12 @@ export default function VendorOrders() {
     });
 
     const onNew = (fullOrder) => {
-      setOrders((prev) => [fullOrder, ...prev]);
+      // if we're paginating, reload; else prepend
+      if (page > 0 || rowsPerPage > 0) {
+        loadOrders({ silent: true });
+      } else {
+        setOrders((prev) => [fullOrder, ...prev]);
+      }
       playBeep();
       toast.info(`New order #${fullOrder?.id || ""}`);
     };
@@ -245,38 +234,27 @@ export default function VendorOrders() {
       );
     };
 
-    // unify handling for all payment events
-    const onPaymentAny = (payload) => {
+    const onPayment = (payload) => {
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === (payload.id || payload.orderId)
-            ? { ...o, paymentStatus: payload.paymentStatus || "paid" }
-            : o
-        )
+        prev.map((o) => (o.id === payload.orderId ? { ...o, paymentStatus: payload.paymentStatus } : o))
       );
     };
 
     s.on("order:new", onNew);
     s.on("order:status", onStatus);
-    s.on("payment:status", onPaymentAny);
-    s.on("payment:success", onPaymentAny);
-    s.on("payment:failed", onPaymentAny);
-    s.on("payment:processing", onPaymentAny);
+    s.on("payment:status", onPayment);
     s.on("orders:refresh", () => loadOrders({ silent: true }));
 
     return () => {
       try {
         s.off("order:new", onNew);
         s.off("order:status", onStatus);
-        s.off("payment:status", onPaymentAny);
-        s.off("payment:success", onPaymentAny);
-        s.off("payment:failed", onPaymentAny);
-        s.off("payment:processing", onPaymentAny);
+        s.off("payment:status", onPayment);
         s.off("orders:refresh");
         s.disconnect();
       } catch {}
     };
-  }, [token]);
+  }, [token]); // eslint-disable-line
 
   // 4) Once we know the vendorId, join its room
   useEffect(() => {
@@ -415,9 +393,21 @@ export default function VendorOrders() {
     let color = "default";
     if (status === "paid") color = "success";
     else if (status === "refunded") color = "warning";
-    else if (status === "failed") color = "error";
-    else if (status === "processing") color = "warning";
+    else if (status === "processing") color = "info";
+    else color = "default";
     return <Chip size="small" label={label} color={color} />;
+  };
+
+  // pagination handlers
+  const handleChangePage = (_e, newPage) => {
+    setPage(newPage);
+    loadOrders({ toPage: newPage, size: rowsPerPage });
+  };
+  const handleChangeRowsPerPage = (e) => {
+    const newSize = parseInt(e.target.value, 10);
+    setRowsPerPage(newSize);
+    setPage(0);
+    loadOrders({ toPage: 0, size: newSize });
   };
 
   return (
@@ -550,7 +540,7 @@ export default function VendorOrders() {
                             )}
 
                             {/* Mark Paid for COD+unpaid */}
-                            {o.paymentMethod === "cod" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
+                            {o.paymentMethod === "cod" && o.paymentStatus === "unpaid" && (
                               <Button
                                 size="small"
                                 variant="outlined"
@@ -559,15 +549,18 @@ export default function VendorOrders() {
                                 Mark Paid
                               </Button>
                             )}
-                            {/* NEW: Refund button for paid orders (either method) */}
-                            {o.paymentStatus === "paid" && (
-                              <Button
-                                size="small"
-                                color="warning"
-                                variant="outlined"
-                                onClick={() => refundOrder(o.id)}
-                              > Refund</Button>
-                            )}
+
+                            {/* NEW: Receipt (opens printable HTML => save as PDF) */}
+                            <Button
+                              size="small"
+                              variant="text"
+                              component="a"
+                              href={`${API_BASE}/api/orders/${o.id}/invoice`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Receipt
+                            </Button>
                           </Box>
                         </TableCell>
                       </TableRow>
@@ -626,6 +619,17 @@ export default function VendorOrders() {
               )}
             </TableBody>
           </Table>
+
+          {/* NEW: server-side pagination footer */}
+          <TablePagination
+            component="div"
+            count={total}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[10, 20, 50, 100]}
+          />
         </Paper>
       </Container>
     </>
