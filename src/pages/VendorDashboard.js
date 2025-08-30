@@ -9,6 +9,7 @@ import { Delete, Edit, Refresh } from "@mui/icons-material";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
+import VendorSalesTrend from "../components/VendorSalesTrend";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -254,6 +255,9 @@ const VendorDashboard = () => {
       <Container sx={{ mt: 4 }}>
         {/* ---- SUMMARY ROW ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
+          <Box sx={{ mb: 3 }}>
+            <VendorSalesTrend />
+          </Box>  
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
             <Typography variant="h6">Summary</Typography>
             <Tooltip title="Refresh summary">
