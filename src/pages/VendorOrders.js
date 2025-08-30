@@ -467,6 +467,7 @@ export default function VendorOrders() {
                 <TableCell>Items</TableCell>
                 <TableCell>Total</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Payment</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -495,6 +496,13 @@ export default function VendorOrders() {
                         <TableCell>{itemsToText(o)}</TableCell>
                         <TableCell>₹{o.totalAmount}</TableCell>
                         <TableCell><Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={'₹{o.paymentMethod}/₹{o.paymentStatus} '}
+                            color={o.paymentStatus === "paid" ? "success" : o.paymentStatus === "processing" ? "warning" : "default"}
+                          />
+                        </TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1 }}>
                             {o.status === "pending" && (

@@ -20,6 +20,7 @@ const UserDashboard = () => {
   const [vendorId, setVendorId] = useState("");
   const [items, setItems] = useState([{ MenuItemId: "", quantity: 1 }]);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("mock_online");
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
@@ -93,7 +94,11 @@ const UserDashboard = () => {
         return;
       }
       const data = await res.json();
-      setMenuItems(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setMenuItems(list);
+
+      // Recalculate total in case prices differ after vendor switch
+      calculateTotal(items, list);
     } catch (e) {
       console.error("menu-items error:", e);
       setMenuItems([]);
@@ -136,17 +141,40 @@ const UserDashboard = () => {
       setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
     };
 
+    // --- mock payment events ---
+    const onPayProcessing = (p) => {
+      if (!p?.id) return;
+      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
+      toast.info(`Payment processing for order #${p.id}`);
+    };
+    const onPaySuccess = (p) => {
+      if (!p?.id) return;
+      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
+      toast.success(`Payment succeeded for order #${p.id}`);
+    };
+    const onPayFailed = (p) => {
+      if (!p?.id) return;
+      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
+      toast.error(`Payment failed for order #${p.id}`);
+    };
+
     const onReconnect = () => join();
 
     socket.on("order:new", onNew);
     socket.on("order:status", onStatus);
     socket.on("vendor:status", onVendorStatus);
+    socket.on("payment:processing", onPayProcessing);
+    socket.on("payment:success", onPaySuccess);
+    socket.on("payment:failed", onPayFailed);
     socket.on("connect", onReconnect);
 
     return () => {
       socket.off("order:new", onNew);
       socket.off("order:status", onStatus);
       socket.off("vendor:status", onVendorStatus);
+      socket.off("payment:processing", onPayProcessing);
+      socket.off("payment:success", onPaySuccess);
+      socket.off("payment:failed", onPayFailed);
       socket.off("connect", onReconnect);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,10 +196,10 @@ const UserDashboard = () => {
     calculateTotal(updated);
   };
 
-  const calculateTotal = (orderItems) => {
+  const calculateTotal = (orderItems, sourceMenuItems = menuItems) => {
     let total = 0;
-    const list = Array.isArray(menuItems) ? menuItems : [];
-    orderItems.forEach((item) => {
+    const list = Array.isArray(sourceMenuItems) ? sourceMenuItems : [];
+    (orderItems || []).forEach((item) => {
       const menuItem = list.find((mi) => mi.id === Number(item.MenuItemId));
       if (menuItem) total += Number(menuItem.price) * Number(item.quantity || 0);
     });
@@ -201,6 +229,7 @@ const UserDashboard = () => {
 
     const payload = {
       VendorId: Number(vendorId),
+      paymentMethod, // ⬅️ include payment method
       items: items
         .filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0)
         .map((it) => ({
@@ -213,9 +242,6 @@ const UserDashboard = () => {
       toast.error("Add at least one item");
       return;
     }
-
-    // helpful debug to see exactly what we send
-    console.log("[create order] payload:", payload);
 
     try {
       const res = await fetch(`${API_BASE}/api/orders`, {
@@ -274,6 +300,47 @@ const UserDashboard = () => {
     }
   };
 
+  // ---------- MOCK PAYMENT HELPERS ----------
+  const postJson = async (path, body) => {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body || {}),
+    });
+    const data = await safeJson(res);
+    return { ok: res.ok, status: res.status, data };
+  };
+
+  const startMockPayment = async (orderId) => {
+    const { ok, data } = await postJson("/api/orders/mock-payment/start", { orderId });
+    if (!ok) {
+      toast.error(data?.message || "Failed to start mock payment");
+      return;
+    }
+    toast.info("Payment started");
+    fetchOrders();
+  };
+
+  const succeedMockPayment = async (orderId) => {
+    const { ok, data } = await postJson("/api/orders/mock-payment/succeed", { orderId });
+    if (!ok) {
+      toast.error(data?.message || "Failed to mark success");
+      return;
+    }
+    toast.success("Payment marked as success");
+    fetchOrders();
+  };
+
+  const failMockPayment = async (orderId) => {
+    const { ok, data } = await postJson("/api/orders/mock-payment/fail", { orderId });
+    if (!ok) {
+      toast.error(data?.message || "Failed to mark failure");
+      return;
+    }
+    toast.error("Payment marked as failed");
+    fetchOrders();
+  };
+
   const ordersSafe = Array.isArray(orders) ? orders : [];
 
   // convenience for button disable + tooltip
@@ -306,6 +373,18 @@ const UserDashboard = () => {
             />
           )}
         </Stack>
+
+        <TextField
+          select
+          label="Payment Method"
+          fullWidth
+          value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value)}
+          margin="normal"
+        >
+          <MenuItem value="mock_online">Mock Online Payment</MenuItem>
+          <MenuItem value="cod">Cash on Delivery (COD)</MenuItem>
+        </TextField>
 
         <TextField
           select
@@ -407,6 +486,7 @@ const UserDashboard = () => {
               <TableCell>Order ID</TableCell>
               <TableCell>Vendor</TableCell>
               <TableCell>Status</TableCell>
+              <TableCell>Payment</TableCell>
               <TableCell>Total</TableCell>
               <TableCell>Created</TableCell>
               <TableCell>Action</TableCell>
@@ -414,29 +494,84 @@ const UserDashboard = () => {
           </TableHead>
 
           <TableBody>
-            {ordersSafe.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell>{order.id}</TableCell>
-                <TableCell>{order.Vendor?.name || "-"}</TableCell>
-                <TableCell>{order.status}</TableCell>
-                <TableCell>₹{order.totalAmount}</TableCell>
-                <TableCell>
-                  {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
-                </TableCell>
-                <TableCell>
-                  <Button
-                    color="error"
-                    variant="outlined"
-                    onClick={() => deleteOrder(order.id)}
-                  >
-                    Delete
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {ordersSafe.map((order) => {
+              const payMethod = order.paymentMethod || "-";
+              const payStatus = order.paymentStatus || "-";
+              const isMock = payMethod === "mock_online";
+              return (
+                <TableRow key={order.id}>
+                  <TableCell>{order.id}</TableCell>
+                  <TableCell>{order.Vendor?.name || "-"}</TableCell>
+                  <TableCell>{order.status}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Chip
+                        size="small"
+                        label={payMethod}
+                        variant="outlined"
+                      />
+                      <Chip
+                        size="small"
+                        label={payStatus}
+                        color={
+                          payStatus === "paid" ? "success" :
+                          payStatus === "processing" ? "warning" :
+                          payStatus === "failed" ? "error" :
+                          "default"
+                        }
+                      />
+                    </Stack>
+                  </TableCell>
+                  <TableCell>₹{order.totalAmount}</TableCell>
+                  <TableCell>
+                    {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      {/* Delete always available */}
+                      <Button
+                        color="error"
+                        variant="outlined"
+                        onClick={() => deleteOrder(order.id)}
+                      >
+                        Delete
+                      </Button>
+
+                      {/* Mock payment controls */}
+                      {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
+                        <Button
+                          variant="contained"
+                          onClick={() => startMockPayment(order.id)}
+                        >
+                          {payStatus === "failed" ? "Retry Payment" : "Pay Now (Mock)"}
+                        </Button>
+                      )}
+                      {isMock && payStatus === "processing" && (
+                        <>
+                          <Button
+                            variant="contained"
+                            color="success"
+                            onClick={() => succeedMockPayment(order.id)}
+                          >
+                            Succeed
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={() => failMockPayment(order.id)}
+                          >
+                            Fail
+                          </Button>
+                        </>
+                      )}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {ordersSafe.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   No orders yet
                 </TableCell>
               </TableRow>
