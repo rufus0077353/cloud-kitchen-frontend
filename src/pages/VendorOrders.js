@@ -33,9 +33,9 @@ const STATUS_COLORS = {
 export default function VendorOrders() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
-  const [total, setTotal] = useState(0);               // 👈 total for pagination
-  const [page, setPage] = useState(0);                 // zero-based for MUI
-  const [rowsPerPage, setRowsPerPage] = useState(20);  // pageSize
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -52,7 +52,6 @@ export default function VendorOrders() {
   const prevPendingIdsRef = useRef(new Set());
   const socketRef = useRef(null);
 
-  // tiny beep
   const audioRef = useRef(null);
   const beepSrc = useMemo(
     () =>
@@ -73,11 +72,9 @@ export default function VendorOrders() {
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  // fetch (paginated if backend supports)
   const loadOrders = async ({ silent = false, toPage = page, size = rowsPerPage } = {}) => {
     if (!silent) setLoading(true);
     try {
-      // ask backend for pagination
       const q = new URLSearchParams({ page: String(toPage + 1), pageSize: String(size) }).toString();
       const res = await fetch(`${API_BASE}/api/orders/vendor?${q}`, { headers });
       if (res.status === 401) {
@@ -94,8 +91,6 @@ export default function VendorOrders() {
         setTotal(0);
         return;
       }
-
-      // if backend returned legacy array
       if (Array.isArray(data)) {
         setOrders(data);
         setTotal(data.length);
@@ -104,7 +99,6 @@ export default function VendorOrders() {
         setTotal(Number(data.total || 0));
       }
 
-      // new pending detection
       const incoming = Array.isArray(data) ? data : (data.items || []);
       const currentPendingIds = new Set(
         (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
@@ -181,7 +175,34 @@ export default function VendorOrders() {
     }
   };
 
-  // 1) Get vendorId then join the socket room
+  // 👇 NEW: open invoice with Authorization header
+  const openInvoice = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/${id}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` }, // send token!
+      });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
+      if (!res.ok) {
+        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+        toast.error(msg);
+        return;
+      }
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      // tidy up later
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      toast.error("Network error while opening invoice");
+    }
+  };
+
   useEffect(() => {
     const getMe = async () => {
       try {
@@ -195,13 +216,11 @@ export default function VendorOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2) Initial load
   useEffect(() => {
     loadOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 3) Socket connect + listeners
   useEffect(() => {
     if (!token) return;
 
@@ -218,7 +237,6 @@ export default function VendorOrders() {
     });
 
     const onNew = (fullOrder) => {
-      // if we're paginating, reload; else prepend
       if (page > 0 || rowsPerPage > 0) {
         loadOrders({ silent: true });
       } else {
@@ -256,7 +274,6 @@ export default function VendorOrders() {
     };
   }, [token]); // eslint-disable-line
 
-  // 4) Once we know the vendorId, join its room
   useEffect(() => {
     if (!vendorId || !socketRef.current) return;
     try {
@@ -264,7 +281,6 @@ export default function VendorOrders() {
     } catch {}
   }, [vendorId]);
 
-  // 5) Optional polling fallback
   useEffect(() => {
     if (!realtime) return;
     const id = setInterval(() => loadOrders({ silent: true }), pollMs);
@@ -272,7 +288,6 @@ export default function VendorOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realtime, pollMs]);
 
-  // ----- helpers -----
   const getLineItems = (order) => {
     if (Array.isArray(order?.OrderItems) && order.OrderItems.length) {
       return order.OrderItems.map((oi) => ({
@@ -398,7 +413,6 @@ export default function VendorOrders() {
     return <Chip size="small" label={label} color={color} />;
   };
 
-  // pagination handlers
   const handleChangePage = (_e, newPage) => {
     setPage(newPage);
     loadOrders({ toPage: newPage, size: rowsPerPage });
@@ -539,26 +553,12 @@ export default function VendorOrders() {
                               <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
                             )}
 
-                            {/* Mark Paid for COD+unpaid */}
                             {o.paymentMethod === "cod" && o.paymentStatus === "unpaid" && (
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => markPaid(o.id)}
-                              >
-                                Mark Paid
-                              </Button>
+                              <Button size="small" variant="outlined" onClick={() => markPaid(o.id)}>Mark Paid</Button>
                             )}
 
-                            {/* NEW: Receipt (opens printable HTML => save as PDF) */}
-                            <Button
-                              size="small"
-                              variant="text"
-                              component="a"
-                              href={`${API_BASE}/api/orders/${o.id}/invoice`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
+                            {/* OPEN INVOICE with auth header */}
+                            <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
                           </Box>
@@ -620,7 +620,6 @@ export default function VendorOrders() {
             </TableBody>
           </Table>
 
-          {/* NEW: server-side pagination footer */}
           <TablePagination
             component="div"
             count={total}
