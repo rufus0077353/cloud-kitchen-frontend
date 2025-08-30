@@ -1,3 +1,4 @@
+
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -19,8 +20,6 @@ import { io } from "socket.io-client";
 
 const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE;
-
-// Fallback dashboard route if history back isn't available
 const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
 
 const STATUS_COLORS = {
@@ -33,7 +32,6 @@ const STATUS_COLORS = {
 
 export default function VendorOrders() {
   const navigate = useNavigate();
-
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
@@ -46,10 +44,7 @@ export default function VendorOrders() {
   const [realtime, setRealtime] = useState(true);
   const [pollMs, setPollMs] = useState(30000);
   const [soundOn, setSoundOn] = useState(true);
-
-  // NEW: vendor identity + open/closed state
   const [vendorId, setVendorId] = useState(null);
-  const [isOpen, setIsOpen] = useState(true);
 
   const prevPendingIdsRef = useRef(new Set());
   const socketRef = useRef(null);
@@ -101,7 +96,6 @@ export default function VendorOrders() {
       const incoming = parseOrders(data);
       setOrders(incoming);
 
-      // detect new pending orders (beep once we have a baseline)
       const currentPendingIds = new Set(
         (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
       );
@@ -146,7 +140,7 @@ export default function VendorOrders() {
         return;
       }
       toast.success("Status updated");
-      loadOrders({ silent: true }); // quick sync
+      loadOrders({ silent: true });
     } catch (e) {
       setOrders(prev); // rollback
       toast.error("Network error");
@@ -155,7 +149,31 @@ export default function VendorOrders() {
     }
   };
 
-  // 1) Get vendorId and isOpen then (later) join the socket room
+  // NEW: mark COD order as paid
+  const markPaid = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/payments/${id}/mark-paid`, {
+        method: "PATCH",
+        headers,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.message || "Failed to mark paid");
+        return;
+      }
+      toast.success("Payment marked as paid");
+      // quick sync local
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
+        )
+      );
+    } catch (e) {
+      toast.error("Network error");
+    }
+  };
+
+  // 1) Get vendorId then join the socket room
   useEffect(() => {
     const getMe = async () => {
       try {
@@ -163,8 +181,6 @@ export default function VendorOrders() {
         if (!r.ok) return;
         const me = await r.json();
         if (me?.vendorId) setVendorId(me.vendorId);
-        // NEW: set initial open/closed state
-        if (typeof me?.isOpen !== "undefined") setIsOpen(Boolean(me.isOpen));
       } catch {}
     };
     getMe();
@@ -205,28 +221,38 @@ export default function VendorOrders() {
       );
     };
 
-    // NEW: react to vendor open/close toggles (emitted by Dashboard)
-    const onVendorStatus = (payload) => {
-      if (!payload) return;
-      if (payload.vendorId && vendorId && Number(payload.vendorId) !== Number(vendorId)) return;
-      if (typeof payload.isOpen !== "undefined") setIsOpen(Boolean(payload.isOpen));
+    // unify handling for all payment events
+    const onPaymentAny = (payload) => {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === (payload.id || payload.orderId)
+            ? { ...o, paymentStatus: payload.paymentStatus || "paid" }
+            : o
+        )
+      );
     };
 
     s.on("order:new", onNew);
     s.on("order:status", onStatus);
+    s.on("payment:status", onPaymentAny);
+    s.on("payment:success", onPaymentAny);
+    s.on("payment:failed", onPaymentAny);
+    s.on("payment:processing", onPaymentAny);
     s.on("orders:refresh", () => loadOrders({ silent: true }));
-    s.on("vendor:status", onVendorStatus);
 
     return () => {
       try {
         s.off("order:new", onNew);
         s.off("order:status", onStatus);
+        s.off("payment:status", onPaymentAny);
+        s.off("payment:success", onPaymentAny);
+        s.off("payment:failed", onPaymentAny);
+        s.off("payment:processing", onPaymentAny);
         s.off("orders:refresh");
-        s.off("vendor:status", onVendorStatus);
         s.disconnect();
       } catch {}
     };
-  }, [token, vendorId]);
+  }, [token]);
 
   // 4) Once we know the vendorId, join its room
   useEffect(() => {
@@ -236,9 +262,9 @@ export default function VendorOrders() {
     } catch {}
   }, [vendorId]);
 
-  // 5) Optional polling fallback (when realtime is toggled ON here it means "enable polling")
+  // 5) Optional polling fallback
   useEffect(() => {
-    if (!realtime) return; // sockets doing the job; toggle label is "Polling fallback"
+    if (!realtime) return;
     const id = setInterval(() => loadOrders({ silent: true }), pollMs);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,13 +349,14 @@ export default function VendorOrders() {
       items: itemsToText(o),
       total: o.totalAmount,
       status: o.status,
+      payment: `${o.paymentMethod || ""}/${o.paymentStatus || ""}`,
       createdAt: o.createdAt,
     }));
-    const headers = ["Order ID", "User", "Items", "Total", "Status", "Created At"];
+    const headers = ["Order ID", "User", "Items", "Total", "Status", "Payment", "Created At"];
     const csv = [
       headers.join(","),
       ...rows.map((r) =>
-        [r.id, safeCsv(r.user), safeCsv(r.items), r.total, r.status, r.createdAt ? new Date(r.createdAt).toLocaleString() : ""].join(",")
+        [r.id, safeCsv(r.user), safeCsv(r.items), r.total, r.status, r.payment, r.createdAt ? new Date(r.createdAt).toLocaleString() : ""].join(",")
       ),
     ].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -351,16 +378,26 @@ export default function VendorOrders() {
     });
   };
 
-  // Robust back handler: go back if possible, else go to a known dashboard route
   const handleBack = () => {
     const canGoBack = (window.history?.state && window.history.state.idx > 0) || window.history.length > 1;
     if (canGoBack) navigate(-1);
     else navigate(DASHBOARD_PATH);
   };
 
+  const paymentChip = (o) => {
+    const method = o.paymentMethod || "cod";
+    const status = o.paymentStatus || "unpaid";
+    const label = `${method === "mock_online" ? "Online" : "COD"} · ${status}`;
+    let color = "default";
+    if (status === "paid") color = "success";
+    else if (status === "refunded") color = "warning";
+    else if (status === "failed") color = "error";
+    else if (status === "processing") color = "warning";
+    return <Chip size="small" label={label} color={color} />;
+  };
+
   return (
     <>
-      {/* Top bar with robust Back */}
       <AppBar position="static" color="default" elevation={0}>
         <Toolbar sx={{ gap: 1 }}>
           <IconButton edge="start" aria-label="Back to vendor dashboard" onClick={handleBack}>
@@ -369,14 +406,7 @@ export default function VendorOrders() {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Vendor Orders
           </Typography>
-
-          {/* Optional direct button to dashboard using the same fallback path */}
-          <Button
-            onClick={() => navigate(DASHBOARD_PATH)}
-            variant="outlined"
-            size="small"
-            sx={{ textTransform: "none" }}
-          >
+          <Button onClick={() => navigate(DASHBOARD_PATH)} variant="outlined" size="small" sx={{ textTransform: "none" }}>
             Back to Dashboard
           </Button>
         </Toolbar>
@@ -384,24 +414,8 @@ export default function VendorOrders() {
 
       <Container sx={{ py: 3 }}>
         <audio ref={audioRef} src={beepSrc} preload="auto" />
-
-        {/* Header row: title tools + OPEN/CLOSED chip */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}
-        >
-          <Stack direction="row" spacing={2} alignItems="center">
-            <Typography variant="h5">Orders</Typography>
-            {/* NEW: Open/Closed indicator */}
-            <Chip
-              label={isOpen ? "Open" : "Closed"}
-              color={isOpen ? "success" : "default"}
-              size="small"
-              variant={isOpen ? "filled" : "outlined"}
-            />
-          </Stack>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
+          <Typography variant="h5">Orders</Typography>
 
           <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
             <TextField size="small" label="Search (user or item)" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -430,7 +444,6 @@ export default function VendorOrders() {
               </Select>
             </FormControl>
 
-            {/* Label means: enable a polling fallback (in addition to sockets) */}
             <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
             <FormControl size="small" sx={{ minWidth: 130 }}>
               <InputLabel id="poll-ms">Every</InputLabel>
@@ -474,9 +487,9 @@ export default function VendorOrders() {
 
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={24} /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} align="center"><CircularProgress size={24} /></TableCell></TableRow>
               ) : visibleOrders.length === 0 ? (
-                <TableRow><TableCell colSpan={7} align="center">No orders found</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} align="center">No orders found</TableCell></TableRow>
               ) : (
                 visibleOrders.map((o) => {
                   const disabled = updatingId === o.id;
@@ -496,15 +509,9 @@ export default function VendorOrders() {
                         <TableCell>{itemsToText(o)}</TableCell>
                         <TableCell>₹{o.totalAmount}</TableCell>
                         <TableCell><Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
+                        <TableCell>{paymentChip(o)}</TableCell>
                         <TableCell>
-                          <Chip
-                            size="small"
-                            label={'₹{o.paymentMethod}/₹{o.paymentStatus} '}
-                            color={o.paymentStatus === "paid" ? "success" : o.paymentStatus === "processing" ? "warning" : "default"}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: "flex", gap: 1 }}>
+                          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                             {o.status === "pending" && (
                               <>
                                 <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
@@ -517,12 +524,23 @@ export default function VendorOrders() {
                             {o.status === "ready" && (
                               <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
                             )}
+
+                            {/* Mark Paid for COD+unpaid */}
+                            {o.paymentMethod === "cod" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => markPaid(o.id)}
+                              >
+                                Mark Paid
+                              </Button>
+                            )}
                           </Box>
                         </TableCell>
                       </TableRow>
 
                       <TableRow>
-                        <TableCell colSpan={7} sx={{ p: 0, border: 0 }}>
+                        <TableCell colSpan={8} sx={{ p: 0, border: 0 }}>
                           <Collapse in={expandedRow} timeout="auto" unmountOnExit>
                             <Box sx={{ px: 3, py: 2, bgcolor: "background.default" }}>
                               <Typography variant="subtitle1" gutterBottom>Order Details</Typography>
@@ -552,9 +570,13 @@ export default function VendorOrders() {
                               )}
 
                               <Divider sx={{ my: 2 }} />
-                              <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
+                              <Stack direction="row" justifyContent="space-between" sx={{ mb: 1, flexWrap: "wrap", gap: 1 }}>
                                 <Typography variant="body2" color="text.secondary">
                                   Placed: {o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  Payment: {o.paymentMethod === "mock_online" ? "Online" : "COD"} · {o.paymentStatus || "unpaid"}
+                                  {o.paidAt ? ` · Paid at: ${new Date(o.paidAt).toLocaleString()}` : ""}
                                 </Typography>
                                 <Typography variant="subtitle2">Total: ₹{o.totalAmount}</Typography>
                               </Stack>
