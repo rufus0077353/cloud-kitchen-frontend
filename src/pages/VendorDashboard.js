@@ -53,6 +53,7 @@ const VendorDashboard = () => {
   // ----- summary state -----
   const [summary, setSummary] = useState(null);
   const [vendorId, setVendorId] = useState(null);
+  const [isOpen, setIsOpen] = useState(true);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -110,9 +111,12 @@ const VendorDashboard = () => {
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
+          setIsOpen(Boolean(me.isOpen));
           socket.emit("vendor:join", me.vendorId);
         }
-      } catch {}
+      } catch (e) {
+        // ignore
+      }
     };
 
     getMeAndJoin();

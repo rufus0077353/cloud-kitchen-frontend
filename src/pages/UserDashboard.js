@@ -18,6 +18,7 @@ const UserDashboard = () => {
   const [vendorId, setVendorId] = useState("");
   const [items, setItems] = useState([{ MenuItemId: "", quantity: 1 }]);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [vendorStatus, setVendorStatus] = useState({}); // { [vendorId]: true/false }
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
@@ -63,7 +64,13 @@ const UserDashboard = () => {
         return;
       }
       const data = await res.json();
-      setVendors(Array.isArray(data) ? data : data?.vendors || []);
+      const vendorsList = Array.isArray(data) ? data : data?.vendors || [];
+      setVendors(vendorsList);
+
+      // store open/closed status
+      const statusMap = {};
+      vendorsList.forEach(v => { statusMap[v.id] = Boolean(v.isOpen); });
+      setVendorStatus(statusMap);
     } catch (e) {
       console.error("vendors error:", e);
       setVendors([]);
@@ -258,6 +265,7 @@ const UserDashboard = () => {
           {(Array.isArray(vendors) ? vendors : []).map((v) => (
             <MenuItem key={v.id} value={v.id}>
               {v.name} {v.cuisine ? `- ${v.cuisine}` : ""}
+              {vendorStatus[v.id] ? " (Open)" : " (Closed)"}
             </MenuItem>
           ))}
         </TextField>
