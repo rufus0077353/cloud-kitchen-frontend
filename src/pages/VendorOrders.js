@@ -1,4 +1,3 @@
-
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,7 +13,7 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
-import { useNavigate } from "react-router-dom";   // ⬅️ useNavigate
+import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { io } from "socket.io-client";
 
@@ -34,6 +33,7 @@ const STATUS_COLORS = {
 
 export default function VendorOrders() {
   const navigate = useNavigate();
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
@@ -46,7 +46,10 @@ export default function VendorOrders() {
   const [realtime, setRealtime] = useState(true);
   const [pollMs, setPollMs] = useState(30000);
   const [soundOn, setSoundOn] = useState(true);
+
+  // NEW: vendor identity + open/closed state
   const [vendorId, setVendorId] = useState(null);
+  const [isOpen, setIsOpen] = useState(true);
 
   const prevPendingIdsRef = useRef(new Set());
   const socketRef = useRef(null);
@@ -98,6 +101,7 @@ export default function VendorOrders() {
       const incoming = parseOrders(data);
       setOrders(incoming);
 
+      // detect new pending orders (beep once we have a baseline)
       const currentPendingIds = new Set(
         (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
       );
@@ -142,7 +146,7 @@ export default function VendorOrders() {
         return;
       }
       toast.success("Status updated");
-      loadOrders({ silent: true });
+      loadOrders({ silent: true }); // quick sync
     } catch (e) {
       setOrders(prev); // rollback
       toast.error("Network error");
@@ -151,7 +155,7 @@ export default function VendorOrders() {
     }
   };
 
-  // 1) Get vendorId then join the socket room
+  // 1) Get vendorId and isOpen then (later) join the socket room
   useEffect(() => {
     const getMe = async () => {
       try {
@@ -159,6 +163,8 @@ export default function VendorOrders() {
         if (!r.ok) return;
         const me = await r.json();
         if (me?.vendorId) setVendorId(me.vendorId);
+        // NEW: set initial open/closed state
+        if (typeof me?.isOpen !== "undefined") setIsOpen(Boolean(me.isOpen));
       } catch {}
     };
     getMe();
@@ -199,19 +205,28 @@ export default function VendorOrders() {
       );
     };
 
+    // NEW: react to vendor open/close toggles (emitted by Dashboard)
+    const onVendorStatus = (payload) => {
+      if (!payload) return;
+      if (payload.vendorId && vendorId && Number(payload.vendorId) !== Number(vendorId)) return;
+      if (typeof payload.isOpen !== "undefined") setIsOpen(Boolean(payload.isOpen));
+    };
+
     s.on("order:new", onNew);
     s.on("order:status", onStatus);
     s.on("orders:refresh", () => loadOrders({ silent: true }));
+    s.on("vendor:status", onVendorStatus);
 
     return () => {
       try {
         s.off("order:new", onNew);
         s.off("order:status", onStatus);
         s.off("orders:refresh");
+        s.off("vendor:status", onVendorStatus);
         s.disconnect();
       } catch {}
     };
-  }, [token]);
+  }, [token, vendorId]);
 
   // 4) Once we know the vendorId, join its room
   useEffect(() => {
@@ -221,9 +236,9 @@ export default function VendorOrders() {
     } catch {}
   }, [vendorId]);
 
-  // 5) Optional polling fallback
+  // 5) Optional polling fallback (when realtime is toggled ON here it means "enable polling")
   useEffect(() => {
-    if (!realtime) return;
+    if (!realtime) return; // sockets doing the job; toggle label is "Polling fallback"
     const id = setInterval(() => loadOrders({ silent: true }), pollMs);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -336,7 +351,7 @@ export default function VendorOrders() {
     });
   };
 
-  // ⬇️ Robust back handler: go back if possible, else go to a known dashboard route
+  // Robust back handler: go back if possible, else go to a known dashboard route
   const handleBack = () => {
     const canGoBack = (window.history?.state && window.history.state.idx > 0) || window.history.length > 1;
     if (canGoBack) navigate(-1);
@@ -369,8 +384,24 @@ export default function VendorOrders() {
 
       <Container sx={{ py: 3 }}>
         <audio ref={audioRef} src={beepSrc} preload="auto" />
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
-          <Typography variant="h5">Orders</Typography>
+
+        {/* Header row: title tools + OPEN/CLOSED chip */}
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}
+        >
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Typography variant="h5">Orders</Typography>
+            {/* NEW: Open/Closed indicator */}
+            <Chip
+              label={isOpen ? "Open" : "Closed"}
+              color={isOpen ? "success" : "default"}
+              size="small"
+              variant={isOpen ? "filled" : "outlined"}
+            />
+          </Stack>
 
           <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
             <TextField size="small" label="Search (user or item)" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -399,6 +430,7 @@ export default function VendorOrders() {
               </Select>
             </FormControl>
 
+            {/* Label means: enable a polling fallback (in addition to sockets) */}
             <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
             <FormControl size="small" sx={{ minWidth: 130 }}>
               <InputLabel id="poll-ms">Every</InputLabel>

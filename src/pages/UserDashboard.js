@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import {
   Container, Typography, Button, Table, TableHead, TableRow,
   TableCell, TableBody, TextField, MenuItem, Box, AppBar, Toolbar,
+  Chip, Stack, Tooltip
 } from "@mui/material";
 import { socket } from "../utils/socket";
 import { subscribePush } from "../utils/push";
@@ -14,25 +15,25 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 const UserDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [vendorStatus, setVendorStatus] = useState({}); // id -> isOpen
   const [menuItems, setMenuItems] = useState([]);
   const [vendorId, setVendorId] = useState("");
   const [items, setItems] = useState([{ MenuItemId: "", quantity: 1 }]);
   const [totalAmount, setTotalAmount] = useState(0);
-  const [vendorStatus, setVendorStatus] = useState({}); // { [vendorId]: true/false }
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
-
-  const isSelectedVendorOpen = Boolean(vendorStatus[vendorId]);
 
   const headers = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
 
-  const safeJson = async (res) => { try { return await res.json(); } catch { return null; } };
+  const safeJson = async (res) => {
+    try { return await res.json(); } catch { return null; }
+  };
 
-  // loaders
+  // ---------- LOADERS ----------
   const fetchOrders = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -63,25 +64,27 @@ const UserDashboard = () => {
         const data = await safeJson(res);
         console.error("vendors failed:", res.status, data);
         setVendors([]);
+        setVendorStatus({});
         return;
       }
       const data = await res.json();
-      const vendorsList = Array.isArray(data) ? data : data?.vendors || [];
-      setVendors(vendorsList);
-
-      // store open/closed status
-      const statusMap = {};
-      vendorsList.forEach(v => { statusMap[v.id] = Boolean(v.isOpen); });
-      setVendorStatus(statusMap);
+      const list = Array.isArray(data) ? data : [];
+      setVendors(list);
+      // build quick lookup map: id -> isOpen (default true if missing)
+      const vs = {};
+      for (const v of list) vs[Number(v.id)] = v.isOpen !== false; // treat undefined as true
+      setVendorStatus(vs);
     } catch (e) {
       console.error("vendors error:", e);
       setVendors([]);
+      setVendorStatus({});
     }
   };
 
   const fetchMenuItemsForVendor = async (vId) => {
     if (!vId) return;
     try {
+      // only available items
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       if (!res.ok) {
         const data = await safeJson(res);
@@ -104,7 +107,7 @@ const UserDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // socket
+  // ---------- SOCKET ----------
   useEffect(() => {
     if (!user?.id) return;
 
@@ -127,21 +130,29 @@ const UserDashboard = () => {
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
+    const onVendorStatus = (payload) => {
+      // payload: { vendorId, isOpen }
+      if (!payload?.vendorId) return;
+      setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
+    };
+
     const onReconnect = () => join();
 
     socket.on("order:new", onNew);
     socket.on("order:status", onStatus);
+    socket.on("vendor:status", onVendorStatus);
     socket.on("connect", onReconnect);
 
     return () => {
       socket.off("order:new", onNew);
       socket.off("order:status", onStatus);
+      socket.off("vendor:status", onVendorStatus);
       socket.off("connect", onReconnect);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // form handlers
+  // ---------- FORM HANDLERS ----------
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
@@ -167,7 +178,12 @@ const UserDashboard = () => {
     setTotalAmount(total);
   };
 
-  const addItem = () => setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
+  const addItem = () => {
+    setItems((prev) => [...prev, { MenuItemId: "", quantity: 1 }]);
+  };
+
+  // ---- Open/Closed helpers
+  const isSelectedVendorOpen = vendorId ? Boolean(vendorStatus[Number(vendorId)]) : true;
 
   const handleSubmit = async () => {
     if (!user?.id) {
@@ -178,12 +194,19 @@ const UserDashboard = () => {
       toast.error("Select a vendor first");
       return;
     }
+    if (!isSelectedVendorOpen) {
+      toast.error("This vendor is currently closed.");
+      return;
+    }
 
     const payload = {
       VendorId: Number(vendorId),
       items: items
         .filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0)
-        .map((it) => ({ MenuItemId: Number(it.MenuItemId), quantity: Number(it.quantity) })),
+        .map((it) => ({
+          MenuItemId: Number(it.MenuItemId),
+          quantity: Number(it.quantity),
+        })),
     };
 
     if (payload.items.length === 0) {
@@ -191,6 +214,7 @@ const UserDashboard = () => {
       return;
     }
 
+    // helpful debug to see exactly what we send
     console.log("[create order] payload:", payload);
 
     try {
@@ -200,7 +224,6 @@ const UserDashboard = () => {
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
-
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -208,7 +231,11 @@ const UserDashboard = () => {
         return;
       }
       if (!res.ok) {
-        toast.error(data?.message || "Failed to create order");
+        const msg =
+          data?.message ||
+          (typeof data === "string" ? data : "") ||
+          "Failed to create order";
+        toast.error(msg);
         console.warn("[create order] server said:", data);
         return;
       }
@@ -225,7 +252,10 @@ const UserDashboard = () => {
 
   const deleteOrder = async (orderId) => {
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, { method: "DELETE", headers });
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers,
+      });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -246,6 +276,12 @@ const UserDashboard = () => {
 
   const ordersSafe = Array.isArray(orders) ? orders : [];
 
+  // convenience for button disable + tooltip
+  const hasValidItems = items.some((it) => it.MenuItemId && Number(it.quantity) > 0);
+  const disableSubmit = !vendorId || !isSelectedVendorOpen || !hasValidItems;
+
+  const selectedVendor = vendors.find(v => Number(v.id) === Number(vendorId));
+
   return (
     <Container>
       <AppBar position="static">
@@ -258,26 +294,57 @@ const UserDashboard = () => {
       </AppBar>
 
       <Box mt={4}>
-        <Typography variant="h5" gutterBottom>Place New Order</Typography>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Typography variant="h5" gutterBottom>
+            Place New Order
+          </Typography>
+          {selectedVendor && (
+            <Chip
+              label={isSelectedVendorOpen ? "Open" : "Closed"}
+              color={isSelectedVendorOpen ? "success" : "default"}
+              variant={isSelectedVendorOpen ? "filled" : "outlined"}
+            />
+          )}
+        </Stack>
 
         <TextField
-          select label="Select Vendor" fullWidth value={vendorId}
-          onChange={handleVendorChange} margin="normal"
+          select
+          label="Select Vendor"
+          fullWidth
+          value={vendorId}
+          onChange={handleVendorChange}
+          margin="normal"
         >
-          {(Array.isArray(vendors) ? vendors : []).map((v) => (
-            <MenuItem key={v.id} value={v.id}>
-              {v.name} {v.cuisine ? `- ${v.cuisine}` : ""}
-              {vendorStatus[v.id] ? " (Open)" : " (Closed)"}
-            </MenuItem>
-          ))}
+          {(Array.isArray(vendors) ? vendors : []).map((v) => {
+            const open = v.isOpen !== false; // default true
+            return (
+              <MenuItem key={v.id} value={v.id}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <span>
+                    {v.name} {v.cuisine ? `- ${v.cuisine}` : ""}
+                    {!open ? " (Closed)" : ""}
+                  </span>
+                  <Chip
+                    size="small"
+                    label={open ? "Open" : "Closed"}
+                    color={open ? "success" : "default"}
+                    variant={open ? "filled" : "outlined"}
+                  />
+                </Stack>
+              </MenuItem>
+            );
+          })}
         </TextField>
 
         {items.map((item, index) => (
           <Box key={index} display="flex" gap={2} alignItems="center" mt={2}>
             <TextField
-              select label="Menu Item" value={item.MenuItemId}
+              select
+              label="Menu Item"
+              value={item.MenuItemId}
               onChange={(e) => handleItemChange(index, "MenuItemId", e.target.value)}
               style={{ flex: 1 }}
+              disabled={!isSelectedVendorOpen}
             >
               {(Array.isArray(menuItems) ? menuItems : []).map((m) => (
                 <MenuItem key={m.id} value={m.id}>
@@ -287,28 +354,52 @@ const UserDashboard = () => {
             </TextField>
 
             <TextField
-              type="number" label="Quantity" value={item.quantity}
+              type="number"
+              label="Quantity"
+              value={item.quantity}
               onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
-              style={{ width: 110 }} inputProps={{ min: 0 }}
+              style={{ width: 110 }}
+              inputProps={{ min: 0 }}
+              disabled={!isSelectedVendorOpen}
             />
           </Box>
         ))}
 
-        <Box mt={2}>
-          <Button variant="outlined" onClick={() => addItem()}>Add Another Item</Button>
-        </Box>
-
-        <Box mt={2}>
-          <Typography>Total: ₹{totalAmount.toFixed(2)}</Typography>
-          <Button variant="contained" color="primary" onClick={handleSubmit}
-            disabled={!vendorId || items.filter((it) => it.MenuItemId !== "" && Number(it.quantity) > 0).length === 0 || !isSelectedVendorOpen}>
-            Submit Order
+        <Box mt={2} display="flex" alignItems="center" gap={2}>
+          <Button variant="outlined" onClick={addItem} disabled={!isSelectedVendorOpen}>
+            Add Another Item
           </Button>
+
+          <Typography sx={{ ml: "auto" }}>Total: ₹{totalAmount.toFixed(2)}</Typography>
+          <Tooltip
+            title={
+              !vendorId
+                ? "Choose a vendor"
+                : !isSelectedVendorOpen
+                ? "This vendor is closed"
+                : !hasValidItems
+                ? "Add at least one item"
+                : ""
+            }
+          >
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleSubmit}
+                disabled={disableSubmit}
+              >
+                Submit Order
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
 
       <Box mt={5}>
-        <Typography variant="h5" gutterBottom>Your Orders</Typography>
+        <Typography variant="h5" gutterBottom>
+          Your Orders
+        </Typography>
 
         <Table>
           <TableHead>
@@ -333,14 +424,22 @@ const UserDashboard = () => {
                   {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
                 </TableCell>
                 <TableCell>
-                  <Button color="error" variant="outlined" onClick={() => deleteOrder(order.id)}>
+                  <Button
+                    color="error"
+                    variant="outlined"
+                    onClick={() => deleteOrder(order.id)}
+                  >
                     Delete
                   </Button>
                 </TableCell>
               </TableRow>
             ))}
             {ordersSafe.length === 0 && (
-              <TableRow><TableCell colSpan={6} align="center">No orders yet</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={6} align="center">
+                  No orders yet
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>
