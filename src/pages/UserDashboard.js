@@ -39,7 +39,7 @@ export default function UserDashboard() {
   const parseOrderList = (data) => {
     if (Array.isArray(data)) return data;
     if (Array.isArray(data?.orders)) return data.orders;
-    if (Array.isArray(data?.items))  return data.items;
+    if (Array.isArray(data?.items)) return data.items;
     if (data && typeof data === "object" && (data.id || data.order?.id)) return [data.order || data];
     return [];
   };
@@ -58,15 +58,14 @@ export default function UserDashboard() {
     });
   };
 
-  // Browser-safe idempotency key
+  // Browser-safe idempotency key (no globalThis, works in Netlify/CRA)
   const makeIdempotencyKey = () => {
     try {
+      const g = typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : {});
       const rnd =
-        typeof globalThis !== "undefined" &&
-        globalThis.crypto &&
-        typeof globalThis.crypto.randomUUID === "function"
-          ? globalThis.crypto.randomUUID()
-          : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+        g.crypto && typeof g.crypto.randomUUID === "function"
+          ? g.crypto.randomUUID()
+          : Date.now().toString(36) + Math.random().toString(36).slice(2);
       return `order-${rnd}`;
     } catch {
       return `order-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -85,8 +84,8 @@ export default function UserDashboard() {
         return;
       }
       const data = await safeJson(res);
-      if (!res.ok) { console.warn("orders/my failed:", res.status, data); return; }
-      setOrders(prev => normalizeList(parseOrderList(data)));
+      if (!res.ok) return;
+      setOrders((prev) => normalizeList(parseOrderList(data)));
     } catch (e) {
       console.error("orders/my error:", e);
     } finally {
@@ -98,17 +97,13 @@ export default function UserDashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/vendors`);
       const data = await safeJson(res);
-      if (!res.ok) {
-        console.error("vendors failed:", res.status, data);
-        setVendors([]); setVendorStatus({}); return;
-      }
+      if (!res.ok) { setVendors([]); setVendorStatus({}); return; }
       const list = Array.isArray(data) ? data : [];
       setVendors(list);
       const vs = {};
       for (const v of list) vs[Number(v.id)] = v.isOpen !== false;
       setVendorStatus(vs);
-    } catch (e) {
-      console.error("vendors error:", e);
+    } catch {
       setVendors([]); setVendorStatus({});
     }
   };
@@ -118,12 +113,11 @@ export default function UserDashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       const data = await safeJson(res);
-      if (!res.ok) { console.error("vendor menu failed:", res.status, data); setMenuItems([]); return; }
+      if (!res.ok) { setMenuItems([]); return; }
       const list = Array.isArray(data) ? data : [];
       setMenuItems(list);
       calculateTotal(items, list);
-    } catch (e) {
-      console.error("menu-items error:", e);
+    } catch {
       setMenuItems([]);
     }
   };
@@ -147,41 +141,41 @@ export default function UserDashboard() {
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      setOrders(prev => normalizeList([fullOrder, ...(prev || [])]));
+      setOrders((prev) => normalizeList([fullOrder, ...(prev || [])]));
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
     };
 
     const onStatus = (payload) => {
       if (Number(payload?.UserId) !== Number(user.id)) return;
-      setOrders(prev =>
-        normalizeList((prev || []).map(o => (o.id === payload.id ? { ...o, status: payload.status } : o)))
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)))
       );
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
     const onVendorStatus = (payload) => {
       if (!payload?.vendorId) return;
-      setVendorStatus(prev => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
+      setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
     };
 
     const onPayProcessing = (p) => {
       if (!p?.id) return;
-      setOrders(prev =>
-        normalizeList((prev || []).map(o => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
       );
       toast.info(`Payment processing for order #${p.id}`);
     };
     const onPaySuccess = (p) => {
       if (!p?.id) return;
-      setOrders(prev =>
-        normalizeList((prev || []).map(o => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
       );
       toast.success(`Payment succeeded for order #${p.id}`);
     };
     const onPayFailed = (p) => {
       if (!p?.id) return;
-      setOrders(prev =>
-        normalizeList((prev || []).map(o => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
       );
       toast.error(`Payment failed for order #${p.id}`);
     };
@@ -193,7 +187,7 @@ export default function UserDashboard() {
     socket.on("vendor:status", onVendorStatus);
     socket.on("payment:processing", onPayProcessing);
     socket.on("payment:success", onPaySuccess);
-    socket.on("payment:failed", onPayFailed);
+    socket.on ("payment:failed", onPayFailed);
 
     return () => {
       socket.off("connect", onConnect);
@@ -279,7 +273,7 @@ export default function UserDashboard() {
       const created = data?.order || data;
 
       if (created?.id) {
-        setOrders(prev => normalizeList([created, ...(prev || [])]));
+        setOrders((prev) => normalizeList([created, ...(prev || [])]));
       } else {
         // fallback to refetch if response shape is unexpected
         await fetchOrders();
@@ -306,7 +300,7 @@ export default function UserDashboard() {
         return;
       }
       if (res.ok) {
-        setOrders(prev => (Array.isArray(prev) ? prev.filter(o => o.id !== orderId) : []));
+        setOrders((prev) => (Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []));
       } else {
         const data = await safeJson(res);
         toast.error(data?.message || "Failed to delete");
@@ -359,8 +353,8 @@ export default function UserDashboard() {
     const { ok, data } = await postJson("/api/payments/mock/start", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to start mock payment"); return; }
     toast.info("Payment started");
-    setOrders(prev =>
-      normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o))
+    setOrders((prev) =>
+      normalizeList((prev || []).map((o) => (o.id === orderId ? { ...o, paymentStatus: "processing" } : o)))
     );
   };
 
@@ -368,8 +362,8 @@ export default function UserDashboard() {
     const { ok, data } = await postJson("/api/payments/mock/succeed", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to mark success"); return; }
     toast.success("Payment marked as success");
-    setOrders(prev =>
-      normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "paid" } : o))
+    setOrders((prev) =>
+      normalizeList((prev || []).map((o) => (o.id === orderId ? { ...o, paymentStatus: "paid" } : o)))
     );
   };
 
@@ -377,16 +371,15 @@ export default function UserDashboard() {
     const { ok, data } = await postJson("/api/payments/mock/fail", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to mark failure"); return; }
     toast.error("Payment marked as failed");
-    setOrders(prev =>
-      normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "failed" } : o))
+    setOrders((prev) =>
+      normalizeList((prev || []).map((o) => (o.id === orderId ? { ...o, paymentStatus: "failed" } : o)))
     );
   };
 
   // ---------- render ----------
-  const ordersSafe = Array.isArray(orders) ? orders : [];
   const hasValidItems = items.some((it) => it.MenuItemId && Number(it.quantity) > 0);
   const disableSubmit = !vendorId || !isSelectedVendorOpen || !hasValidItems || submitting;
-  const selectedVendor = vendors.find(v => Number(v.id) === Number(vendorId));
+  const selectedVendor = vendors.find((v) => Number(v.id) === Number(vendorId));
 
   return (
     <Container>
@@ -459,7 +452,7 @@ export default function UserDashboard() {
         ))}
 
         <Box mt={2} display="flex" alignItems="center" gap={2}>
-          <Button variant="outlined" onClick={() => addItem()} disabled={!isSelectedVendorOpen}>
+          <Button variant="outlined" onClick={addItem} disabled={!isSelectedVendorOpen}>
             Add Another Item
           </Button>
 
