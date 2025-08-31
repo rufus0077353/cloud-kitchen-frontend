@@ -35,7 +35,7 @@ const SummaryCard = ({ title, value, sub }) => (
   </Paper>
 );
 
-// NEW: small AOV card
+// AOV card
 const AovCard = ({ title, revenue = 0, orders = 0 }) => {
   const aov = orders > 0 ? Number(revenue) / Number(orders) : 0;
   return (
@@ -76,12 +76,13 @@ const VendorDashboard = () => {
   const [daily, setDaily] = useState([]);
   const [loadingDaily, setLoadingDaily] = useState(false);
 
-  // ----- lifetime / goals (NEW) -----
-  const [revGoal, setRevGoal] = useState(() => {
-    // sensible default monthly goal (edit in UI)
-    return 50000;
-  });
-  const [ordersGoal, setOrdersGoal] = useState(() => 200);
+  // ----- lifetime / goals -----
+  const [revGoal, setRevGoal] = useState(50000);
+  const [ordersGoal, setOrdersGoal] = useState(200);
+
+  // ----- top items (NEW) -----
+  const [topItems, setTopItems] = useState([]);
+  const [loadingTop, setLoadingTop] = useState(false);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -159,6 +160,75 @@ const VendorDashboard = () => {
     }
   };
 
+  // ---------- TOP ITEMS (NEW) ----------
+  // Pulls the most recent 200 vendor orders and aggregates item quantity & revenue.
+  const fetchTopItems = async () => {
+    setLoadingTop(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/vendor?page=1&pageSize=200`, { headers });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.message || `Top items failed (${res.status})`;
+        toast.error(msg);
+        setTopItems([]);
+        return;
+      }
+      const orders = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+      const agg = new Map();
+      for (const o of orders) {
+        const fromOrderItems = Array.isArray(o?.OrderItems) && o.OrderItems.length > 0;
+        const lines = fromOrderItems
+          ? o.OrderItems.map(oi => ({
+              id: oi.MenuItem?.id ?? oi.MenuItemId ?? null,
+              name: oi.MenuItem?.name ?? "Item",
+              price: Number(oi.MenuItem?.price ?? 0),
+              qty: Number(oi.quantity ?? oi.OrderItem?.quantity ?? 1),
+            }))
+          : (Array.isArray(o?.MenuItems) ? o.MenuItems.map(mi => ({
+              id: mi.id ?? null,
+              name: mi.name ?? "Item",
+              price: Number(mi.price ?? 0),
+              qty: Number(mi.OrderItem?.quantity ?? 1),
+            })) : []);
+        for (const ln of lines) {
+          if (!ln) continue;
+          const key = ln.id ?? ln.name;
+          const prev = agg.get(key) || { name: ln.name, qty: 0, revenue: 0 };
+          prev.qty += ln.qty;
+          prev.revenue += ln.qty * ln.price;
+          agg.set(key, prev);
+        }
+      }
+      const items = [...agg.values()].sort((a, b) => b.revenue - a.revenue);
+      setTopItems(items.slice(0, 8)); // top 8
+    } catch (e) {
+      console.error("fetchTopItems error:", e);
+      setTopItems([]);
+    } finally {
+      setLoadingTop(false);
+    }
+  };
+
+  const exportTopCsv = () => {
+    const headers = ["Item", "Quantity", "Revenue"];
+    const lines = (topItems || []).map(i => `${i.name},${i.qty},${i.revenue}`);
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `vendor-top-items-${stamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ---- socket: join vendor room + notify on new orders ----
   useEffect(() => {
     const getMeAndJoin = async () => {
@@ -185,14 +255,15 @@ const VendorDashboard = () => {
     const onNewOrder = (order) => {
       if (Number(order?.VendorId) === Number(vendorId)) {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
-        fetchSummary();   // keep cards fresh
-        fetchDaily(days); // keep trend fresh
+        fetchSummary();
+        fetchDaily(days);
+        fetchTopItems(); // refresh top items
       }
     };
 
     socket.on("connect", onReconnect);
     socket.on("order:new", onNewOrder);
-    socket.on("order:status", () => { fetchSummary(); fetchDaily(days); });
+    socket.on("order:status", () => { fetchSummary(); fetchDaily(days); fetchTopItems(); });
 
     return () => {
       socket.off("connect", onReconnect);
@@ -250,6 +321,7 @@ const VendorDashboard = () => {
       fetchMenu();
       fetchSummary();
       fetchDaily(days);
+      fetchTopItems();
     } catch (err) {
       console.error("Menu item save error:", err);
       toast.error("Server error occurred");
@@ -276,6 +348,7 @@ const VendorDashboard = () => {
         fetchMenu();
         fetchSummary();
         fetchDaily(days);
+        fetchTopItems();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.message || "Failed to delete");
@@ -314,6 +387,7 @@ const VendorDashboard = () => {
     fetchMenu();
     fetchSummary();
     fetchDaily(days);
+    fetchTopItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -346,11 +420,9 @@ const VendorDashboard = () => {
   const monthRevenue = Number(summary?.month?.revenue || 0);
   const lifeRevenue  = Number(summary?.totals?.revenue || 0);
 
-  // Progress toward monthly goals
   const revProgress    = revGoal > 0 ? Math.min(100, (monthRevenue / revGoal) * 100) : 0;
   const ordersProgress = ordersGoal > 0 ? Math.min(100, (monthOrders / ordersGoal) * 100) : 0;
 
-  // Simple “clever” note: tells how many more orders / revenue needed this month
   const revRemaining    = Math.max(0, revGoal - monthRevenue);
   const ordersRemaining = Math.max(0, ordersGoal - monthOrders);
 
@@ -362,6 +434,9 @@ const VendorDashboard = () => {
     if (!parts.length) return "Monthly goals reached 🎉";
     return `You’re close: ${parts.join(" · ")}`;
   }, [revRemaining, ordersRemaining, revGoal, ordersGoal]);
+
+  // ------- Top items helpers -------
+  const totalTopRevenue = (topItems || []).reduce((s, i) => s + Number(i.revenue || 0), 0) || 0;
 
   return (
     <>
@@ -462,25 +537,13 @@ const VendorDashboard = () => {
             <Grid item xs={12} md={8}>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard
-                    title="Today"
-                    value={todayRevenue}
-                    sub={`${todayOrders || 0} orders`}
-                  />
+                  <SummaryCard title="Today" value={todayRevenue} sub={`${todayOrders || 0} orders`} />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard
-                    title="This Week"
-                    value={weekRevenue}
-                    sub={`${weekOrders || 0} orders`}
-                  />
+                  <SummaryCard title="This Week" value={weekRevenue} sub={`${weekOrders || 0} orders`} />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard
-                    title="This Month"
-                    value={monthRevenue}
-                    sub={`${monthOrders || 0} orders`}
-                  />
+                  <SummaryCard title="This Month" value={monthRevenue} sub={`${monthOrders || 0} orders`} />
                 </Grid>
               </Grid>
             </Grid>
@@ -489,7 +552,7 @@ const VendorDashboard = () => {
             </Grid>
           </Grid>
 
-          {/* NEW: AOV row */}
+          {/* AOV row */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>Average Order Value (AOV)</Typography>
             <Grid container spacing={2}>
@@ -502,7 +565,7 @@ const VendorDashboard = () => {
 
           <Divider sx={{ mt: 2 }} />
 
-          {/* NEW: Monthly Goals with progress */}
+          {/* Monthly Goals with progress */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="h6" sx={{ mb: 1 }}>Monthly Goals</Typography>
 
@@ -521,11 +584,7 @@ const VendorDashboard = () => {
                     />
                   </Stack>
                   <Typography variant="subtitle2">₹{monthRevenue.toFixed(2)} / ₹{Number(revGoal).toFixed(0)}</Typography>
-                  <LinearProgress
-                    variant="determinate"
-                    value={revProgress}
-                    sx={{ mt: 1, height: 10, borderRadius: 1 }}
-                  />
+                  <LinearProgress variant="determinate" value={revProgress} sx={{ mt: 1, height: 10, borderRadius: 1 }} />
                   <Typography variant="caption" color="text.secondary">
                     {revRemaining <= 0 ? "Goal achieved 🎉" : `₹${revRemaining.toFixed(0)} to go`}
                   </Typography>
@@ -546,11 +605,7 @@ const VendorDashboard = () => {
                     />
                   </Stack>
                   <Typography variant="subtitle2">{monthOrders} / {ordersGoal}</Typography>
-                  <LinearProgress
-                    variant="determinate"
-                    value={ordersProgress}
-                    sx={{ mt: 1, height: 10, borderRadius: 1 }}
-                  />
+                  <LinearProgress variant="determinate" value={ordersProgress} sx={{ mt: 1, height: 10, borderRadius: 1 }} />
                   <Typography variant="caption" color="text.secondary">
                     {ordersRemaining <= 0 ? "Goal achieved 🎉" : `${ordersRemaining} orders to go`}
                   </Typography>
@@ -561,6 +616,55 @@ const VendorDashboard = () => {
             <Typography variant="body2" color="text.secondary">
               {goalHint}
             </Typography>
+          </Box>
+
+          <Divider sx={{ mt: 2 }} />
+
+          {/* NEW: Top Selling Items */}
+          <Box sx={{ mt: 2 }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+              <Typography variant="h6">Top Selling Items</Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Tooltip title="Reload top items">
+                  <IconButton onClick={fetchTopItems}><Refresh /></IconButton>
+                </Tooltip>
+                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportTopCsv} disabled={loadingTop || (topItems || []).length === 0}>
+                  Export CSV
+                </Button>
+              </Stack>
+            </Stack>
+
+            <Paper sx={{ p: 2 }}>
+              {(topItems || []).length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {loadingTop ? "Loading…" : "No data yet"}
+                </Typography>
+              ) : (
+                <Grid container spacing={1}>
+                  {(topItems || []).map((it, idx) => {
+                    const share = totalTopRevenue > 0 ? (it.revenue / totalTopRevenue) * 100 : 0;
+                    return (
+                      <Grid item xs={12} key={`${it.name}-${idx}`}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                          <Typography variant="body2" sx={{ maxWidth: "50%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {idx + 1}. {it.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {it.qty} sold · ₹{Number(it.revenue || 0).toFixed(2)}
+                          </Typography>
+                        </Stack>
+                        <LinearProgress variant="determinate" value={Math.min(100, share)} sx={{ height: 8, borderRadius: 1, mb: 1 }} />
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              )}
+              {totalTopRevenue > 0 && (
+                <Typography variant="caption" color="text.secondary">
+                  Total revenue across top items: ₹{totalTopRevenue.toFixed(2)}
+                </Typography>
+              )}
+            </Paper>
           </Box>
 
           <Divider sx={{ mt: 2 }} />
