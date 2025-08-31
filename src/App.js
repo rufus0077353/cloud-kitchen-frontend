@@ -30,7 +30,6 @@ import Navbar from "./components/Navbar";
 import PrivateRoute from "./components/PrivateRoute";
 import AdminRoute from "./components/AdminRoute";
 import ConnectionBar from "./components/ConnectionBar";
-import ErrorBoundary from "./ErrorBoundary"; // Custom error boundary
 
 function App() {
   return (
@@ -65,7 +64,7 @@ function App() {
             }
           />
 
-          {/* Vendor Menu (gated) */}
+          {/* Vendor Menu */}
           <Route
             path="/vendor/menu"
             element={
@@ -75,7 +74,7 @@ function App() {
             }
           />
 
-          {/* Vendor Orders (fixed path; previously duplicated /orders) */}
+          {/* Vendor Orders */}
           <Route
             path="/vendor/orders"
             element={
@@ -149,7 +148,7 @@ function App() {
             }
           />
 
-          {/* Orders (user-facing) */}
+          {/* Orders (user) */}
           <Route
             path="/orders"
             element={

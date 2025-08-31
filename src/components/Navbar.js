@@ -1,5 +1,3 @@
-
-// src/components/Navbar.js
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
@@ -19,7 +17,6 @@ import {
   Divider,
   Badge,
   Avatar,
-  useMediaQuery,
 } from "@mui/material";
 
 import MenuIcon from "@mui/icons-material/Menu";
@@ -32,7 +29,6 @@ import PeopleIcon from "@mui/icons-material/People";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
-// (served from /public — change to /logo192.png if you don’t have an SVG)
 const BRAND = {
   src: "/servezy-logo.png",
   fallback: "/logo192.png",
@@ -44,18 +40,12 @@ const isPathActive = (location, path) => location.pathname.startsWith(path);
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const isSmall = useMediaQuery("(max-width:900px)");
 
   const token = localStorage.getItem("token");
-  const user = useMemo(
-    () => JSON.parse(localStorage.getItem("user") || "{}"),
-    []
-  );
+  const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [vendorId, setVendorId] = useState(
-    localStorage.getItem("vendorId") || null
-  );
+  const [vendorId, setVendorId] = useState(localStorage.getItem("vendorId") || null);
   const [vendorPendingCount, setVendorPendingCount] = useState(0);
   const [userActiveCount, setUserActiveCount] = useState(0);
 
@@ -68,7 +58,7 @@ export default function Navbar() {
   const isUser = token && role === "user";
   const isAdmin = token && role === "admin";
 
-  // ---------- Badge counters ----------
+  // Badge counters
   const fetchVendorPending = async () => {
     if (!isVendor) return;
     try {
@@ -90,22 +80,19 @@ export default function Navbar() {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setUserActiveCount(
-        list.filter((o) => ["pending", "accepted", "ready"].includes(o.status))
-          .length
+        list.filter((o) => ["pending", "accepted", "ready"].includes(o.status)).length
       );
     } catch {
       setUserActiveCount(0);
     }
   };
 
-  // ---------- Socket room joins ----------
+  // Socket joins
   useEffect(() => {
     if (!token) return;
 
-    // user room
     if (user?.id) socket.emit("user:join", user.id);
 
-    // vendor room
     const joinVendor = async () => {
       if (!isVendor) return;
       if (vendorId) {
@@ -128,25 +115,20 @@ export default function Navbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user?.id, isVendor, vendorId]);
 
-  // initial badge load
   useEffect(() => {
     fetchVendorPending();
     fetchUserActive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser]);
 
-  // live updates → refresh counts
   useEffect(() => {
     const onNew = (order) => {
-      if (isVendor && Number(order?.VendorId) === Number(vendorId))
-        fetchVendorPending();
-      if (isUser && Number(order?.UserId) === Number(user?.id))
-        fetchUserActive();
+      if (isVendor && Number(order?.VendorId) === Number(vendorId)) fetchVendorPending();
+      if (isUser && Number(order?.UserId) === Number(user?.id)) fetchUserActive();
     };
-    const onStatus = (payload) => {
+    const onStatus = () => {
       if (isVendor) fetchVendorPending();
-      if (isUser && Number(payload?.UserId) === Number(user?.id))
-        fetchUserActive();
+      if (isUser) fetchUserActive();
     };
     socket.on("order:new", onNew);
     socket.on("order:status", onStatus);
@@ -157,7 +139,6 @@ export default function Navbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser, vendorId, user?.id]);
 
-  // Close drawer on route change (mobile UX)
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
@@ -177,14 +158,13 @@ export default function Navbar() {
     navigate("/login");
   };
 
-  // ---------- Role-based links ----------
   const links = useMemo(() => {
     if (!token || !role) return [];
     if (isAdmin) {
       return [
         { to: "/admin/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
         { to: "/admin/users", label: "Users", icon: <PeopleIcon /> },
-        { to: "/admin/orders", label: "Orders", icon: <ListAltIcon />},
+        { to: "/admin/orders", label: "Orders", icon: <ListAltIcon /> },
       ];
     }
     if (isVendor) {
@@ -198,7 +178,6 @@ export default function Navbar() {
         },
       ];
     }
-    // user
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {
@@ -210,7 +189,6 @@ export default function Navbar() {
     ];
   }, [token, role, isAdmin, isVendor, vendorPendingCount, userActiveCount]);
 
-  // ---------- Brand (logo + text) ----------
   const Brand = (
     <Box
       component={RouterLink}
@@ -240,7 +218,6 @@ export default function Navbar() {
     <>
       <AppBar position="sticky" elevation={1} color="primary">
         <Toolbar sx={{ gap: 2 }}>
-          {/* Mobile: hamburger */}
           {token && (
             <IconButton
               color="inherit"
@@ -257,7 +234,6 @@ export default function Navbar() {
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {/* Desktop links */}
           {token && (
             <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", gap: 1 }}>
               {links.map((lnk) => {
@@ -278,11 +254,7 @@ export default function Navbar() {
                   </Button>
                 );
                 return lnk.badge ? (
-                  <Badge
-                    key={lnk.to}
-                    color="secondary"
-                    badgeContent={lnk.badge > 99 ? "99+" : lnk.badge}
-                  >
+                  <Badge key={lnk.to} color="secondary" badgeContent={lnk.badge > 99 ? "99+" : lnk.badge}>
                     {btn}
                   </Badge>
                 ) : (
@@ -303,7 +275,6 @@ export default function Navbar() {
         </Toolbar>
       </AppBar>
 
-      {/* Mobile Drawer */}
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box sx={{ width: 270, display: "flex", flexDirection: "column", height: "100%" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, p: 2 }}>
@@ -334,10 +305,7 @@ export default function Navbar() {
                   >
                     <ListItemIcon>
                       {lnk.badge ? (
-                        <Badge
-                          color="secondary"
-                          badgeContent={lnk.badge > 99 ? "99+" : lnk.badge}
-                        >
+                        <Badge color="secondary" badgeContent={lnk.badge > 99 ? "99+" : lnk.badge}>
                           {lnk.icon}
                         </Badge>
                       ) : (
