@@ -1,13 +1,14 @@
 // src/pages/VendorDashboard.js
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   IconButton, Stack, Chip, Grid, Box, Divider, Tooltip,
-  FormControlLabel, Switch, MenuItem, LinearProgress
+  FormControlLabel, Switch, MenuItem, LinearProgress, Skeleton, Alert
 } from "@mui/material";
-import { Delete, Edit, Refresh } from "@mui/icons-material";
+import { Delete, Edit, Refresh, Add } from "@mui/icons-material";
 import DownloadIcon from "@mui/icons-material/Download";
+import StarIcon from "@mui/icons-material/Star";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
@@ -15,6 +16,7 @@ import VendorSalesTrend from "../components/VendorSalesTrend";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
+// --------- helpers ----------
 const STATUS_COLORS = {
   pending:   "default",
   accepted:  "primary",
@@ -27,40 +29,56 @@ const Money = ({ value }) => (
   <Typography variant="h5" fontWeight={700}>₹{Number(value || 0).toFixed(2)}</Typography>
 );
 
-const SummaryCard = ({ title, value, sub }) => (
+const SummaryCard = ({ title, value, sub, loading = false }) => (
   <Paper sx={{ p: 2 }}>
     <Typography variant="body2" color="text.secondary">{title}</Typography>
-    <Money value={value} />
-    {sub && <Typography variant="caption" color="text.secondary">{sub}</Typography>}
+    {loading ? <Skeleton width={120} height={36} /> : <Money value={value} />}
+    {sub && (
+      <Typography variant="caption" color="text.secondary">
+        {loading ? <Skeleton width={80} /> : sub}
+      </Typography>
+    )}
   </Paper>
 );
 
 // AOV card
-const AovCard = ({ title, revenue = 0, orders = 0 }) => {
+const AovCard = ({ title, revenue = 0, orders = 0, loading = false }) => {
   const aov = orders > 0 ? Number(revenue) / Number(orders) : 0;
   return (
     <Paper sx={{ p: 2 }}>
       <Typography variant="body2" color="text.secondary">{title} AOV</Typography>
-      <Typography variant="h5" fontWeight={700}>₹{aov.toFixed(2)}</Typography>
+      {loading ? <Skeleton width={120} height={36} /> : (
+        <Typography variant="h5" fontWeight={700}>₹{aov.toFixed(2)}</Typography>
+      )}
       <Typography variant="caption" color="text.secondary">
-        {orders} orders · ₹{Number(revenue || 0).toFixed(2)}
+        {loading ? <Skeleton width={120} /> : `${orders} orders · ₹${Number(revenue || 0).toFixed(2)}`}
       </Typography>
     </Paper>
   );
 };
 
-const StatusChips = ({ byStatus = {} }) => (
+const StatusChips = ({ byStatus = {}, loading = false }) => (
   <Paper sx={{ p: 2 }}>
     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Orders by status</Typography>
-    <Stack direction="row" spacing={1} flexWrap="wrap">
-      {Object.entries(byStatus).map(([k, v]) => (
-        <Chip key={k} label={`${k}: ${v || 0}`} color={STATUS_COLORS[k] || "default"} />
-      ))}
-    </Stack>
+    {loading ? (
+      <Stack direction="row" spacing={1} flexWrap="wrap">
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} width={90} height={28} variant="rounded" />)}
+      </Stack>
+    ) : (
+      <Stack direction="row" spacing={1} flexWrap="wrap">
+        {Object.entries(byStatus).map(([k, v]) => (
+          <Chip key={k} label={`${k}: ${v || 0}`} color={STATUS_COLORS[k] || "default"} />
+        ))}
+      </Stack>
+    )}
   </Paper>
 );
 
+// ---------- main ----------
 const VendorDashboard = () => {
+  // menu form ref (for “Create item” quick action)
+  const formRef = useRef(null);
+
   // ----- menu state -----
   const [menuItems, setMenuItems] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
@@ -68,25 +86,33 @@ const VendorDashboard = () => {
 
   // ----- summary / vendor state -----
   const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [vendorId, setVendorId] = useState(null);
   const [isOpen, setIsOpen] = useState(true); // vendor open/closed
+  const [isOpenSaving, setIsOpenSaving] = useState(false);
 
   // ----- daily trend controls -----
-  const [days, setDays] = useState(14);
+  const [days, setDays] = useState(() => Number(localStorage.getItem("vd_days") || 14));
   const [daily, setDaily] = useState([]);
   const [loadingDaily, setLoadingDaily] = useState(false);
 
-  // ----- lifetime / goals -----
-  const [revGoal, setRevGoal] = useState(50000);
-  const [ordersGoal, setOrdersGoal] = useState(200);
+  // ----- lifetime / goals (persisted) -----
+  const [revGoal, setRevGoal] = useState(() => Number(localStorage.getItem("vd_rev_goal") || 50000));
+  const [ordersGoal, setOrdersGoal] = useState(() => Number(localStorage.getItem("vd_orders_goal") || 200));
 
-  // ----- top items (NEW) -----
+  // ----- top items (client-side aggregation) -----
   const [topItems, setTopItems] = useState([]);
   const [loadingTop, setLoadingTop] = useState(false);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+  // persist settings
+  useEffect(() => { localStorage.setItem("vd_days", String(days)); }, [days]);
+  useEffect(() => { localStorage.setItem("vd_rev_goal", String(revGoal)); }, [revGoal]);
+  useEffect(() => { localStorage.setItem("vd_orders_goal", String(ordersGoal)); }, [ordersGoal]);
+  useEffect(() => { localStorage.setItem("vd_is_open", String(isOpen)); }, [isOpen]);
 
   // ---------- MENU LOAD ----------
   const fetchMenu = async () => {
@@ -111,6 +137,7 @@ const VendorDashboard = () => {
 
   // ---------- SUMMARY LOAD ----------
   const fetchSummary = async () => {
+    setSummaryLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/orders/vendor/summary`, { headers });
       if (res.status === 401) {
@@ -130,6 +157,8 @@ const VendorDashboard = () => {
     } catch {
       toast.error("Network error while loading summary");
       setSummary(null);
+    } finally {
+      setSummaryLoading(false);
     }
   };
 
@@ -160,11 +189,11 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---------- TOP ITEMS (NEW) ----------
-  // Pulls the most recent 200 vendor orders and aggregates item quantity & revenue.
+  // ---------- TOP ITEMS (client-side) ----------
   const fetchTopItems = async () => {
     setLoadingTop(true);
     try {
+      // use paginated vendor orders (recent 200)
       const res = await fetch(`${API_BASE}/api/orders/vendor?page=1&pageSize=200`, { headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -199,7 +228,7 @@ const VendorDashboard = () => {
         for (const ln of lines) {
           if (!ln) continue;
           const key = ln.id ?? ln.name;
-          const prev = agg.get(key) || { name: ln.name, qty: 0, revenue: 0 };
+          const prev = agg.get(key) || { id: ln.id, name: ln.name, qty: 0, revenue: 0 };
           prev.qty += ln.qty;
           prev.revenue += ln.qty * ln.price;
           agg.set(key, prev);
@@ -213,6 +242,20 @@ const VendorDashboard = () => {
     } finally {
       setLoadingTop(false);
     }
+  };
+
+  const exportDailyCsv = () => {
+    const headers = ["Date", "Orders", "Revenue"];
+    const lines = (daily || []).map(d => `${d.date},${d.orders},${d.revenue}`);
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `vendor-daily-${stamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const exportTopCsv = () => {
@@ -238,7 +281,9 @@ const VendorDashboard = () => {
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
-          setIsOpen(Boolean(me.isOpen)); // read initial open state
+          // prefer backend isOpen, fallback to persisted toggled value
+          const persisted = localStorage.getItem("vd_is_open");
+          setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
           socket.emit("vendor:join", me.vendorId);
         }
       } catch {
@@ -257,7 +302,7 @@ const VendorDashboard = () => {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
         fetchSummary();
         fetchDaily(days);
-        fetchTopItems(); // refresh top items
+        fetchTopItems();
       }
     };
 
@@ -335,6 +380,8 @@ const VendorDashboard = () => {
       description: item.description ?? "",
     });
     setEditingItem(item);
+    // smooth scroll to form
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   const handleDelete = async (id) => {
@@ -359,10 +406,11 @@ const VendorDashboard = () => {
     }
   };
 
-  // Toggle vendor open/closed
+  // Toggle vendor open/closed (persist + optimistic)
   const toggleOpen = async (checked) => {
     const prev = isOpen;
     setIsOpen(checked);
+    setIsOpenSaving(true);
     try {
       if (!vendorId) return;
       const res = await fetch(`${API_BASE}/api/vendors/${vendorId}`, {
@@ -380,6 +428,8 @@ const VendorDashboard = () => {
     } catch {
       setIsOpen(prev); // rollback
       toast.error("Network error while updating status");
+    } finally {
+      setIsOpenSaving(false);
     }
   };
 
@@ -393,21 +443,6 @@ const VendorDashboard = () => {
 
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
-
-  // CSV export for daily trend
-  const exportDailyCsv = () => {
-    const headers = ["Date", "Orders", "Revenue"];
-    const lines = (daily || []).map(d => `${d.date},${d.orders},${d.revenue}`);
-    const csv = [headers.join(","), ...lines].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    a.href = url;
-    a.download = `vendor-daily-${stamp}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   // ------ computed helpers for goals / AOV ------
   const todayOrders  = Number(summary?.today?.orders || 0);
@@ -435,16 +470,34 @@ const VendorDashboard = () => {
     return `You’re close: ${parts.join(" · ")}`;
   }, [revRemaining, ordersRemaining, revGoal, ordersGoal]);
 
-  // ------- Top items helpers -------
+  // tiny analytics nudges
+  const accepted = Number(byStatus.accepted || 0);
+  const rejected = Number(byStatus.rejected || 0);
+  const delivered = Number(byStatus.delivered || 0);
+
+  const acceptanceRate = (accepted + rejected) > 0 ? (accepted / (accepted + rejected)) * 100 : null;
+  const completionRate = accepted > 0 ? (delivered / accepted) * 100 : null;
+  // avg prep time requires timestamps not available; leaving as "—" placeholder
+  const avgPrepTime = "—";
+
+  // best-seller badges in menu (Top 3 by revenue)
+  const topNames = useMemo(
+    () => new Set((topItems || []).slice(0, 3).map(i => (i.name || "").toLowerCase())),
+    [topItems]
+  );
+
   const totalTopRevenue = (topItems || []).reduce((s, i) => s + Number(i.revenue || 0), 0) || 0;
+
+  // quick actions
+  const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <>
       <AppBar position="static">
-        <Toolbar>
+        <Toolbar sx={{ gap: 1, flexWrap: "wrap" }}>
           <Typography
             variant="h6"
-            sx={{ flexGrow: 1, display: "flex", alignItems: "center", gap: 1 }}
+            sx={{ flexGrow: 1, display: "flex", alignItems: "center", gap: 1, minWidth: 220 }}
           >
             Vendor Dashboard
             <Chip
@@ -455,17 +508,17 @@ const VendorDashboard = () => {
             />
           </Typography>
 
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
             {/* Open/Closed switch */}
             <FormControlLabel
               control={
                 <Switch
                   checked={isOpen}
                   onChange={(e) => toggleOpen(e.target.checked)}
-                  disabled={!vendorId}
+                  disabled={!vendorId || isOpenSaving}
                 />
               }
-              label={isOpen ? "Open" : "Closed"}
+              label={isOpenSaving ? "Saving…" : (isOpen ? "Open" : "Closed")}
               sx={{ mr: 1 }}
             />
 
@@ -483,9 +536,36 @@ const VendorDashboard = () => {
       </AppBar>
 
       <Container sx={{ mt: 4 }}>
+        {/* ---- QUICK ACTIONS BAR (NEW) ---- */}
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap", gap: 1 }}>
+            <Button startIcon={<Add />} variant="contained" onClick={scrollToForm}>
+              Create item
+            </Button>
+            <Button variant="outlined" onClick={() => { fetchSummary(); fetchDaily(days); fetchTopItems(); }}>
+              Refresh all
+            </Button>
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportDailyCsv} disabled={loadingDaily || (daily || []).length === 0}>
+              Export daily CSV
+            </Button>
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportTopCsv} disabled={loadingTop || (topItems || []).length === 0}>
+              Export top items CSV
+            </Button>
+            <Box sx={{ ml: "auto" }}>
+              {/* tiny analytics nudges */}
+              <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+                <Chip size="small" label={`Acceptance: ${acceptanceRate == null ? "—" : `${acceptanceRate.toFixed(0)}%`}`} />
+                <Chip size="small" label={`Completion: ${completionRate == null ? "—" : `${completionRate.toFixed(0)}%`}`} />
+                <Chip size="small" label={`Avg prep: ${avgPrepTime}`} />
+              </Stack>
+            </Box>
+          </Stack>
+        </Paper>
+
         {/* ---- SUMMARY + TREND ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box sx={{ mb: 3 }}>
+            {/* existing chart component */}
             <VendorSalesTrend />
           </Box>
 
@@ -518,15 +598,17 @@ const VendorDashboard = () => {
             </Stack>
           </Stack>
 
+          {/* helper when no orders in range */}
+          {(daily || []).length === 0 && !loadingDaily && (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              No orders in this range yet. Try a wider range or check back later.
+            </Alert>
+          )}
+
           <Divider sx={{ my: 2 }} />
 
           {/* Revenue Summary */}
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ mb: 2 }}
-          >
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
             <Typography variant="h6">Summary</Typography>
             <Tooltip title="Refresh summary">
               <IconButton onClick={fetchSummary}><Refresh /></IconButton>
@@ -537,18 +619,18 @@ const VendorDashboard = () => {
             <Grid item xs={12} md={8}>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard title="Today" value={todayRevenue} sub={`${todayOrders || 0} orders`} />
+                  <SummaryCard title="Today" value={summary?.today?.revenue} sub={`${summary?.today?.orders || 0} orders`} loading={summaryLoading} />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard title="This Week" value={weekRevenue} sub={`${weekOrders || 0} orders`} />
+                  <SummaryCard title="This Week" value={summary?.week?.revenue} sub={`${summary?.week?.orders || 0} orders`} loading={summaryLoading} />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <SummaryCard title="This Month" value={monthRevenue} sub={`${monthOrders || 0} orders`} />
+                  <SummaryCard title="This Month" value={summary?.month?.revenue} sub={`${summary?.month?.orders || 0} orders`} loading={summaryLoading} />
                 </Grid>
               </Grid>
             </Grid>
             <Grid item xs={12} md={4}>
-              <StatusChips byStatus={byStatus} />
+              <StatusChips byStatus={summary?.byStatus || {}} loading={summaryLoading} />
             </Grid>
           </Grid>
 
@@ -556,10 +638,10 @@ const VendorDashboard = () => {
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>Average Order Value (AOV)</Typography>
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={3}><AovCard title="Today"      revenue={todayRevenue} orders={todayOrders} /></Grid>
-              <Grid item xs={12} sm={3}><AovCard title="This Week"  revenue={weekRevenue}  orders={weekOrders}  /></Grid>
-              <Grid item xs={12} sm={3}><AovCard title="This Month" revenue={monthRevenue} orders={monthOrders} /></Grid>
-              <Grid item xs={12} sm={3}><AovCard title="Lifetime"   revenue={lifeRevenue}  orders={lifeOrders}  /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="Today"      revenue={summary?.today?.revenue}  orders={summary?.today?.orders}  loading={summaryLoading} /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="This Week"  revenue={summary?.week?.revenue}   orders={summary?.week?.orders}   loading={summaryLoading} /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="This Month" revenue={summary?.month?.revenue}  orders={summary?.month?.orders}  loading={summaryLoading} /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="Lifetime"   revenue={summary?.totals?.revenue} orders={summary?.totals?.orders} loading={summaryLoading} /></Grid>
             </Grid>
           </Box>
 
@@ -583,7 +665,7 @@ const VendorDashboard = () => {
                       sx={{ width: 160 }}
                     />
                   </Stack>
-                  <Typography variant="subtitle2">₹{monthRevenue.toFixed(2)} / ₹{Number(revGoal).toFixed(0)}</Typography>
+                  <Typography variant="subtitle2">₹{Number(summary?.month?.revenue || 0).toFixed(2)} / ₹{Number(revGoal).toFixed(0)}</Typography>
                   <LinearProgress variant="determinate" value={revProgress} sx={{ mt: 1, height: 10, borderRadius: 1 }} />
                   <Typography variant="caption" color="text.secondary">
                     {revRemaining <= 0 ? "Goal achieved 🎉" : `₹${revRemaining.toFixed(0)} to go`}
@@ -604,7 +686,7 @@ const VendorDashboard = () => {
                       sx={{ width: 160 }}
                     />
                   </Stack>
-                  <Typography variant="subtitle2">{monthOrders} / {ordersGoal}</Typography>
+                  <Typography variant="subtitle2">{Number(summary?.month?.orders || 0)} / {ordersGoal}</Typography>
                   <LinearProgress variant="determinate" value={ordersProgress} sx={{ mt: 1, height: 10, borderRadius: 1 }} />
                   <Typography variant="caption" color="text.secondary">
                     {ordersRemaining <= 0 ? "Goal achieved 🎉" : `${ordersRemaining} orders to go`}
@@ -620,9 +702,9 @@ const VendorDashboard = () => {
 
           <Divider sx={{ mt: 2 }} />
 
-          {/* NEW: Top Selling Items */}
+          {/* Top Selling Items */}
           <Box sx={{ mt: 2 }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1, gap: 1, flexWrap: "wrap" }}>
               <Typography variant="h6">Top Selling Items</Typography>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Tooltip title="Reload top items">
@@ -646,7 +728,7 @@ const VendorDashboard = () => {
                     return (
                       <Grid item xs={12} key={`${it.name}-${idx}`}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-                          <Typography variant="body2" sx={{ maxWidth: "50%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <Typography variant="body2" sx={{ maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 0.5 }}>
                             {idx + 1}. {it.name}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
@@ -671,14 +753,14 @@ const VendorDashboard = () => {
 
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary">
-              Lifetime: <strong>{lifeOrders}</strong> orders ·{" "}
-              <strong>₹{lifeRevenue.toFixed(2)}</strong>
+              Lifetime: <strong>{lifeOrders || 0}</strong> orders ·{" "}
+              <strong>₹{Number(lifeRevenue || 0).toFixed(2)}</strong>
             </Typography>
           </Box>
         </Paper>
 
         {/* ---- MENU FORM ---- */}
-        <Paper sx={{ p: 3, mb: 3 }}>
+        <Paper sx={{ p: 3, mb: 3 }} ref={formRef}>
           <Typography variant="h6">
             {editingItem ? "Edit Menu Item" : "Add New Menu Item"}
           </Typography>
@@ -716,39 +798,62 @@ const VendorDashboard = () => {
           </form>
         </Paper>
 
-        {/* ---- MENU TABLE ---- */}
+        {/* ---- MENU TABLE with Best-seller badges ---- */}
         <Typography variant="h6" sx={{ mb: 2 }}>Your Menu</Typography>
         <TableContainer component={Paper}>
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Name</TableCell>
+                <TableCell style={{ minWidth: 160 }}>Name</TableCell>
                 <TableCell>Price</TableCell>
                 <TableCell>Description</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {(Array.isArray(menuItems) ? menuItems : []).map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell>
-                    {item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}
-                  </TableCell>
-                  <TableCell>{item.description}</TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleEdit(item)} color="primary">
-                      <Edit />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(item.id)} color="error">
-                      <Delete />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
+                const isTop = topNames.has((item.name || "").toLowerCase());
+                return (
+                  <TableRow key={item.id} hover>
+                    <TableCell>
+                      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                        <span>{item.name}</span>
+                        {isTop && (
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            icon={<StarIcon fontSize="small" />}
+                            label="Top seller"
+                            color="warning"
+                            sx={{ ml: 0.5 }}
+                          />
+                        )}
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      {item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 360, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {item.description}
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton onClick={() => handleEdit(item)} color="primary" title="Edit">
+                        <Edit />
+                      </IconButton>
+                      <IconButton onClick={() => handleDelete(item.id)} color="error" title="Delete">
+                        <Delete />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {(Array.isArray(menuItems) ? menuItems : []).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} align="center">No items yet</TableCell>
+                  <TableCell colSpan={4} align="center">
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 3 }}>
+                      No items yet. Click <strong>Create item</strong> to add your first dish.
+                    </Typography>
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
