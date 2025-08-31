@@ -1,4 +1,3 @@
-
 // src/pages/UserDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
@@ -40,6 +39,10 @@ export default function UserDashboard() {
     if (Array.isArray(data)) return data;
     if (Array.isArray(data?.orders)) return data.orders;
     if (Array.isArray(data?.items))  return data.items;
+    // sometimes single order objects come back from POST:
+    if (data && typeof data === "object" && (data.id || data.order?.id)) {
+      return [data.order || data];
+    }
     return [];
   };
 
@@ -56,14 +59,16 @@ export default function UserDashboard() {
       }
       const data = await safeJson(res);
       if (!res.ok) {
-        console.error("orders/my failed:", res.status, data);
-        setOrders([]);
+        console.warn("orders/my failed:", res.status, data);
+        // ❌ do NOT clear existing state on failure
         return;
       }
-      setOrders(parseOrderList(data));
+      const list = parseOrderList(data);
+      // only set if we got a definite list; avoids wiping on odd shapes
+      if (list.length || Array.isArray(data)) setOrders(list);
     } catch (e) {
       console.error("orders/my error:", e);
-      setOrders([]);
+      // ❌ do NOT clear existing state on error
     } finally {
       setLoadingOrders(false);
     }
@@ -133,13 +138,12 @@ export default function UserDashboard() {
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      // Ensure latest state by refetching; also merge optimistically
+      // ✅ Merge locally; do NOT refetch here (prevents wiping with a bad response)
       setOrders((prev) => {
         const exists = (prev || []).some((o) => o.id === fullOrder.id);
         if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
         return [fullOrder, ...(prev || [])];
       });
-      fetchOrders();
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
     };
 
@@ -253,7 +257,17 @@ export default function UserDashboard() {
         return;
       }
 
-      await fetchOrders();
+      // ✅ Immediately insert the created order locally
+      const created = data?.order || data;
+      if (created && created.id) {
+        setOrders((prev) => [created, ...(prev || [])]);
+      } else if (created?.order?.id) {
+        setOrders((prev) => [created.order, ...(prev || [])]);
+      } else {
+        // fallback: refetch if shape unexpected
+        await fetchOrders();
+      }
+
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
       setTotalAmount(0);
@@ -381,7 +395,7 @@ export default function UserDashboard() {
           onChange={handleVendorChange} margin="normal"
         >
           {(Array.isArray(vendors) ? vendors : []).map((v) => {
-            const open = v.isOpen !== false;
+            const open = v.isOpen !== false; // default true
             return (
               <MenuItem key={v.id} value={v.id}>
                 <Stack direction="row" spacing={1} alignItems="center">
