@@ -1,5 +1,3 @@
-
-// src/pages/UserDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -41,7 +39,6 @@ export default function UserDashboard() {
     if (Array.isArray(data)) return data;
     if (Array.isArray(data?.orders)) return data.orders;
     if (Array.isArray(data?.items))  return data.items;
-    // sometimes single object:
     if (data && typeof data === "object" && (data.id || data.order?.id)) {
       return [data.order || data];
     }
@@ -62,13 +59,12 @@ export default function UserDashboard() {
       const data = await safeJson(res);
       if (!res.ok) {
         console.warn("orders/my failed:", res.status, data);
-        return; // don't clear current list on transient failure
+        return; // keep current list on transient failure
       }
       const list = parseOrderList(data);
       if (Array.isArray(list)) setOrders(list);
     } catch (e) {
       console.error("orders/my error:", e);
-      // keep last good list
     } finally {
       setLoadingOrders(false);
     }
@@ -155,7 +151,7 @@ export default function UserDashboard() {
       setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
     };
 
-    // mock payment events from /routes/paymentRoutes.js
+    // mock payment events from server
     const onPayProcessing = (p) => {
       if (!p?.id) return;
       setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
@@ -257,15 +253,14 @@ export default function UserDashboard() {
         return;
       }
 
-      // Immediately append new order locally
+      // Append newly created order (works whether API returns {order} or the order)
       const created = data?.order || data;
       if (created && created.id) {
         setOrders((prev) => [created, ...(prev || [])]);
       } else if (created?.order?.id) {
         setOrders((prev) => [created.order, ...(prev || [])]);
       } else {
-        // fallback
-        await fetchOrders();
+        await fetchOrders(); // fallback
       }
 
       toast.success("Order created successfully!");
@@ -340,7 +335,6 @@ export default function UserDashboard() {
     const { ok, data } = await postJson("/api/payments/mock/start", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to start mock payment"); return; }
     toast.info("Payment started");
-    // optimistic set
     setOrders((prev) => prev.map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o));
   };
 
@@ -511,7 +505,7 @@ export default function UserDashboard() {
                         <Button variant="outlined" size="small" onClick={() => openInvoice(order.id)}>Receipt</Button>
                         <Button color="error" variant="outlined" size="small" onClick={() => deleteOrder(order.id)}>Delete</Button>
 
-                        {/* mock payment controls – using /api/payments/mock/* */}
+                        {/* mock payment controls */}
                         {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
                           <Button variant="contained" onClick={() => startMockPayment(order.id)}>
                             {payStatus === "failed" ? "Retry Payment" : "Pay Now (Mock)"}
