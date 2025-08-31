@@ -1,4 +1,5 @@
 
+// src/pages/UserDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -43,34 +44,34 @@ export default function UserDashboard() {
     return [];
   };
 
+  // Merge-by-id (latest/most-complete wins) and sort newest first
   const normalizeList = (list) => {
     const map = new Map();
     for (const o of Array.isArray(list) ? list : []) {
       if (!o?.id) continue;
-      // prefer the object that has more fields (later spread wins)
       map.set(o.id, { ...(map.get(o.id) || {}), ...o });
     }
     return [...map.values()].sort((a, b) => {
       const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return bt - at || b.id - a.id;
+      return bt - at || (Number(b.id) - Number(a.id));
     });
   };
 
-  const makeIdempotentKey = () => {
+  // Browser-safe idempotency key
+  const makeIdempotencyKey = () => {
     try {
       const rnd =
-      typeof window !== "undefined" && window.crypto &&
-      typeof window.crypto.randomUUID === "function"
-        ? window.crypto.randomUUID()
-        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-        return 'order-${rnd}';
-    } catch { return `order-${Date.now()}-${Math.random().toString(36).slice(2)}`; 
-  } 
+        typeof globalThis !== "undefined" &&
+        globalThis.crypto &&
+        typeof globalThis.crypto.randomUUID === "function"
+          ? globalThis.crypto.randomUUID()
+          : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+      return `order-${rnd}`;
+    } catch {
+      return `order-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    }
   };
-
-
-
 
   // ---------- loaders ----------
   const fetchOrders = async () => {
@@ -85,7 +86,7 @@ export default function UserDashboard() {
       }
       const data = await safeJson(res);
       if (!res.ok) { console.warn("orders/my failed:", res.status, data); return; }
-      setOrders((prev) => normalizeList(parseOrderList(data)));
+      setOrders(prev => normalizeList(parseOrderList(data)));
     } catch (e) {
       console.error("orders/my error:", e);
     } finally {
@@ -146,41 +147,41 @@ export default function UserDashboard() {
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => normalizeList([fullOrder, ...(prev || [])]));
+      setOrders(prev => normalizeList([fullOrder, ...(prev || [])]));
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
     };
 
     const onStatus = (payload) => {
       if (Number(payload?.UserId) !== Number(user.id)) return;
-      setOrders((prev) =>
-        normalizeList((prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)))
+      setOrders(prev =>
+        normalizeList((prev || []).map(o => (o.id === payload.id ? { ...o, status: payload.status } : o)))
       );
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
     const onVendorStatus = (payload) => {
       if (!payload?.vendorId) return;
-      setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
+      setVendorStatus(prev => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
     };
 
     const onPayProcessing = (p) => {
       if (!p?.id) return;
-      setOrders((prev) =>
-        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
+      setOrders(prev =>
+        normalizeList((prev || []).map(o => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
       );
       toast.info(`Payment processing for order #${p.id}`);
     };
     const onPaySuccess = (p) => {
       if (!p?.id) return;
-      setOrders((prev) =>
-        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
+      setOrders(prev =>
+        normalizeList((prev || []).map(o => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
       );
       toast.success(`Payment succeeded for order #${p.id}`);
     };
     const onPayFailed = (p) => {
       if (!p?.id) return;
-      setOrders((prev) =>
-        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
+      setOrders(prev =>
+        normalizeList((prev || []).map(o => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
       );
       toast.error(`Payment failed for order #${p.id}`);
     };
@@ -237,9 +238,6 @@ export default function UserDashboard() {
 
   const isSelectedVendorOpen = vendorId ? Boolean(vendorStatus[Number(vendorId)]) : true;
 
-  const makeIdemKey = () => 
-  (crypyo?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`); 
-
   const handleSubmit = async () => {
     if (!user?.id) { toast.error("Please log in"); return; }
     if (!vendorId) { toast.error("Select a vendor first"); return; }
@@ -254,15 +252,17 @@ export default function UserDashboard() {
     };
     if (payload.items.length === 0) { toast.error("Add at least one item"); return; }
 
-    const idemKey = makeIdempotentKey();  
-  
+    const idemKey = makeIdempotencyKey();
+
     try {
+      setSubmitting(true);
       const res = await fetch(`${API_BASE}/api/orders`, {
         method: "POST",
         headers: { ...headers, "Idempotency-Key": idemKey },
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
+
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -275,16 +275,14 @@ export default function UserDashboard() {
         return;
       }
 
-      // prefer whatever the server returns (idempotent repeats will return the same order)
+      // Prefer the order object returned by the server (idempotent repeats return the same order)
       const created = data?.order || data;
-      if (!created?.id) {
-        setOrders((prev) => {
-          const arr = Array.isArray(prev) ? [...prev] : [];
-          const exists = arr.some((o) => o.id === created.id);
-          return exists ? arr.map((o) => (o.id === created.id ? { ...o, ...created } : o)) : [created, ...arr];
-        });
+
+      if (created?.id) {
+        setOrders(prev => normalizeList([created, ...(prev || [])]));
       } else {
-      await fetchOrders();
+        // fallback to refetch if response shape is unexpected
+        await fetchOrders();
       }
 
       toast.success("Order created successfully!");
@@ -293,6 +291,8 @@ export default function UserDashboard() {
     } catch (e) {
       console.error("create order error:", e);
       toast.error("Network error while creating order");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -306,7 +306,7 @@ export default function UserDashboard() {
         return;
       }
       if (res.ok) {
-        setOrders((prev) => (Array.isArray(prev) ? prev.filter((o) => o.id !== orderId) : []));
+        setOrders(prev => (Array.isArray(prev) ? prev.filter(o => o.id !== orderId) : []));
       } else {
         const data = await safeJson(res);
         toast.error(data?.message || "Failed to delete");
@@ -359,27 +359,33 @@ export default function UserDashboard() {
     const { ok, data } = await postJson("/api/payments/mock/start", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to start mock payment"); return; }
     toast.info("Payment started");
-    setOrders((prev) => normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o)));
+    setOrders(prev =>
+      normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o))
+    );
   };
 
   const succeedMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/payments/mock/succeed", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to mark success"); return; }
     toast.success("Payment marked as success");
-    setOrders((prev) => normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "paid" } : o)));
+    setOrders(prev =>
+      normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "paid" } : o))
+    );
   };
 
   const failMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/payments/mock/fail", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to mark failure"); return; }
     toast.error("Payment marked as failed");
-    setOrders((prev) => normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "failed" } : o)));
+    setOrders(prev =>
+      normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "failed" } : o))
+    );
   };
 
   // ---------- render ----------
   const ordersSafe = Array.isArray(orders) ? orders : [];
   const hasValidItems = items.some((it) => it.MenuItemId && Number(it.quantity) > 0);
-  const disableSubmit = !vendorId || !isSelectedVendorOpen || !hasValidItems;
+  const disableSubmit = !vendorId || !isSelectedVendorOpen || !hasValidItems || submitting;
   const selectedVendor = vendors.find(v => Number(v.id) === Number(vendorId));
 
   return (
@@ -466,7 +472,12 @@ export default function UserDashboard() {
             }
           >
             <span>
-              <Button variant="contained" color="primary" onClick={handleSubmit} disabled={disableSubmit||submitting}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleSubmit}
+                disabled={disableSubmit}
+              >
                 {submitting ? "Submitting..." : "Submit Order"}
               </Button>
             </span>
