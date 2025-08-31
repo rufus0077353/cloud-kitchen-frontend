@@ -1,13 +1,13 @@
 
-// src/pages/VendorDashboard.js
 import React, { useEffect, useState } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   IconButton, Stack, Chip, Grid, Box, Divider, Tooltip,
-  FormControlLabel, Switch, // 👈 added
+  FormControlLabel, Switch, MenuItem
 } from "@mui/material";
 import { Delete, Edit, Refresh } from "@mui/icons-material";
+import DownloadIcon from "@mui/icons-material/Download";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
@@ -55,7 +55,12 @@ const VendorDashboard = () => {
   // ----- summary / vendor state -----
   const [summary, setSummary] = useState(null);
   const [vendorId, setVendorId] = useState(null);
-  const [isOpen, setIsOpen] = useState(true); // 👈 vendor open/closed
+  const [isOpen, setIsOpen] = useState(true); // vendor open/closed
+
+  // ----- daily trend controls (NEW) -----
+  const [days, setDays] = useState(14);
+  const [daily, setDaily] = useState([]);
+  const [loadingDaily, setLoadingDaily] = useState(false);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -106,6 +111,33 @@ const VendorDashboard = () => {
     }
   };
 
+  // ---------- DAILY TREND LOAD (NEW) ----------
+  const fetchDaily = async (range = days) => {
+    setLoadingDaily(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/vendor/daily?days=${range}`, { headers });
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        const msg = data?.message || `Trend failed (${res.status})`;
+        toast.error(msg);
+        setDaily([]);
+        return;
+      }
+      setDaily(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast.error("Network error while loading trend");
+      setDaily([]);
+    } finally {
+      setLoadingDaily(false);
+    }
+  };
+
   // ---- socket: join vendor room + notify on new orders ----
   useEffect(() => {
     const getMeAndJoin = async () => {
@@ -115,7 +147,7 @@ const VendorDashboard = () => {
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
-          setIsOpen(Boolean(me.isOpen)); // 👈 read initial open state from backend
+          setIsOpen(Boolean(me.isOpen)); // read initial open state
           socket.emit("vendor:join", me.vendorId);
         }
       } catch {
@@ -132,21 +164,22 @@ const VendorDashboard = () => {
     const onNewOrder = (order) => {
       if (Number(order?.VendorId) === Number(vendorId)) {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
-        fetchSummary(); // keep cards fresh
+        fetchSummary();   // keep cards fresh
+        fetchDaily(days); // keep trend fresh
       }
     };
 
     socket.on("connect", onReconnect);
     socket.on("order:new", onNewOrder);
-    socket.on("order:status", fetchSummary);
+    socket.on("order:status", () => { fetchSummary(); fetchDaily(days); });
 
     return () => {
       socket.off("connect", onReconnect);
       socket.off("order:new", onNewOrder);
-      socket.off("order:status", fetchSummary);
+      socket.off("order:status", () => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId, token]);
+  }, [vendorId, token, days]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -195,6 +228,7 @@ const VendorDashboard = () => {
       setEditingItem(null);
       fetchMenu();
       fetchSummary();
+      fetchDaily(days);
     } catch (err) {
       console.error("Menu item save error:", err);
       toast.error("Server error occurred");
@@ -220,6 +254,7 @@ const VendorDashboard = () => {
         toast.success("Item deleted!");
         fetchMenu();
         fetchSummary();
+        fetchDaily(days);
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.message || "Failed to delete");
@@ -230,7 +265,7 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---- NEW: Toggle vendor open/closed ----
+  // Toggle vendor open/closed
   const toggleOpen = async (checked) => {
     const prev = isOpen;
     setIsOpen(checked);
@@ -257,11 +292,27 @@ const VendorDashboard = () => {
   useEffect(() => {
     fetchMenu();
     fetchSummary();
+    fetchDaily(days);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
+
+  // CSV export for daily trend (NEW)
+  const exportDailyCsv = () => {
+    const headers = ["Date", "Orders", "Revenue"];
+    const lines = (daily || []).map(d => `${d.date},${d.orders},${d.revenue}`);
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `vendor-daily-${stamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <>
@@ -281,7 +332,7 @@ const VendorDashboard = () => {
           </Typography>
 
           <Stack direction="row" spacing={1} alignItems="center">
-            {/* 👇 NEW: Open/Closed switch */}
+            {/* Open/Closed switch */}
             <FormControlLabel
               control={
                 <Switch
@@ -308,11 +359,44 @@ const VendorDashboard = () => {
       </AppBar>
 
       <Container sx={{ mt: 4 }}>
-        {/* ---- SUMMARY ROW ---- */}
+        {/* ---- SUMMARY + TREND ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box sx={{ mb: 3 }}>
+            {/* Your existing chart component */}
             <VendorSalesTrend />
           </Box>
+
+          {/* NEW: Daily Trend Controls (range + export) */}
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
+            <Typography variant="subtitle1">Daily Trend Controls</Typography>
+            <Stack direction="row" gap={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+              <TextField
+                select
+                size="small"
+                label="Range"
+                value={days}
+                onChange={(e) => { const v = Number(e.target.value); setDays(v); fetchDaily(v); }}
+                sx={{ minWidth: 140 }}
+              >
+                <MenuItem value={7}>Last 7 days</MenuItem>
+                <MenuItem value={14}>Last 14 days</MenuItem>
+                <MenuItem value={30}>Last 30 days</MenuItem>
+              </TextField>
+
+              <Tooltip title="Reload summary & trend">
+                <IconButton onClick={() => { fetchSummary(); fetchDaily(days); }}>
+                  <Refresh />
+                </IconButton>
+              </Tooltip>
+
+              <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportDailyCsv}>
+                Export CSV
+              </Button>
+            </Stack>
+          </Stack>
+
+          <Divider sx={{ my: 2 }} />
+
           <Stack
             direction="row"
             alignItems="center"
@@ -418,7 +502,7 @@ const VendorDashboard = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {rows.map((item) => (
+              {(Array.isArray(menuItems) ? menuItems : []).map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>
@@ -435,7 +519,7 @@ const VendorDashboard = () => {
                   </TableCell>
                 </TableRow>
               ))}
-              {rows.length === 0 && (
+              {(Array.isArray(menuItems) ? menuItems : []).length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} align="center">No items yet</TableCell>
                 </TableRow>
