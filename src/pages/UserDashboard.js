@@ -1,6 +1,6 @@
 
 // src/pages/UserDashboard.js
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
 import {
@@ -24,7 +24,7 @@ const UserDashboard = () => {
   const [items, setItems] = useState([{ MenuItemId: "", quantity: 1 }]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("mock_online");
-  const [expanded, setExpanded] = useState(new Set()); // ⬅️ NEW
+  const [expanded, setExpanded] = useState(new Set());
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
@@ -38,7 +38,14 @@ const UserDashboard = () => {
     try { return await res.json(); } catch { return null; }
   };
 
-  // 🔎 helpers
+  const normalizeOrders = (data) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data.orders)) return data.orders;
+    if (data.order && typeof data.order === "object") return [data.order];
+    return [];
+  };
+
   const toggleExpand = (id) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -76,31 +83,31 @@ const UserDashboard = () => {
         window.location.href = "/login";
         return;
       }
+      const data = await safeJson(res);
       if (!res.ok) {
-        const data = await safeJson(res);
-        console.error("orders/my failed:", res.status, data);
-        setOrders([]);
+        console.warn("orders/my failed:", res.status, data);
+        // keep previous orders on error
         return;
       }
-      const data = await res.json();
-      setOrders(Array.isArray(data) ? data : data?.orders || []);
+      const parsed = normalizeOrders(data);
+      // only update if we actually got something (avoid wiping on weird shapes)
+      if (parsed.length || Array.isArray(data)) setOrders(parsed);
     } catch (e) {
       console.error("orders/my error:", e);
-      setOrders([]);
+      // keep previous orders on network error
     }
   };
 
   const fetchVendors = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/vendors`);
+      const data = await safeJson(res);
       if (!res.ok) {
-        const data = await safeJson(res);
-        console.error("vendors failed:", res.status, data);
+        console.warn("vendors failed:", res.status, data);
         setVendors([]);
         setVendorStatus({});
         return;
       }
-      const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setVendors(list);
       const vs = {};
@@ -117,13 +124,12 @@ const UserDashboard = () => {
     if (!vId) return;
     try {
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
+      const data = await safeJson(res);
       if (!res.ok) {
-        const data = await safeJson(res);
-        console.error("vendor menu failed:", res.status, data);
+        console.warn("vendor menu failed:", res.status, data);
         setMenuItems([]);
         return;
       }
-      const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setMenuItems(list);
       calculateTotal(items, list);
@@ -271,7 +277,16 @@ const UserDashboard = () => {
         return;
       }
 
-      await fetchOrders();
+      // 👇 Immediately insert the new order locally (no flicker)
+      const created = data?.order || data; // backend returns { message, order }
+      if (created && (created.id || created.order?.id)) {
+        const full = created.id ? created : created.order;
+        setOrders((prev) => [full, ...(prev || [])]);
+      } else {
+        // fallback: refetch if shape unexpected
+        await fetchOrders();
+      }
+
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
       setTotalAmount(0);
@@ -305,7 +320,9 @@ const UserDashboard = () => {
   // 🔎 Open invoice with Authorization header
   const openInvoice = async (orderId) => {
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${orderId}/invoice`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -332,6 +349,7 @@ const UserDashboard = () => {
     const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers, body: JSON.stringify(body || {}) });
     const data = await safeJson(res);
     return { ok: res.ok, status: res.status, data };
+    // note: we always include Authorization to avoid 401 on some setups
   };
   const startMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/orders/mock-payment/start", { orderId });
@@ -495,11 +513,9 @@ const UserDashboard = () => {
                         <Button variant="outlined" size="small" onClick={() => openInvoice(order.id)}>
                           Receipt
                         </Button>
-
                         <Button color="error" variant="outlined" size="small" onClick={() => deleteOrder(order.id)}>
                           Delete
                         </Button>
-
                         {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
                           <Button variant="contained" size="small" onClick={() => startMockPayment(order.id)}>
                             {payStatus === "failed" ? "Retry Payment" : "Pay Now (Mock)"}
@@ -519,7 +535,6 @@ const UserDashboard = () => {
                     </TableCell>
                   </TableRow>
 
-                  {/* Expanded details */}
                   <TableRow>
                     <TableCell colSpan={8} sx={{ p: 0, border: 0 }}>
                       <Collapse in={isOpen} timeout="auto" unmountOnExit>
@@ -541,10 +556,10 @@ const UserDashboard = () => {
                                   <Typography variant="body2">{it.name}</Typography>
                                   <Typography variant="body2" sx={{ textAlign: "right" }}>{it.quantity}</Typography>
                                   <Typography variant="body2" sx={{ textAlign: "right" }}>
-                                    {`₹${Number(it.price).toFixed(2)}`}
+                                    ₹{Number(it.price).toFixed(2)}
                                   </Typography>
                                   <Typography variant="body2" sx={{ textAlign: "right" }}>
-                                    {`₹${(Number(it.price) * Number(it.quantity || 1)).toFixed(2)}`}
+                                    ₹{(Number(it.price) * Number(it.quantity || 1)).toFixed(2)}
                                   </Typography>
                                 </React.Fragment>
                               ))}
