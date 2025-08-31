@@ -11,6 +11,9 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import EditIcon from "@mui/icons-material/Edit";
+import SaveIcon from "@mui/icons-material/Save";
+import CloseIcon from "@mui/icons-material/Close";
 import axios from "axios";
 import { toast } from "react-toastify";
 
@@ -47,6 +50,8 @@ export default function AdminDashboard() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [savingUserId, setSavingUserId] = useState(null);
+  const [pendingRoleByUser, setPendingRoleByUser] = useState({}); // { [id]: "admin" }
 
   // vendors
   const [vendors, setVendors] = useState([]);
@@ -54,6 +59,8 @@ export default function AdminDashboard() {
   const [vendorSearch, setVendorSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [savingVendorId, setSavingVendorId] = useState(null);
+  const [editingVendorId, setEditingVendorId] = useState(null);
+  const [editVendorForm, setEditVendorForm] = useState({}); // row-level temp form
   const [vendorForm, setVendorForm] = useState({
     name: "",
     location: "",
@@ -73,7 +80,7 @@ export default function AdminDashboard() {
     try {
       const res = await axios.get(`${API}/api/admin/overview`, { headers });
       setStats(res.data || {});
-    } catch (e) {
+    } catch {
       toast.error("Failed to load overview");
       setStats(null);
     } finally {
@@ -86,7 +93,7 @@ export default function AdminDashboard() {
     try {
       const res = await axios.get(`${API}/api/admin/users`, { headers });
       setUsers(Array.isArray(res.data) ? res.data : []);
-    } catch (e) {
+    } catch {
       toast.error("Failed to load users");
       setUsers([]);
     } finally {
@@ -99,7 +106,7 @@ export default function AdminDashboard() {
     try {
       const res = await axios.get(`${API}/api/vendors`, { headers });
       setVendors(Array.isArray(res.data) ? res.data : []);
-    } catch (e) {
+    } catch {
       toast.error("Failed to load vendors");
       setVendors([]);
     } finally {
@@ -107,6 +114,7 @@ export default function AdminDashboard() {
     }
   };
 
+  // create vendor
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) {
       toast.error("Please fill in all fields");
@@ -120,13 +128,13 @@ export default function AdminDashboard() {
       fetchVendors();
       fetchStats();
     } catch (err) {
-      const msg = err?.response?.data?.message || "Failed to create vendor";
-      toast.error(msg);
+      toast.error(err?.response?.data?.message || "Failed to create vendor");
     } finally {
       setAdding(false);
     }
   };
 
+  // delete vendor
   const handleDeleteVendor = async (id) => {
     if (!window.confirm(`Delete vendor #${id}? This cannot be undone.`)) return;
     try {
@@ -139,6 +147,7 @@ export default function AdminDashboard() {
     }
   };
 
+  // delete user
   const handleDeleteUser = async (id) => {
     if (!window.confirm(`Delete user #${id}? This cannot be undone.`)) return;
     try {
@@ -161,6 +170,74 @@ export default function AdminDashboard() {
       setVendors((prev) => prev.map((x) => (x.id === v.id ? { ...x, isOpen: next } : x)));
     } catch (e) {
       toast.error(e?.response?.data?.message || "Failed to update vendor status");
+    } finally {
+      setSavingVendorId(null);
+    }
+  };
+
+  // ----- NEW: User role editing -----
+  const handleRoleChangeLocal = (userId, role) => {
+    setPendingRoleByUser((prev) => ({ ...prev, [userId]: role }));
+  };
+
+  const saveUserRole = async (user) => {
+    const nextRole = pendingRoleByUser[user.id] ?? user.role;
+    if (!nextRole || nextRole === user.role) {
+      toast.info("No role change to save");
+      return;
+    }
+    setSavingUserId(user.id);
+    try {
+      // Adjust the endpoint if your backend uses a different route:
+      await axios.patch(`${API}/api/admin/users/${user.id}`, { role: nextRole }, { headers });
+      toast.success(`Role updated to ${nextRole}`);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: nextRole } : u)));
+      setPendingRoleByUser((prev) => {
+        const copy = { ...prev };
+        delete copy[user.id];
+        return copy;
+      });
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Failed to update role");
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
+  // ----- NEW: Inline vendor edit (name/location/cuisine/UserId) -----
+  const startEditVendor = (v) => {
+    setEditingVendorId(v.id);
+    setEditVendorForm({
+      id: v.id,
+      name: v.name || "",
+      location: v.location || "",
+      cuisine: v.cuisine || "",
+      UserId: v.UserId || ""
+    });
+  };
+
+  const cancelEditVendor = () => {
+    setEditingVendorId(null);
+    setEditVendorForm({});
+  };
+
+  const saveVendorRow = async () => {
+    const { id, name, location, cuisine, UserId } = editVendorForm;
+    if (!id) return;
+    if (!name || !location || !cuisine || !UserId) {
+      toast.error("Please fill all fields");
+      return;
+    }
+    setSavingVendorId(id);
+    try {
+      await axios.put(`${API}/api/vendors/${id}`, { name, location, cuisine, UserId }, { headers });
+      toast.success("Vendor updated");
+      setVendors((prev) =>
+        prev.map((v) => (v.id === id ? { ...v, name, location, cuisine, UserId } : v))
+      );
+      cancelEditVendor();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Failed to update vendor");
     } finally {
       setSavingVendorId(null);
     }
@@ -316,23 +393,50 @@ export default function AdminDashboard() {
                     <TableRow><TableCell colSpan={5} align="center"><CircularProgress size={20} /></TableCell></TableRow>
                   ) : filteredUsers.length === 0 ? (
                     <TableRow><TableCell colSpan={5} align="center">No users found</TableCell></TableRow>
-                  ) : filteredUsers.map((u) => (
-                    <TableRow key={u.id} hover>
-                      <TableCell>{u.id}</TableCell>
-                      <TableCell>{u.name}</TableCell>
-                      <TableCell>{u.email}</TableCell>
-                      <TableCell><Chip size="small" label={u.role || "-"} /></TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Delete user">
-                          <span>
-                            <IconButton color="error" onClick={() => handleDeleteUser(u.id)}>
-                              <DeleteIcon />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  ) : filteredUsers.map((u) => {
+                    const pendingRole = pendingRoleByUser[u.id] ?? u.role;
+                    const dirty = pendingRole !== u.role;
+                    const saving = savingUserId === u.id;
+                    return (
+                      <TableRow key={u.id} hover>
+                        <TableCell>{u.id}</TableCell>
+                        <TableCell>{u.name}</TableCell>
+                        <TableCell>{u.email}</TableCell>
+                        <TableCell>
+                          <FormControl size="small" sx={{ minWidth: 140 }}>
+                            <Select
+                              value={pendingRole}
+                              onChange={(e) => handleRoleChangeLocal(u.id, e.target.value)}
+                              disabled={saving}
+                            >
+                              <MenuItem value="user">user</MenuItem>
+                              <MenuItem value="vendor">vendor</MenuItem>
+                              <MenuItem value="admin">admin</MenuItem>
+                            </Select>
+                          </FormControl>
+                          {dirty && <Chip size="small" label="unsaved" color="warning" sx={{ ml: 1 }} />}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                            <Tooltip title="Save role">
+                              <span>
+                                <IconButton onClick={() => saveUserRole(u)} disabled={!dirty || saving} color="primary">
+                                  {saving ? <CircularProgress size={18} /> : <SaveIcon />}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Delete user">
+                              <span>
+                                <IconButton color="error" onClick={() => handleDeleteUser(u.id)}>
+                                  <DeleteIcon />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -429,39 +533,113 @@ export default function AdminDashboard() {
                     <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={20} /></TableCell></TableRow>
                   ) : filteredVendors.length === 0 ? (
                     <TableRow><TableCell colSpan={7} align="center">No vendors found</TableCell></TableRow>
-                  ) : filteredVendors.map((v) => (
-                    <TableRow key={v.id} hover>
-                      <TableCell>{v.id}</TableCell>
-                      <TableCell>{v.name}</TableCell>
-                      <TableCell>{v.location}</TableCell>
-                      <TableCell>{v.cuisine}</TableCell>
-                      <TableCell>{v.UserId}</TableCell>
-                      <TableCell>
-                        <Stack direction="row" alignItems="center" spacing={1}>
-                          <Switch
-                            checked={Boolean(v.isOpen)}
-                            onChange={() => toggleVendorOpen(v)}
-                            disabled={savingVendorId === v.id}
-                          />
-                          <Chip
-                            size="small"
-                            label={Boolean(v.isOpen) ? "Open" : "Closed"}
-                            color={Boolean(v.isOpen) ? "success" : "default"}
-                            variant="outlined"
-                          />
-                        </Stack>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Delete vendor">
-                          <span>
-                            <IconButton color="error" onClick={() => handleDeleteVendor(v.id)}>
-                              <DeleteIcon />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  ) : filteredVendors.map((v) => {
+                    const isEditing = editingVendorId === v.id;
+                    const savingRow = savingVendorId === v.id;
+                    return (
+                      <TableRow key={v.id} hover>
+                        <TableCell>{v.id}</TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editVendorForm.name ?? ""}
+                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, name: e.target.value }))}
+                            />
+                          ) : v.name}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editVendorForm.location ?? ""}
+                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, location: e.target.value }))}
+                            />
+                          ) : v.location}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <TextField
+                              size="small"
+                              value={editVendorForm.cuisine ?? ""}
+                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, cuisine: e.target.value }))}
+                            />
+                          ) : v.cuisine}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <TextField
+                              select
+                              size="small"
+                              value={editVendorForm.UserId ?? ""}
+                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, UserId: e.target.value }))}
+                              SelectProps={{ native: true }}
+                              sx={{ minWidth: 160 }}
+                            >
+                              <option value="">Select User</option>
+                              {(users || [])
+                                .filter((u) => (u.role || "").toLowerCase() === "vendor")
+                                .map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.name} ({u.email})
+                                  </option>
+                                ))}
+                            </TextField>
+                          ) : v.UserId}
+                        </TableCell>
+                        <TableCell>
+                          <Stack direction="row" alignItems="center" spacing={1}>
+                            <Switch
+                              checked={Boolean(v.isOpen)}
+                              onChange={() => toggleVendorOpen(v)}
+                              disabled={savingRow || isEditing}
+                            />
+                            <Chip
+                              size="small"
+                              label={Boolean(v.isOpen) ? "Open" : "Closed"}
+                              color={Boolean(v.isOpen) ? "success" : "default"}
+                              variant="outlined"
+                            />
+                          </Stack>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                            {isEditing ? (
+                              <>
+                                <Tooltip title="Save vendor">
+                                  <span>
+                                    <IconButton color="primary" onClick={saveVendorRow} disabled={savingRow}>
+                                      {savingRow ? <CircularProgress size={18} /> : <SaveIcon />}
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                                <Tooltip title="Cancel">
+                                  <IconButton onClick={cancelEditVendor}>
+                                    <CloseIcon />
+                                  </IconButton>
+                                </Tooltip>
+                              </>
+                            ) : (
+                              <>
+                                <Tooltip title="Edit vendor">
+                                  <IconButton onClick={() => startEditVendor(v)}>
+                                    <EditIcon />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete vendor">
+                                  <span>
+                                    <IconButton color="error" onClick={() => handleDeleteVendor(v.id)}>
+                                      <DeleteIcon />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              </>
+                            )}
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
