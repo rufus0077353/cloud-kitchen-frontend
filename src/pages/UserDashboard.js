@@ -1,4 +1,3 @@
-
 // src/pages/UserDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
@@ -58,13 +57,14 @@ export default function UserDashboard() {
     });
   };
 
-  // Browser-safe idempotency key (no globalThis, works in Netlify/CRA)
+  // Browser-safe idempotency key (uses only window; no globalThis/self)
   const makeIdempotencyKey = () => {
     try {
-      const g = typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : {});
       const rnd =
-        g.crypto && typeof g.crypto.randomUUID === "function"
-          ? g.crypto.randomUUID()
+        typeof window !== "undefined" &&
+        window.crypto &&
+        typeof window.crypto.randomUUID === "function"
+          ? window.crypto.randomUUID()
           : Date.now().toString(36) + Math.random().toString(36).slice(2);
       return `order-${rnd}`;
     } catch {
@@ -187,7 +187,7 @@ export default function UserDashboard() {
     socket.on("vendor:status", onVendorStatus);
     socket.on("payment:processing", onPayProcessing);
     socket.on("payment:success", onPaySuccess);
-    socket.on ("payment:failed", onPayFailed);
+    socket.on("payment:failed", onPayFailed);
 
     return () => {
       socket.off("connect", onConnect);
@@ -269,13 +269,10 @@ export default function UserDashboard() {
         return;
       }
 
-      // Prefer the order object returned by the server (idempotent repeats return the same order)
-      const created = data?.order || data;
-
+      const created = data?.order || data; // prefer server shape
       if (created?.id) {
         setOrders((prev) => normalizeList([created, ...(prev || [])]));
       } else {
-        // fallback to refetch if response shape is unexpected
         await fetchOrders();
       }
 
