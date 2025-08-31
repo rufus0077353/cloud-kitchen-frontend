@@ -22,6 +22,7 @@ export default function UserDashboard() {
   const [items, setItems] = useState([{ MenuItemId: "", quantity: 1 }]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("mock_online");
+  const [submitting, setSubmitting] = useState(false);
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
@@ -221,7 +222,11 @@ export default function UserDashboard() {
 
   const isSelectedVendorOpen = vendorId ? Boolean(vendorStatus[Number(vendorId)]) : true;
 
+  const makeIdemKey = () => 
+  (crypyo?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`); 
+
   const handleSubmit = async () => {
+    if (submitting) return;
     if (!user?.id) { toast.error("Please log in"); return; }
     if (!vendorId) { toast.error("Select a vendor first"); return; }
     if (!isSelectedVendorOpen) { toast.error("This vendor is currently closed."); return; }
@@ -235,10 +240,12 @@ export default function UserDashboard() {
     };
     if (payload.items.length === 0) { toast.error("Add at least one item"); return; }
 
+    const idemKey = makeIdemKey();
+    setSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/orders`, {
         method: "POST",
-        headers,
+        headers: { ...headers, "Idempotency-Key": idemKey },
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
@@ -254,8 +261,17 @@ export default function UserDashboard() {
         return;
       }
 
-      // No optimistic append -> avoid duplicates with socket "order:new"
+      // prefer whatever the server returns (idempotent repeats will return the same order)
+      const created = data?.order || data;
+      if (!created?.id) {
+        setOrders((prev) => {
+          const arr = Array.isArray(prev) ? [...prev] : [];
+          const exists = arr.some((o) => o.id === created.id);
+          return exists ? arr.map((o) => (o.id === created.id ? { ...o, ...created } : o)) : [created, ...arr];
+        });
+      } else {
       await fetchOrders();
+      }
 
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
@@ -436,8 +452,8 @@ export default function UserDashboard() {
             }
           >
             <span>
-              <Button variant="contained" color="primary" onClick={handleSubmit} disabled={disableSubmit}>
-                Submit Order
+              <Button variant="contained" color="primary" onClick={handleSubmit} disabled={disableSubmit||submitting}>
+                {submitting ? "Submitting..." : "Submit Order"}
               </Button>
             </span>
           </Tooltip>
