@@ -1,10 +1,12 @@
+
 // src/pages/AdminDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Typography, Grid, Paper, TextField, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Stack, Divider, Chip, Tooltip, CircularProgress, FormControl,
-  InputLabel, Select, MenuItem, Switch, LinearProgress, TablePagination
+  InputLabel, Select, MenuItem, Switch, LinearProgress, TablePagination,
+  Checkbox
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -22,7 +24,8 @@ const API = process.env.REACT_APP_API_BASE_URL || "";
 
 // ---- helpers ----
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
-const fmtMoney = (n) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
+const fmtMoney = (n) =>
+  `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
 
 const safeCsv = (val) => {
   if (val == null) return "";
@@ -51,20 +54,23 @@ export default function AdminDashboard() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [userStatusFilter, setUserStatusFilter] = useState("all"); // all | active | archived
   const [savingUserId, setSavingUserId] = useState(null);
-  const [pendingRoleByUser, setPendingRoleByUser] = useState({}); // { [id]: "admin" }
+  const [pendingRoleByUser, setPendingRoleByUser] = useState({});
   const [userPage, setUserPage] = useState(0);
   const [userRowsPerPage, setUserRowsPerPage] = useState(20);
   const [userTotal, setUserTotal] = useState(0);
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
 
   // vendors
   const [vendors, setVendors] = useState([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
   const [vendorSearch, setVendorSearch] = useState("");
+  const [vendorStatusFilter, setVendorStatusFilter] = useState("all"); // all | active | archived
   const [adding, setAdding] = useState(false);
   const [savingVendorId, setSavingVendorId] = useState(null);
   const [editingVendorId, setEditingVendorId] = useState(null);
-  const [editVendorForm, setEditVendorForm] = useState({}); // row-level temp form
+  const [editVendorForm, setEditVendorForm] = useState({});
   const [vendorForm, setVendorForm] = useState({
     name: "",
     location: "",
@@ -74,6 +80,7 @@ export default function AdminDashboard() {
   const [vendorPage, setVendorPage] = useState(0);
   const [vendorRowsPerPage, setVendorRowsPerPage] = useState(20);
   const [vendorTotal, setVendorTotal] = useState(0);
+  const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
   const token = localStorage.getItem("token");
   const headers = useMemo(
@@ -111,10 +118,12 @@ export default function AdminDashboard() {
         setUsers(Array.isArray(data.items) ? data.items : []);
         setUserTotal(Number(data.total || 0));
       }
+      setSelectedUserIds([]);
     } catch {
       toast.error("Failed to load users");
       setUsers([]);
       setUserTotal(0);
+      setSelectedUserIds([]);
     } finally {
       setUsersLoading(false);
     }
@@ -136,10 +145,12 @@ export default function AdminDashboard() {
         setVendors(Array.isArray(data.items) ? data.items : []);
         setVendorTotal(Number(data.total || 0));
       }
+      setSelectedVendorIds([]);
     } catch {
       toast.error("Failed to load vendors");
       setVendors([]);
       setVendorTotal(0);
+      setSelectedVendorIds([]);
     } finally {
       setVendorsLoading(false);
     }
@@ -165,7 +176,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // delete vendor (hard delete fallback)
+  // delete vendor (hard delete)
   const handleDeleteVendor = async (id) => {
     if (!window.confirm(`Delete vendor #${id}? This cannot be undone.`)) return;
     try {
@@ -178,7 +189,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // soft delete / restore vendor via isDeleted flag (PATCH/PUT)
+  // soft delete / restore vendor
   const setVendorDeleted = async (v, isDeleted) => {
     setSavingVendorId(v.id);
     try {
@@ -193,7 +204,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // delete user (hard delete fallback)
+  // delete user (hard delete)
   const handleDeleteUser = async (id) => {
     if (!window.confirm(`Delete user #${id}? This cannot be undone.`)) return;
     try {
@@ -206,7 +217,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // soft delete / restore user via isDeleted flag
+  // soft delete / restore user
   const setUserDeleted = async (u, isDeleted) => {
     setSavingUserId(u.id);
     try {
@@ -317,6 +328,11 @@ export default function AdminDashboard() {
     return (users || [])
       .filter((u) => (roleFilter === "all" ? true : (u.role || "").toLowerCase() === roleFilter))
       .filter((u) => {
+        if (userStatusFilter === "active") return !u.isDeleted;
+        if (userStatusFilter === "archived") return !!u.isDeleted;
+        return true;
+      })
+      .filter((u) => {
         if (!q) return true;
         return (
           (u.name || "").toLowerCase().includes(q) ||
@@ -324,21 +340,27 @@ export default function AdminDashboard() {
           String(u.id).includes(q)
         );
       });
-  }, [users, userSearch, roleFilter]);
+  }, [users, userSearch, roleFilter, userStatusFilter]);
 
   const filteredVendors = useMemo(() => {
     const q = vendorSearch.trim().toLowerCase();
-    return (vendors || []).filter((v) => {
-      if (!q) return true;
-      return (
-        (v.name || "").toLowerCase().includes(q) ||
-        (v.location || "").toLowerCase().includes(q) ||
-        (v.cuisine || "").toLowerCase().includes(q) ||
-        String(v.id).includes(q) ||
-        String(v.UserId || "").includes(q)
-      );
-    });
-  }, [vendors, vendorSearch]);
+    return (vendors || [])
+      .filter((v) => {
+        if (vendorStatusFilter === "active") return !v.isDeleted;
+        if (vendorStatusFilter === "archived") return !!v.isDeleted;
+        return true;
+      })
+      .filter((v) => {
+        if (!q) return true;
+        return (
+          (v.name || "").toLowerCase().includes(q) ||
+          (v.location || "").toLowerCase().includes(q) ||
+          (v.cuisine || "").toLowerCase().includes(q) ||
+          String(v.id).includes(q) ||
+          String(v.UserId || "").includes(q)
+        );
+      });
+  }, [vendors, vendorSearch, vendorStatusFilter]);
 
   // ----- CSV exports -----
   const exportUsersCsv = () => {
@@ -352,7 +374,16 @@ export default function AdminDashboard() {
   const exportVendorsCsv = () => {
     const headers = ["ID", "Name", "Location", "Cuisine", "UserId", "Open", "Deleted", "Created At"];
     const rows = filteredVendors.map((v) =>
-      [v.id, safeCsv(v.name), safeCsv(v.location), safeCsv(v.cuisine), v.UserId, v.isOpen ? "Yes" : "No", v.isDeleted ? "Yes" : "No", v.createdAt || ""].join(",")
+      [
+        v.id,
+        safeCsv(v.name),
+        safeCsv(v.location),
+        safeCsv(v.cuisine),
+        v.UserId,
+        v.isOpen ? "Yes" : "No",
+        v.isDeleted ? "Yes" : "No",
+        v.createdAt || ""
+      ].join(",")
     );
     downloadCsv("admin-vendors", headers, rows);
   };
@@ -380,13 +411,115 @@ export default function AdminDashboard() {
     fetchVendors({ page: 0, size });
   };
 
+  // ----- selection helpers (Users) -----
+  const userIdsVisible = filteredUsers.map((u) => u.id);
+  const allUsersChecked = userIdsVisible.length > 0 && userIdsVisible.every((id) => selectedUserIds.includes(id));
+  const someUsersChecked = userIdsVisible.some((id) => selectedUserIds.includes(id));
+
+  const toggleSelectAllUsers = () => {
+    setSelectedUserIds(allUsersChecked ? [] : userIdsVisible);
+  };
+  const toggleSelectUser = (id) => {
+    setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  // ----- selection helpers (Vendors) -----
+  const vendorIdsVisible = filteredVendors.map((v) => v.id);
+  const allVendorsChecked =
+    vendorIdsVisible.length > 0 && vendorIdsVisible.every((id) => selectedVendorIds.includes(id));
+  const someVendorsChecked = vendorIdsVisible.some((id) => selectedVendorIds.includes(id));
+
+  const toggleSelectAllVendors = () => {
+    setSelectedVendorIds(allVendorsChecked ? [] : vendorIdsVisible);
+  };
+  const toggleSelectVendor = (id) => {
+    setSelectedVendorIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  // ----- bulk actions -----
+  const bulkArchiveUsers = async (archive) => {
+    if (selectedUserIds.length === 0) return;
+    const verb = archive ? "archive" : "restore";
+    try {
+      const ops = selectedUserIds.map((id) =>
+        axios.patch(`${API}/api/admin/users/${id}`, { isDeleted: archive }, { headers })
+      );
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Users ${verb}d: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchUsers({ page: userPage, size: userRowsPerPage });
+      setSelectedUserIds([]);
+      fetchStats();
+    } catch {
+      toast.error(`Failed to ${verb} users`);
+    }
+  };
+  const bulkDeleteUsers = async () => {
+    if (selectedUserIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedUserIds.length} user(s)? This cannot be undone.`)) return;
+    try {
+      const ops = selectedUserIds.map((id) => axios.delete(`${API}/api/admin/users/${id}`, { headers }));
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Users deleted: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchUsers({ page: userPage, size: userRowsPerPage });
+      setSelectedUserIds([]);
+      fetchStats();
+    } catch {
+      toast.error("Failed to delete users");
+    }
+  };
+
+  const bulkArchiveVendors = async (archive) => {
+    if (selectedVendorIds.length === 0) return;
+    const verb = archive ? "archive" : "restore";
+    try {
+      const ops = selectedVendorIds.map((id) =>
+        axios.put(`${API}/api/vendors/${id}`, { isDeleted: archive }, { headers })
+      );
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Vendors ${verb}d: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+      setSelectedVendorIds([]);
+      fetchStats();
+    } catch {
+      toast.error(`Failed to ${verb} vendors`);
+    }
+  };
+  const bulkDeleteVendors = async () => {
+    if (selectedVendorIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedVendorIds.length} vendor(s)? This cannot be undone.`)) return;
+    try {
+      const ops = selectedVendorIds.map((id) => axios.delete(`${API}/api/vendors/${id}`, { headers }));
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Vendors deleted: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+      setSelectedVendorIds([]);
+      fetchStats();
+    } catch {
+      toast.error("Failed to delete vendors");
+    }
+  };
+
   return (
     <Box p={3}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
         <Typography variant="h4">Admin Dashboard</Typography>
         <Stack direction="row" spacing={1}>
           <Tooltip title="Refresh all">
-            <IconButton onClick={() => { fetchStats(); fetchUsers({ page: userPage, size: userRowsPerPage }); fetchVendors({ page: vendorPage, size: vendorRowsPerPage }); }}>
+            <IconButton
+              onClick={() => {
+                fetchStats();
+                fetchUsers({ page: userPage, size: userRowsPerPage });
+                fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+              }}
+            >
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -428,16 +561,16 @@ export default function AdminDashboard() {
         {/* Users */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
               <Typography variant="h5">Users</Typography>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
                 <TextField
                   size="small"
                   label="Search users"
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
                 />
-                <FormControl size="small" sx={{ minWidth: 160 }}>
+                <FormControl size="small" sx={{ minWidth: 140 }}>
                   <InputLabel id="roleFilter">Role</InputLabel>
                   <Select
                     labelId="roleFilter"
@@ -451,19 +584,81 @@ export default function AdminDashboard() {
                     <MenuItem value="admin">admin</MenuItem>
                   </Select>
                 </FormControl>
-                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportUsersCsv} disabled={usersLoading || filteredUsers.length === 0}>
+
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel id="userStatus">Status</InputLabel>
+                  <Select
+                    labelId="userStatus"
+                    label="Status"
+                    value={userStatusFilter}
+                    onChange={(e) => setUserStatusFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="archived">Archived</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={exportUsersCsv}
+                  disabled={usersLoading || filteredUsers.length === 0}
+                >
                   Export CSV
                 </Button>
                 <Tooltip title="Refresh users">
-                  <IconButton onClick={() => fetchUsers({ page: userPage, size: userRowsPerPage })}><RefreshIcon /></IconButton>
+                  <IconButton onClick={() => fetchUsers({ page: userPage, size: userRowsPerPage })}>
+                    <RefreshIcon />
+                  </IconButton>
                 </Tooltip>
               </Stack>
+            </Stack>
+
+            {/* Bulk actions (Users) */}
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
+              <Button
+                size="small"
+                startIcon={<BlockIcon />}
+                onClick={() => bulkArchiveUsers(true)}
+                disabled={selectedUserIds.length === 0}
+              >
+                Archive
+              </Button>
+              <Button
+                size="small"
+                startIcon={<RestoreIcon />}
+                onClick={() => bulkArchiveUsers(false)}
+                disabled={selectedUserIds.length === 0}
+              >
+                Restore
+              </Button>
+              <Button
+                size="small"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={bulkDeleteUsers}
+                disabled={selectedUserIds.length === 0}
+              >
+                Delete
+              </Button>
+              {selectedUserIds.length > 0 && (
+                <Chip size="small" label={`${selectedUserIds.length} selected`} sx={{ ml: 1 }} />
+              )}
             </Stack>
 
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        indeterminate={someUsersChecked && !allUsersChecked}
+                        checked={allUsersChecked}
+                        onChange={toggleSelectAllUsers}
+                        inputProps={{ "aria-label": "Select all visible users" }}
+                      />
+                    </TableCell>
                     <TableCell>ID</TableCell>
                     <TableCell>Name</TableCell>
                     <TableCell>Email</TableCell>
@@ -474,77 +669,103 @@ export default function AdminDashboard() {
                 </TableHead>
                 <TableBody>
                   {usersLoading ? (
-                    <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={20} /></TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        <CircularProgress size={20} />
+                      </TableCell>
+                    </TableRow>
                   ) : filteredUsers.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} align="center">No users found</TableCell></TableRow>
-                  ) : filteredUsers.map((u) => {
-                    const pendingRole = pendingRoleByUser[u.id] ?? u.role;
-                    const dirty = pendingRole !== u.role;
-                    const saving = savingUserId === u.id;
-                    const archived = Boolean(u.isDeleted);
-                    return (
-                      <TableRow key={u.id} hover>
-                        <TableCell>{u.id}</TableCell>
-                        <TableCell>{u.name}</TableCell>
-                        <TableCell>{u.email}</TableCell>
-                        <TableCell>
-                          <FormControl size="small" sx={{ minWidth: 140 }}>
-                            <Select
-                              value={pendingRole}
-                              onChange={(e) => handleRoleChangeLocal(u.id, e.target.value)}
-                              disabled={saving || archived}
-                            >
-                              <MenuItem value="user">user</MenuItem>
-                              <MenuItem value="vendor">vendor</MenuItem>
-                              <MenuItem value="admin">admin</MenuItem>
-                            </Select>
-                          </FormControl>
-                          {dirty && <Chip size="small" label="unsaved" color="warning" sx={{ ml: 1 }} />}
-                        </TableCell>
-                        <TableCell>
-                          {archived ? <Chip size="small" label="archived" color="default" /> : <Chip size="small" label="active" color="success" variant="outlined" />}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" justifyContent="flex-end" spacing={1}>
-                            <Tooltip title="Save role">
-                              <span>
-                                <IconButton onClick={() => saveUserRole(u)} disabled={!dirty || saving || archived} color="primary">
-                                  {saving ? <CircularProgress size={18} /> : <SaveIcon />}
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        No users found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredUsers.map((u) => {
+                      const pendingRole = pendingRoleByUser[u.id] ?? u.role;
+                      const dirty = pendingRole !== u.role;
+                      const saving = savingUserId === u.id;
+                      const archived = Boolean(u.isDeleted);
+                      const checked = selectedUserIds.includes(u.id);
+                      return (
+                        <TableRow key={u.id} hover>
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={checked}
+                              onChange={() => toggleSelectUser(u.id)}
+                              inputProps={{ "aria-label": `Select user ${u.id}` }}
+                            />
+                          </TableCell>
+                          <TableCell>{u.id}</TableCell>
+                          <TableCell>{u.name}</TableCell>
+                          <TableCell>{u.email}</TableCell>
+                          <TableCell>
+                            <FormControl size="small" sx={{ minWidth: 140 }}>
+                              <Select
+                                value={pendingRole}
+                                onChange={(e) => handleRoleChangeLocal(u.id, e.target.value)}
+                                disabled={saving || archived}
+                              >
+                                <MenuItem value="user">user</MenuItem>
+                                <MenuItem value="vendor">vendor</MenuItem>
+                                <MenuItem value="admin">admin</MenuItem>
+                              </Select>
+                            </FormControl>
+                            {dirty && <Chip size="small" label="unsaved" color="warning" sx={{ ml: 1 }} />}
+                          </TableCell>
+                          <TableCell>
                             {archived ? (
-                              <Tooltip title="Restore user">
+                              <Chip size="small" label="archived" color="default" />
+                            ) : (
+                              <Chip size="small" label="active" color="success" variant="outlined" />
+                            )}
+                          </TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                              <Tooltip title="Save role">
                                 <span>
-                                  <IconButton color="primary" onClick={() => setUserDeleted(u, false)} disabled={saving}>
-                                    <RestoreIcon />
+                                  <IconButton
+                                    onClick={() => saveUserRole(u)}
+                                    disabled={!dirty || saving || archived}
+                                    color="primary"
+                                  >
+                                    {saving ? <CircularProgress size={18} /> : <SaveIcon />}
                                   </IconButton>
                                 </span>
                               </Tooltip>
-                            ) : (
-                              <>
-                                <Tooltip title="Archive user (soft delete)">
+
+                              {archived ? (
+                                <Tooltip title="Restore user">
                                   <span>
-                                    <IconButton color="warning" onClick={() => setUserDeleted(u, true)} disabled={saving}>
-                                      <BlockIcon />
+                                    <IconButton color="primary" onClick={() => setUserDeleted(u, false)} disabled={saving}>
+                                      <RestoreIcon />
                                     </IconButton>
                                   </span>
                                 </Tooltip>
-                                <Tooltip title="Delete user (hard delete)">
-                                  <span>
-                                    <IconButton color="error" onClick={() => handleDeleteUser(u.id)} disabled={saving}>
-                                      <DeleteIcon />
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                              </>
-                            )}
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                              ) : (
+                                <>
+                                  <Tooltip title="Archive user (soft delete)">
+                                    <span>
+                                      <IconButton color="warning" onClick={() => setUserDeleted(u, true)} disabled={saving}>
+                                        <BlockIcon />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  <Tooltip title="Delete user (hard delete)">
+                                    <span>
+                                      <IconButton color="error" onClick={() => handleDeleteUser(u.id)} disabled={saving}>
+                                        <DeleteIcon />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -564,20 +785,40 @@ export default function AdminDashboard() {
         {/* Vendors */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
               <Typography variant="h5">Vendors</Typography>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
                 <TextField
                   size="small"
                   label="Search vendors"
                   value={vendorSearch}
                   onChange={(e) => setVendorSearch(e.target.value)}
                 />
-                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportVendorsCsv} disabled={vendorsLoading || filteredVendors.length === 0}>
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel id="vendorStatus">Status</InputLabel>
+                  <Select
+                    labelId="vendorStatus"
+                    label="Status"
+                    value={vendorStatusFilter}
+                    onChange={(e) => setVendorStatusFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="archived">Archived</MenuItem>
+                  </Select>
+                </FormControl>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={exportVendorsCsv}
+                  disabled={vendorsLoading || filteredVendors.length === 0}
+                >
                   Export CSV
                 </Button>
                 <Tooltip title="Refresh vendors">
-                  <IconButton onClick={() => fetchVendors({ page: vendorPage, size: vendorRowsPerPage })}><RefreshIcon /></IconButton>
+                  <IconButton onClick={() => fetchVendors({ page: vendorPage, size: vendorRowsPerPage })}>
+                    <RefreshIcon />
+                  </IconButton>
                 </Tooltip>
               </Stack>
             </Stack>
@@ -633,10 +874,50 @@ export default function AdminDashboard() {
               </Stack>
             </Paper>
 
+            {/* Bulk actions (Vendors) */}
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
+              <Button
+                size="small"
+                startIcon={<BlockIcon />}
+                onClick={() => bulkArchiveVendors(true)}
+                disabled={selectedVendorIds.length === 0}
+              >
+                Archive
+              </Button>
+              <Button
+                size="small"
+                startIcon={<RestoreIcon />}
+                onClick={() => bulkArchiveVendors(false)}
+                disabled={selectedVendorIds.length === 0}
+              >
+                Restore
+              </Button>
+              <Button
+                size="small"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={bulkDeleteVendors}
+                disabled={selectedVendorIds.length === 0}
+              >
+                Delete
+              </Button>
+              {selectedVendorIds.length > 0 && (
+                <Chip size="small" label={`${selectedVendorIds.length} selected`} sx={{ ml: 1 }} />
+              )}
+            </Stack>
+
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        indeterminate={someVendorsChecked && !allVendorsChecked}
+                        checked={allVendorsChecked}
+                        onChange={toggleSelectAllVendors}
+                        inputProps={{ "aria-label": "Select all visible vendors" }}
+                      />
+                    </TableCell>
                     <TableCell>ID</TableCell>
                     <TableCell>Name</TableCell>
                     <TableCell>Location</TableCell>
@@ -649,135 +930,183 @@ export default function AdminDashboard() {
                 </TableHead>
                 <TableBody>
                   {vendorsLoading ? (
-                    <TableRow><TableCell colSpan={8} align="center"><CircularProgress size={20} /></TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={9} align="center">
+                        <CircularProgress size={20} />
+                      </TableCell>
+                    </TableRow>
                   ) : filteredVendors.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} align="center">No vendors found</TableCell></TableRow>
-                  ) : filteredVendors.map((v) => {
-                    const isEditing = editingVendorId === v.id;
-                    const savingRow = savingVendorId === v.id;
-                    const archived = Boolean(v.isDeleted);
-                    return (
-                      <TableRow key={v.id} hover>
-                        <TableCell>{v.id}</TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <TextField
-                              size="small"
-                              value={editVendorForm.name ?? ""}
-                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, name: e.target.value }))}
+                    <TableRow>
+                      <TableCell colSpan={9} align="center">
+                        No vendors found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredVendors.map((v) => {
+                      const isEditing = editingVendorId === v.id;
+                      const savingRow = savingVendorId === v.id;
+                      const archived = Boolean(v.isDeleted);
+                      const checked = selectedVendorIds.includes(v.id);
+                      return (
+                        <TableRow key={v.id} hover>
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={checked}
+                              onChange={() => toggleSelectVendor(v.id)}
+                              inputProps={{ "aria-label": `Select vendor ${v.id}` }}
                             />
-                          ) : v.name}
-                        </TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <TextField
-                              size="small"
-                              value={editVendorForm.location ?? ""}
-                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, location: e.target.value }))}
-                            />
-                          ) : v.location}
-                        </TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <TextField
-                              size="small"
-                              value={editVendorForm.cuisine ?? ""}
-                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, cuisine: e.target.value }))}
-                            />
-                          ) : v.cuisine}
-                        </TableCell>
-                        <TableCell>
-                          {isEditing ? (
-                            <TextField
-                              select
-                              size="small"
-                              value={editVendorForm.UserId ?? ""}
-                              onChange={(e) => setEditVendorForm((prev) => ({ ...prev, UserId: e.target.value }))}
-                              SelectProps={{ native: true }}
-                              sx={{ minWidth: 160 }}
-                            >
-                              <option value="">Select User</option>
-                              {(users || [])
-                                .filter((u) => (u.role || "").toLowerCase() === "vendor")
-                                .map((u) => (
-                                  <option key={u.id} value={u.id}>
-                                    {u.name} ({u.email})
-                                  </option>
-                                ))}
-                            </TextField>
-                          ) : v.UserId}
-                        </TableCell>
-                        <TableCell>
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <Switch
-                              checked={Boolean(v.isOpen)}
-                              onChange={() => toggleVendorOpen(v)}
-                              disabled={savingRow || isEditing || archived}
-                            />
-                            <Chip
-                              size="small"
-                              label={Boolean(v.isOpen) ? "Open" : "Closed"}
-                              color={Boolean(v.isOpen) ? "success" : "default"}
-                              variant="outlined"
-                            />
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          {archived ? <Chip size="small" label="archived" color="default" /> : <Chip size="small" label="active" color="success" variant="outlined" />}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                          </TableCell>
+                          <TableCell>{v.id}</TableCell>
+                          <TableCell>
                             {isEditing ? (
-                              <>
-                                <Tooltip title="Save vendor">
-                                  <span>
-                                    <IconButton color="primary" onClick={saveVendorRow} disabled={savingRow}>
-                                      {savingRow ? <CircularProgress size={18} /> : <SaveIcon />}
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                                <Tooltip title="Cancel">
-                                  <IconButton onClick={cancelEditVendor}>
-                                    <CloseIcon />
-                                  </IconButton>
-                                </Tooltip>
-                              </>
-                            ) : archived ? (
-                              <Tooltip title="Restore vendor">
-                                <span>
-                                  <IconButton color="primary" onClick={() => setVendorDeleted(v, false)} disabled={savingRow}>
-                                    <RestoreIcon />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
+                              <TextField
+                                size="small"
+                                value={editVendorForm.name ?? ""}
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, name: e.target.value }))}
+                              />
                             ) : (
-                              <>
-                                <Tooltip title="Edit vendor">
-                                  <IconButton onClick={() => startEditVendor(v)}>
-                                    <EditIcon />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Archive vendor (soft delete)">
-                                  <span>
-                                    <IconButton color="warning" onClick={() => setVendorDeleted(v, true)} disabled={savingRow}>
-                                      <BlockIcon />
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                                <Tooltip title="Delete vendor (hard delete)">
-                                  <span>
-                                    <IconButton color="error" onClick={() => handleDeleteVendor(v.id)} disabled={savingRow}>
-                                      <DeleteIcon />
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                              </>
+                              v.name
                             )}
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <TextField
+                                size="small"
+                                value={editVendorForm.location ?? ""}
+                                onChange={(e) =>
+                                  setEditVendorForm((prev) => ({ ...prev, location: e.target.value }))
+                                }
+                              />
+                            ) : (
+                              v.location
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <TextField
+                                size="small"
+                                value={editVendorForm.cuisine ?? ""}
+                                onChange={(e) =>
+                                  setEditVendorForm((prev) => ({ ...prev, cuisine: e.target.value }))
+                                }
+                              />
+                            ) : (
+                              v.cuisine
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <TextField
+                                select
+                                size="small"
+                                value={editVendorForm.UserId ?? ""}
+                                onChange={(e) =>
+                                  setEditVendorForm((prev) => ({ ...prev, UserId: e.target.value }))
+                                }
+                                SelectProps={{ native: true }}
+                                sx={{ minWidth: 160 }}
+                              >
+                                <option value="">Select User</option>
+                                {(users || [])
+                                  .filter((u) => (u.role || "").toLowerCase() === "vendor")
+                                  .map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.name} ({u.email})
+                                    </option>
+                                  ))}
+                              </TextField>
+                            ) : (
+                              v.UserId
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Switch
+                                checked={Boolean(v.isOpen)}
+                                onChange={() => toggleVendorOpen(v)}
+                                disabled={savingRow || isEditing || archived}
+                              />
+                              <Chip
+                                size="small"
+                                label={Boolean(v.isOpen) ? "Open" : "Closed"}
+                                color={Boolean(v.isOpen) ? "success" : "default"}
+                                variant="outlined"
+                              />
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            {archived ? (
+                              <Chip size="small" label="archived" color="default" />
+                            ) : (
+                              <Chip size="small" label="active" color="success" variant="outlined" />
+                            )}
+                          </TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                              {isEditing ? (
+                                <>
+                                  <Tooltip title="Save vendor">
+                                    <span>
+                                      <IconButton color="primary" onClick={saveVendorRow} disabled={savingRow}>
+                                        {savingRow ? <CircularProgress size={18} /> : <SaveIcon />}
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  <Tooltip title="Cancel">
+                                    <IconButton onClick={cancelEditVendor}>
+                                      <CloseIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              ) : archived ? (
+                                <Tooltip title="Restore vendor">
+                                  <span>
+                                    <IconButton
+                                      color="primary"
+                                      onClick={() => setVendorDeleted(v, false)}
+                                      disabled={savingRow}
+                                    >
+                                      <RestoreIcon />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              ) : (
+                                <>
+                                  <Tooltip title="Edit vendor">
+                                    <IconButton onClick={() => startEditVendor(v)}>
+                                      <EditIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Archive vendor (soft delete)">
+                                    <span>
+                                      <IconButton
+                                        color="warning"
+                                        onClick={() => setVendorDeleted(v, true)}
+                                        disabled={savingRow}
+                                      >
+                                        <BlockIcon />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  <Tooltip title="Delete vendor (hard delete)">
+                                    <span>
+                                      <IconButton
+                                        color="error"
+                                        onClick={() => handleDeleteVendor(v.id)}
+                                        disabled={savingRow}
+                                      >
+                                        <DeleteIcon />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -798,11 +1127,15 @@ export default function AdminDashboard() {
       <Divider sx={{ my: 4 }} />
 
       <Stack direction="row" spacing={1} justifyContent="flex-end">
-        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => {
-          fetchStats();
-          fetchUsers({ page: userPage, size: userRowsPerPage });
-          fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
-        }}>
+        <Button
+          variant="outlined"
+          startIcon={<RefreshIcon />}
+          onClick={() => {
+            fetchStats();
+            fetchUsers({ page: userPage, size: userRowsPerPage });
+            fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+          }}
+        >
           Refresh All
         </Button>
       </Stack>
