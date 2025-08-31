@@ -57,6 +57,21 @@ export default function UserDashboard() {
     });
   };
 
+  const makeIdempotentKey = () => {
+    try {
+      const rnd =
+      typeof window !== "undefined" && window.crypto &&
+      typeof window.crypto.randomUUID === "function"
+        ? window.crypto.randomUUID()
+        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+        return 'order-${rnd}';
+    } catch { return `order-${Date.now()}-${Math.random().toString(36).slice(2)}`; 
+  } 
+  };
+
+
+
+
   // ---------- loaders ----------
   const fetchOrders = async () => {
     setLoadingOrders(true);
@@ -226,7 +241,6 @@ export default function UserDashboard() {
   (crypyo?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`); 
 
   const handleSubmit = async () => {
-    if (submitting) return;
     if (!user?.id) { toast.error("Please log in"); return; }
     if (!vendorId) { toast.error("Select a vendor first"); return; }
     if (!isSelectedVendorOpen) { toast.error("This vendor is currently closed."); return; }
@@ -240,8 +254,8 @@ export default function UserDashboard() {
     };
     if (payload.items.length === 0) { toast.error("Add at least one item"); return; }
 
-    const idemKey = makeIdemKey();
-    setSubmitting(true);
+    const idemKey = makeIdempotentKey();  
+  
     try {
       const res = await fetch(`${API_BASE}/api/orders`, {
         method: "POST",
