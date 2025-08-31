@@ -1,10 +1,10 @@
-
-import React, { useEffect, useState } from "react";
+// src/pages/VendorDashboard.js
+import React, { useEffect, useState, useMemo } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   IconButton, Stack, Chip, Grid, Box, Divider, Tooltip,
-  FormControlLabel, Switch, MenuItem
+  FormControlLabel, Switch, MenuItem, LinearProgress
 } from "@mui/material";
 import { Delete, Edit, Refresh } from "@mui/icons-material";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -35,6 +35,20 @@ const SummaryCard = ({ title, value, sub }) => (
   </Paper>
 );
 
+// NEW: small AOV card
+const AovCard = ({ title, revenue = 0, orders = 0 }) => {
+  const aov = orders > 0 ? Number(revenue) / Number(orders) : 0;
+  return (
+    <Paper sx={{ p: 2 }}>
+      <Typography variant="body2" color="text.secondary">{title} AOV</Typography>
+      <Typography variant="h5" fontWeight={700}>₹{aov.toFixed(2)}</Typography>
+      <Typography variant="caption" color="text.secondary">
+        {orders} orders · ₹{Number(revenue || 0).toFixed(2)}
+      </Typography>
+    </Paper>
+  );
+};
+
 const StatusChips = ({ byStatus = {} }) => (
   <Paper sx={{ p: 2 }}>
     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Orders by status</Typography>
@@ -57,10 +71,17 @@ const VendorDashboard = () => {
   const [vendorId, setVendorId] = useState(null);
   const [isOpen, setIsOpen] = useState(true); // vendor open/closed
 
-  // ----- daily trend controls (NEW) -----
+  // ----- daily trend controls -----
   const [days, setDays] = useState(14);
   const [daily, setDaily] = useState([]);
   const [loadingDaily, setLoadingDaily] = useState(false);
+
+  // ----- lifetime / goals (NEW) -----
+  const [revGoal, setRevGoal] = useState(() => {
+    // sensible default monthly goal (edit in UI)
+    return 50000;
+  });
+  const [ordersGoal, setOrdersGoal] = useState(() => 200);
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -111,7 +132,7 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---------- DAILY TREND LOAD (NEW) ----------
+  // ---------- DAILY TREND LOAD ----------
   const fetchDaily = async (range = days) => {
     setLoadingDaily(true);
     try {
@@ -299,7 +320,7 @@ const VendorDashboard = () => {
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
 
-  // CSV export for daily trend (NEW)
+  // CSV export for daily trend
   const exportDailyCsv = () => {
     const headers = ["Date", "Orders", "Revenue"];
     const lines = (daily || []).map(d => `${d.date},${d.orders},${d.revenue}`);
@@ -313,6 +334,34 @@ const VendorDashboard = () => {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // ------ computed helpers for goals / AOV ------
+  const todayOrders  = Number(summary?.today?.orders || 0);
+  const weekOrders   = Number(summary?.week?.orders || 0);
+  const monthOrders  = Number(summary?.month?.orders || 0);
+  const lifeOrders   = Number(summary?.totals?.orders || 0);
+
+  const todayRevenue = Number(summary?.today?.revenue || 0);
+  const weekRevenue  = Number(summary?.week?.revenue || 0);
+  const monthRevenue = Number(summary?.month?.revenue || 0);
+  const lifeRevenue  = Number(summary?.totals?.revenue || 0);
+
+  // Progress toward monthly goals
+  const revProgress    = revGoal > 0 ? Math.min(100, (monthRevenue / revGoal) * 100) : 0;
+  const ordersProgress = ordersGoal > 0 ? Math.min(100, (monthOrders / ordersGoal) * 100) : 0;
+
+  // Simple “clever” note: tells how many more orders / revenue needed this month
+  const revRemaining    = Math.max(0, revGoal - monthRevenue);
+  const ordersRemaining = Math.max(0, ordersGoal - monthOrders);
+
+  const goalHint = useMemo(() => {
+    if (!revGoal && !ordersGoal) return "";
+    const parts = [];
+    if (revRemaining > 0) parts.push(`₹${revRemaining.toFixed(0)} revenue left`);
+    if (ordersRemaining > 0) parts.push(`${ordersRemaining} orders to go`);
+    if (!parts.length) return "Monthly goals reached 🎉";
+    return `You’re close: ${parts.join(" · ")}`;
+  }, [revRemaining, ordersRemaining, revGoal, ordersGoal]);
 
   return (
     <>
@@ -362,11 +411,10 @@ const VendorDashboard = () => {
         {/* ---- SUMMARY + TREND ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box sx={{ mb: 3 }}>
-            {/* Your existing chart component */}
             <VendorSalesTrend />
           </Box>
 
-          {/* NEW: Daily Trend Controls (range + export) */}
+          {/* Daily Trend Controls + CSV */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
             <Typography variant="subtitle1">Daily Trend Controls</Typography>
             <Stack direction="row" gap={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
@@ -389,7 +437,7 @@ const VendorDashboard = () => {
                 </IconButton>
               </Tooltip>
 
-              <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportDailyCsv}>
+              <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportDailyCsv} disabled={loadingDaily || (daily || []).length === 0}>
                 Export CSV
               </Button>
             </Stack>
@@ -397,6 +445,7 @@ const VendorDashboard = () => {
 
           <Divider sx={{ my: 2 }} />
 
+          {/* Revenue Summary */}
           <Stack
             direction="row"
             alignItems="center"
@@ -415,22 +464,22 @@ const VendorDashboard = () => {
                 <Grid item xs={12} sm={4}>
                   <SummaryCard
                     title="Today"
-                    value={summary?.today?.revenue}
-                    sub={`${summary?.today?.orders || 0} orders`}
+                    value={todayRevenue}
+                    sub={`${todayOrders || 0} orders`}
                   />
                 </Grid>
                 <Grid item xs={12} sm={4}>
                   <SummaryCard
                     title="This Week"
-                    value={summary?.week?.revenue}
-                    sub={`${summary?.week?.orders || 0} orders`}
+                    value={weekRevenue}
+                    sub={`${weekOrders || 0} orders`}
                   />
                 </Grid>
                 <Grid item xs={12} sm={4}>
                   <SummaryCard
                     title="This Month"
-                    value={summary?.month?.revenue}
-                    sub={`${summary?.month?.orders || 0} orders`}
+                    value={monthRevenue}
+                    sub={`${monthOrders || 0} orders`}
                   />
                 </Grid>
               </Grid>
@@ -440,12 +489,86 @@ const VendorDashboard = () => {
             </Grid>
           </Grid>
 
+          {/* NEW: AOV row */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>Average Order Value (AOV)</Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={3}><AovCard title="Today"      revenue={todayRevenue} orders={todayOrders} /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="This Week"  revenue={weekRevenue}  orders={weekOrders}  /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="This Month" revenue={monthRevenue} orders={monthOrders} /></Grid>
+              <Grid item xs={12} sm={3}><AovCard title="Lifetime"   revenue={lifeRevenue}  orders={lifeOrders}  /></Grid>
+            </Grid>
+          </Box>
+
+          <Divider sx={{ mt: 2 }} />
+
+          {/* NEW: Monthly Goals with progress */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="h6" sx={{ mb: 1 }}>Monthly Goals</Typography>
+
+            <Grid container spacing={2} sx={{ mb: 1 }}>
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                    <Typography variant="body2" color="text.secondary">Revenue Goal</Typography>
+                    <TextField
+                      size="small"
+                      label="₹ goal"
+                      type="number"
+                      value={revGoal}
+                      onChange={(e) => setRevGoal(Math.max(0, Number(e.target.value) || 0))}
+                      sx={{ width: 160 }}
+                    />
+                  </Stack>
+                  <Typography variant="subtitle2">₹{monthRevenue.toFixed(2)} / ₹{Number(revGoal).toFixed(0)}</Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={revProgress}
+                    sx={{ mt: 1, height: 10, borderRadius: 1 }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {revRemaining <= 0 ? "Goal achieved 🎉" : `₹${revRemaining.toFixed(0)} to go`}
+                  </Typography>
+                </Paper>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                    <Typography variant="body2" color="text.secondary">Orders Goal</Typography>
+                    <TextField
+                      size="small"
+                      label="Orders goal"
+                      type="number"
+                      value={ordersGoal}
+                      onChange={(e) => setOrdersGoal(Math.max(0, Number(e.target.value) || 0))}
+                      sx={{ width: 160 }}
+                    />
+                  </Stack>
+                  <Typography variant="subtitle2">{monthOrders} / {ordersGoal}</Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={ordersProgress}
+                    sx={{ mt: 1, height: 10, borderRadius: 1 }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {ordersRemaining <= 0 ? "Goal achieved 🎉" : `${ordersRemaining} orders to go`}
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            <Typography variant="body2" color="text.secondary">
+              {goalHint}
+            </Typography>
+          </Box>
+
           <Divider sx={{ mt: 2 }} />
 
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary">
-              Lifetime: <strong>{summary?.totals?.orders || 0}</strong> orders ·{" "}
-              <strong>₹{Number(summary?.totals?.revenue || 0).toFixed(2)}</strong>
+              Lifetime: <strong>{lifeOrders}</strong> orders ·{" "}
+              <strong>₹{lifeRevenue.toFixed(2)}</strong>
             </Typography>
           </Box>
         </Paper>
