@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -22,7 +21,7 @@ import {
   Stack,
   Tooltip,
 } from "@mui/material";
-import { Delete, Edit, Logout, ReceiptLong } from "@mui/icons-material";
+import { Delete, Edit, Logout, ArrowBack, ReceiptLong } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
@@ -41,12 +40,21 @@ export default function UserOrders() {
 
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const safeArray = (v) => (Array.isArray(v) ? v : []);
+  const safeJson = async (res) => { try { return await res.json(); } catch { return null; } };
 
-  const safeJson = async (res) => {
-    try { return await res.json(); } catch { return null; }
+  const normalizeList = (list) => {
+    const map = new Map();
+    for (const o of safeArray(list)) {
+      if (!o?.id) continue;
+      map.set(o.id, { ...(map.get(o.id) || {}), ...o });
+    }
+    return [...map.values()].sort((a, b) => {
+      const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bt - at || b.id - a.id;
+    });
   };
 
-  // ---------- helpers ----------
   const getLineItems = (order) => {
     if (Array.isArray(order?.OrderItems)) {
       return order.OrderItems.map((oi) => ({
@@ -69,10 +77,7 @@ export default function UserOrders() {
 
   // ---------- data loaders ----------
   const fetchOrders = async () => {
-    if (!token) {
-      navigate("/login");
-      return;
-    }
+    if (!token) { navigate("/login"); return; }
     try {
       const res = await fetch(`${API}/api/orders/my`, { headers });
       if (res.status === 401) {
@@ -91,17 +96,14 @@ export default function UserOrders() {
         Array.isArray(data) ? data :
         Array.isArray(data?.orders) ? data.orders :
         Array.isArray(data?.items) ? data.items : [];
-      setOrders(list);
+      setOrders(normalizeList(list));
     } catch (err) {
       setError("Failed to fetch orders.");
       setOrders([]);
     }
   };
 
-  useEffect(() => {
-    fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { fetchOrders(); /* eslint-disable-next-line */ }, []);
 
   // ---------- sockets (live updates) ----------
   useEffect(() => {
@@ -113,34 +115,35 @@ export default function UserOrders() {
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => {
-        const arr = safeArray(prev);
-        const exists = arr.some((o) => o.id === fullOrder.id);
-        return exists ? arr.map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o)) : [fullOrder, ...arr];
-      });
+      setOrders((prev) => normalizeList([fullOrder, ...safeArray(prev)]));
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
     };
 
     const onStatus = (payload) => {
       if (Number(payload?.UserId) !== Number(user.id)) return;
       setOrders((prev) =>
-        safeArray(prev).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o))
+        normalizeList(safeArray(prev).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)))
       );
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
-    // mock payment events
     const onPayProcessing = (p) => {
       if (!p?.id) return;
-      setOrders((prev) => safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
+      setOrders((prev) =>
+        normalizeList(safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
+      );
     };
     const onPaySuccess = (p) => {
       if (!p?.id) return;
-      setOrders((prev) => safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
+      setOrders((prev) =>
+        normalizeList(safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
+      );
     };
     const onPayFailed = (p) => {
       if (!p?.id) return;
-      setOrders((prev) => safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
+      setOrders((prev) =>
+        normalizeList(safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
+      );
     };
 
     socket.on("connect", onConnect);
@@ -158,16 +161,12 @@ export default function UserOrders() {
       socket.off("payment:success", onPaySuccess);
       socket.off("payment:failed", onPayFailed);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- actions ----------
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API}/api/orders/${id}`, {
-        method: "DELETE",
-        headers,
-      });
+      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -175,7 +174,7 @@ export default function UserOrders() {
         return;
       }
       if (res.ok) {
-        setOrders((prev) => safeArray(prev).filter((order) => order.id !== id));
+        setOrders((prev) => normalizeList(safeArray(prev).filter((o) => o.id !== id)));
         setOpenDialog(false);
       } else {
         const data = await safeJson(res);
@@ -186,18 +185,6 @@ export default function UserOrders() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    navigate("/login");
-  };
-
-  const confirmDelete = (id) => {
-    setOrderToDelete(id);
-    setOpenDialog(true);
-  };
-
-  // --------- invoice ----------
   const openInvoice = async (orderId) => {
     try {
       const res = await fetch(`${API}/api/orders/${orderId}/invoice`, {
@@ -224,53 +211,22 @@ export default function UserOrders() {
     }
   };
 
-  // --------- mock payments (same endpoints as dashboard) ----------
-  const postJson = async (path, body) => {
-    const res = await fetch(`${API}${path}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body || {}),
-    });
-    const data = await safeJson(res);
-    return { ok: res.ok, status: res.status, data };
-    };
-
-  const startMockPayment = async (orderId) => {
-    const { ok, data } = await postJson("/api/payments/mock/start", { orderId });
-    if (!ok) { toast.error(data?.message || "Failed to start mock payment"); return; }
-    toast.info("Payment started");
-    setOrders((prev) => prev.map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o));
-  };
-
-  const succeedMockPayment = async (orderId) => {
-    const { ok, data } = await postJson("/api/payments/mock/succeed", { orderId });
-    if (!ok) { toast.error(data?.message || "Failed to mark success"); return; }
-    toast.success("Payment marked as success");
-    setOrders((prev) => prev.map(o => o.id === orderId ? { ...o, paymentStatus: "paid" } : o));
-  };
-
-  const failMockPayment = async (orderId) => {
-    const { ok, data } = await postJson("/api/payments/mock/fail", { orderId });
-    if (!ok) { toast.error(data?.message || "Failed to mark failure"); return; }
-    toast.error("Payment marked as failed");
-    setOrders((prev) => prev.map(o => o.id === orderId ? { ...o, paymentStatus: "failed" } : o));
-  };
+  const handleLogout = () => { localStorage.removeItem("token"); localStorage.removeItem("user"); navigate("/login"); };
+  const confirmDelete = (id) => { setOrderToDelete(id); setOpenDialog(true); };
 
   return (
     <Container>
-      <Typography variant="h4" gutterBottom>
-        My Orders
-      </Typography>
-
-      <Button
-        variant="contained"
-        color="secondary"
-        onClick={handleLogout}
-        startIcon={<Logout />}
-        sx={{ mb: 2 }}
-      >
-        Logout
-      </Button>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h4">My Orders</Typography>
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" startIcon={<ArrowBack />} onClick={() => navigate(-1)}>
+            Back
+          </Button>
+          <Button variant="contained" color="secondary" onClick={handleLogout} startIcon={<Logout />}>
+            Logout
+          </Button>
+        </Stack>
+      </Stack>
 
       {error && <Snackbar open autoHideDuration={6000} message={error} />}
 
@@ -306,13 +262,10 @@ export default function UserOrders() {
                         size="small"
                         label={payStatus}
                         color={
-                          payStatus === "paid"
-                            ? "success"
-                            : payStatus === "processing"
-                            ? "info"
-                            : payStatus === "failed"
-                            ? "error"
-                            : "default"
+                          payStatus === "paid" ? "success"
+                          : payStatus === "processing" ? "info"
+                          : payStatus === "failed" ? "error"
+                          : "default"
                         }
                       />
                     </Stack>
@@ -321,36 +274,16 @@ export default function UserOrders() {
                   <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
                   <TableCell align="right">
                     <Tooltip
-                      title={
-                        items.length
-                          ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
-                          : "No items"
-                      }
+                      title={items.length
+                        ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
+                        : "No items"}
                     >
                       <span />
                     </Tooltip>
 
-                    {/* Receipt */}
                     <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
                       <ReceiptLong />
                     </IconButton>
-
-                    {/* Mock payment controls */}
-                    {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
-                      <Button size="small" variant="contained" onClick={() => startMockPayment(order.id)}>
-                        {payStatus === "failed" ? "Retry Payment" : "Pay (Mock)"}
-                      </Button>
-                    )}
-                    {isMock && payStatus === "processing" && (
-                      <>
-                        <Button size="small" variant="contained" color="success" onClick={() => succeedMockPayment(order.id)}>
-                          Succeed
-                        </Button>
-                        <Button size="small" variant="outlined" color="error" onClick={() => failMockPayment(order.id)}>
-                          Fail
-                        </Button>
-                      </>
-                    )}
 
                     {/* Delete */}
                     <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
@@ -365,9 +298,7 @@ export default function UserOrders() {
             })}
             {safeArray(orders).length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} align="center">
-                  No orders yet
-                </TableCell>
+                <TableCell colSpan={7} align="center">No orders yet</TableCell>
               </TableRow>
             )}
           </TableBody>

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { toast } from "react-toastify";
@@ -30,22 +31,32 @@ export default function UserDashboard() {
     "Content-Type": "application/json",
   };
 
-  // ---------------- helpers ----------------
-  const safeJson = async (res) => {
-    try { return await res.json(); } catch { return null; }
-  };
+  // ---------- helpers ----------
+  const safeJson = async (res) => { try { return await res.json(); } catch { return null; } };
 
   const parseOrderList = (data) => {
     if (Array.isArray(data)) return data;
     if (Array.isArray(data?.orders)) return data.orders;
     if (Array.isArray(data?.items))  return data.items;
-    if (data && typeof data === "object" && (data.id || data.order?.id)) {
-      return [data.order || data];
-    }
+    if (data && typeof data === "object" && (data.id || data.order?.id)) return [data.order || data];
     return [];
   };
 
-  // ---------------- loaders ----------------
+  const normalizeList = (list) => {
+    const map = new Map();
+    for (const o of Array.isArray(list) ? list : []) {
+      if (!o?.id) continue;
+      // prefer the object that has more fields (later spread wins)
+      map.set(o.id, { ...(map.get(o.id) || {}), ...o });
+    }
+    return [...map.values()].sort((a, b) => {
+      const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bt - at || b.id - a.id;
+    });
+  };
+
+  // ---------- loaders ----------
   const fetchOrders = async () => {
     setLoadingOrders(true);
     try {
@@ -57,12 +68,8 @@ export default function UserDashboard() {
         return;
       }
       const data = await safeJson(res);
-      if (!res.ok) {
-        console.warn("orders/my failed:", res.status, data);
-        return; // keep current list on transient failure
-      }
-      const list = parseOrderList(data);
-      if (Array.isArray(list)) setOrders(list);
+      if (!res.ok) { console.warn("orders/my failed:", res.status, data); return; }
+      setOrders((prev) => normalizeList(parseOrderList(data)));
     } catch (e) {
       console.error("orders/my error:", e);
     } finally {
@@ -76,19 +83,16 @@ export default function UserDashboard() {
       const data = await safeJson(res);
       if (!res.ok) {
         console.error("vendors failed:", res.status, data);
-        setVendors([]);
-        setVendorStatus({});
-        return;
+        setVendors([]); setVendorStatus({}); return;
       }
       const list = Array.isArray(data) ? data : [];
       setVendors(list);
       const vs = {};
-      for (const v of list) vs[Number(v.id)] = v.isOpen !== false; // default true
+      for (const v of list) vs[Number(v.id)] = v.isOpen !== false;
       setVendorStatus(vs);
     } catch (e) {
       console.error("vendors error:", e);
-      setVendors([]);
-      setVendorStatus({});
+      setVendors([]); setVendorStatus({});
     }
   };
 
@@ -97,14 +101,10 @@ export default function UserDashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/vendors/${vId}/menu`);
       const data = await safeJson(res);
-      if (!res.ok) {
-        console.error("vendor menu failed:", res.status, data);
-        setMenuItems([]);
-        return;
-      }
+      if (!res.ok) { console.error("vendor menu failed:", res.status, data); setMenuItems([]); return; }
       const list = Array.isArray(data) ? data : [];
       setMenuItems(list);
-      calculateTotal(items, list); // recompute with new prices
+      calculateTotal(items, list);
     } catch (e) {
       console.error("menu-items error:", e);
       setMenuItems([]);
@@ -118,31 +118,27 @@ export default function UserDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------- sockets ----------------
+  // ---------- sockets ----------
   useEffect(() => {
     if (!user?.id) return;
 
-    const join = () => {
-      try { socket.emit("user:join", user.id); } catch {}
-    };
+    const join = () => { try { socket.emit("user:join", user.id); } catch {} };
 
-    join(); // initial
+    join();
     const onConnect = () => { join(); fetchOrders(); };
     const onConnErr = (err) => console.warn("socket connect_error:", err?.message || err);
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => {
-        const exists = (prev || []).some((o) => o.id === fullOrder.id);
-        if (exists) return (prev || []).map((o) => (o.id === fullOrder.id ? { ...o, ...fullOrder } : o));
-        return [fullOrder, ...(prev || [])];
-      });
+      setOrders((prev) => normalizeList([fullOrder, ...(prev || [])]));
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
     };
 
     const onStatus = (payload) => {
       if (Number(payload?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => (prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)));
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)))
+      );
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
@@ -151,20 +147,25 @@ export default function UserDashboard() {
       setVendorStatus((prev) => ({ ...prev, [Number(payload.vendorId)]: !!payload.isOpen }));
     };
 
-    // mock payment events from server
     const onPayProcessing = (p) => {
       if (!p?.id) return;
-      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)));
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
+      );
       toast.info(`Payment processing for order #${p.id}`);
     };
     const onPaySuccess = (p) => {
       if (!p?.id) return;
-      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)));
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
+      );
       toast.success(`Payment succeeded for order #${p.id}`);
     };
     const onPayFailed = (p) => {
       if (!p?.id) return;
-      setOrders((prev) => prev.map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)));
+      setOrders((prev) =>
+        normalizeList((prev || []).map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
+      );
       toast.error(`Payment failed for order #${p.id}`);
     };
 
@@ -190,7 +191,7 @@ export default function UserDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // ---------------- form handlers ----------------
+  // ---------- form handlers ----------
   const handleVendorChange = (e) => {
     const selectedId = e.target.value;
     setVendorId(selectedId);
@@ -253,15 +254,8 @@ export default function UserDashboard() {
         return;
       }
 
-      // Append newly created order (works whether API returns {order} or the order)
-      const created = data?.order || data;
-      if (created && created.id) {
-        setOrders((prev) => [created, ...(prev || [])]);
-      } else if (created?.order?.id) {
-        setOrders((prev) => [created.order, ...(prev || [])]);
-      } else {
-        await fetchOrders(); // fallback
-      }
+      // No optimistic append -> avoid duplicates with socket "order:new"
+      await fetchOrders();
 
       toast.success("Order created successfully!");
       setItems([{ MenuItemId: "", quantity: 1 }]);
@@ -293,7 +287,7 @@ export default function UserDashboard() {
     }
   };
 
-  // ---------------- invoice ----------------
+  // ---------- invoice ----------
   const openInvoice = async (orderId) => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/${orderId}/invoice`, {
@@ -320,7 +314,7 @@ export default function UserDashboard() {
     }
   };
 
-  // ---------------- mock payments (NEW endpoints) ----------------
+  // ---------- mock payments ----------
   const postJson = async (path, body) => {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "POST",
@@ -335,27 +329,24 @@ export default function UserDashboard() {
     const { ok, data } = await postJson("/api/payments/mock/start", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to start mock payment"); return; }
     toast.info("Payment started");
-    setOrders((prev) => prev.map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o));
+    setOrders((prev) => normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "processing" } : o)));
   };
 
   const succeedMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/payments/mock/succeed", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to mark success"); return; }
     toast.success("Payment marked as success");
-    const updated = data?.order || null;
-    setOrders((prev) =>
-      prev.map(o => o.id === orderId ? { ...o, ...(updated || {}), paymentStatus: "paid" } : o)
-    );
+    setOrders((prev) => normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "paid" } : o)));
   };
 
   const failMockPayment = async (orderId) => {
     const { ok, data } = await postJson("/api/payments/mock/fail", { orderId });
     if (!ok) { toast.error(data?.message || "Failed to mark failure"); return; }
     toast.error("Payment marked as failed");
-    setOrders((prev) => prev.map(o => o.id === orderId ? { ...o, paymentStatus: "failed" } : o));
+    setOrders((prev) => normalizeList((prev || []).map(o => o.id === orderId ? { ...o, paymentStatus: "failed" } : o)));
   };
 
-  // ---------------- render ----------------
+  // ---------- render ----------
   const ordersSafe = Array.isArray(orders) ? orders : [];
   const hasValidItems = items.some((it) => it.MenuItemId && Number(it.quantity) > 0);
   const disableSubmit = !vendorId || !isSelectedVendorOpen || !hasValidItems;
@@ -475,7 +466,7 @@ export default function UserDashboard() {
             </TableHead>
 
             <TableBody>
-              {ordersSafe.map((order) => {
+              {(Array.isArray(orders) ? orders : []).map((order) => {
                 const payMethod = order.paymentMethod || "-";
                 const payStatus = order.paymentStatus || "-";
                 const isMock = payMethod === "mock_online";
@@ -504,8 +495,6 @@ export default function UserDashboard() {
                       <Stack direction="row" spacing={1}>
                         <Button variant="outlined" size="small" onClick={() => openInvoice(order.id)}>Receipt</Button>
                         <Button color="error" variant="outlined" size="small" onClick={() => deleteOrder(order.id)}>Delete</Button>
-
-                        {/* mock payment controls */}
                         {isMock && (payStatus === "unpaid" || payStatus === "failed") && (
                           <Button variant="contained" onClick={() => startMockPayment(order.id)}>
                             {payStatus === "failed" ? "Retry Payment" : "Pay Now (Mock)"}
@@ -522,7 +511,7 @@ export default function UserDashboard() {
                   </TableRow>
                 );
               })}
-              {ordersSafe.length === 0 && !loadingOrders && (
+              {(Array.isArray(orders) ? orders : []).length === 0 && !loadingOrders && (
                 <TableRow>
                   <TableCell colSpan={7} align="center">No orders yet</TableCell>
                 </TableRow>
