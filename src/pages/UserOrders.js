@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -23,6 +22,10 @@ import {
   Tooltip,
   CircularProgress,
   TablePagination,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { Delete, Edit, Logout, ArrowBack, ReceiptLong } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
@@ -42,6 +45,9 @@ export default function UserOrders() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  // status filter
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const navigate = useNavigate();
 
@@ -85,18 +91,23 @@ export default function UserOrders() {
 
   const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
-  // ---------- data loaders (with pagination) ----------
+  // ---------- data loaders (supports server + client pagination depending on filter) ----------
   const fetchOrders = async (opts) => {
     if (!token) { navigate("/login"); return; }
 
-    // allow explicit page/rows override (e.g., on socket refresh)
+    // allow explicit page/rows override
     const p = typeof opts?.page === "number" ? opts.page : page;
     const rpp = typeof opts?.rowsPerPage === "number" ? opts.rowsPerPage : rowsPerPage;
+    const status = opts?.statusFilter ?? statusFilter;
 
     setLoading(true);
     try {
-      // Backend expects 1-based page
-      const url = `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`;
+      // If filtering by a specific status, pull full list once (backend legacy mode page=0), then filter client-side
+      const url =
+        status === "all"
+          ? `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`
+          : `${API}/api/orders/my?page=0`; // 0 => legacy return all (your backend supports this)
+
       const res = await fetch(url, { headers });
 
       if (res.status === 401) {
@@ -114,27 +125,39 @@ export default function UserOrders() {
         return;
       }
 
-      // Paginated shape
-      if (Array.isArray(data?.items) && typeof data?.total === "number") {
-        setOrders(normalizeList(data.items));
-        setTotal(Number(data.total) || 0);
-        return;
-      }
-
-      // Legacy fallback: backend returned full array
+      // Normalized list from any payload shape
       const list =
-        Array.isArray(data) ? data :
-        Array.isArray(data?.orders) ? data.orders :
-        Array.isArray(data?.items) ? data.items : [];
+        Array.isArray(data?.items) && typeof data?.total === "number"
+          ? data.items
+          : Array.isArray(data)
+          ? data
+          : Array.isArray(data?.orders)
+          ? data.orders
+          : Array.isArray(data?.items)
+          ? data.items
+          : [];
 
       const normalized = normalizeList(list);
-      setTotal(normalized.length);
 
-      // client-side slice to emulate pagination
-      const start = p * rpp;
-      const pageSlice = normalized.slice(start, start + rpp);
-      setOrders(pageSlice);
-    } catch (_err) {
+      if (status === "all") {
+        // Server-side pagination path
+        if (Array.isArray(data?.items) && typeof data?.total === "number") {
+          setOrders(normalizeList(data.items));
+          setTotal(Number(data.total) || 0);
+        } else {
+          // (If backend didn’t paginate for some reason, fall back to client slice)
+          setTotal(normalized.length);
+          const start = p * rpp;
+          setOrders(normalized.slice(start, start + rpp));
+        }
+      } else {
+        // Client-side filter + paginate
+        const filtered = normalized.filter((o) => o.status === status);
+        setTotal(filtered.length);
+        const start = p * rpp;
+        setOrders(filtered.slice(start, start + rpp));
+      }
+    } catch (err) {
       setError("Failed to fetch orders.");
       setOrders([]);
       setTotal(0);
@@ -143,8 +166,14 @@ export default function UserOrders() {
     }
   };
 
+  // initial load
   useEffect(() => { fetchOrders({ page: 0 }); /* eslint-disable-next-line */ }, []);
-  useEffect(() => { fetchOrders({ page, rowsPerPage }); /* eslint-disable-next-line */ }, [page, rowsPerPage]);
+
+  // When page/rowsPerPage/statusFilter change, (re)fetch
+  useEffect(() => {
+    fetchOrders({ page, rowsPerPage, statusFilter });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, rowsPerPage, statusFilter]);
 
   // ---------- sockets (live updates) ----------
   useEffect(() => {
@@ -152,9 +181,9 @@ export default function UserOrders() {
 
     const join = () => { try { socket.emit("user:join", user.id); } catch {} };
     join();
-    const onConnect = () => { join(); fetchOrders(); };
+    const onConnect = () => { join(); fetchOrders({ page, rowsPerPage, statusFilter }); };
 
-    const refill = () => fetchOrders({ page, rowsPerPage });
+    const refill = () => fetchOrders({ page, rowsPerPage, statusFilter });
 
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
@@ -187,7 +216,7 @@ export default function UserOrders() {
       socket.off("payment:success", onPaySuccess);
       socket.off("payment:failed", onPayFailed);
     };
-  }, [user?.id, page, rowsPerPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, page, rowsPerPage, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- actions ----------
   const handleDelete = async (id) => {
@@ -200,19 +229,18 @@ export default function UserOrders() {
         return;
       }
       if (res.ok) {
-        // After delete, refetch the current page (handles last-row-on-page deletion gracefully)
         const newTotal = Math.max(0, total - 1);
         const maxPageIndex = Math.max(0, Math.ceil(newTotal / rowsPerPage) - 1);
         const nextPage = Math.min(page, maxPageIndex);
         setTotal(newTotal);
         setPage(nextPage);
-        fetchOrders({ page: nextPage, rowsPerPage });
+        fetchOrders({ page: nextPage, rowsPerPage, statusFilter });
         setOpenDialog(false);
       } else {
         const data = await safeJson(res);
         setError(data?.message || "Delete failed");
       }
-    } catch (_err) {
+    } catch (err) {
       setError("Server error during delete");
     }
   };
@@ -238,7 +266,7 @@ export default function UserOrders() {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (_e) {
+    } catch (e) {
       toast.error("Network error while opening invoice");
     }
   };
@@ -256,7 +284,7 @@ export default function UserOrders() {
 
   return (
     <Container>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
         <Typography variant="h4">My Orders</Typography>
         <Stack direction="row" spacing={1}>
           <Button variant="outlined" startIcon={<ArrowBack />} onClick={() => navigate(-1)}>
@@ -266,6 +294,26 @@ export default function UserOrders() {
             Logout
           </Button>
         </Stack>
+      </Stack>
+
+      {/* Status Filter */}
+      <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: "wrap" }}>
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel id="status-filter">Status</InputLabel>
+          <Select
+            labelId="status-filter"
+            label="Status"
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="pending">Pending</MenuItem>
+            <MenuItem value="accepted">Accepted</MenuItem>
+            <MenuItem value="ready">Ready</MenuItem>
+            <MenuItem value="delivered">Delivered</MenuItem>
+            <MenuItem value="rejected">Rejected</MenuItem>
+          </Select>
+        </FormControl>
       </Stack>
 
       {error && <Snackbar open autoHideDuration={6000} message={error} />}
@@ -299,6 +347,7 @@ export default function UserOrders() {
                   const items = getLineItems(order);
                   const payMethod = order.paymentMethod || "cod";
                   const payStatus = order.paymentStatus || "unpaid";
+                  const isMock = payMethod === "mock_online";
                   return (
                     <TableRow key={order.id}>
                       <TableCell>{order.id}</TableCell>
@@ -347,7 +396,7 @@ export default function UserOrders() {
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">No orders yet</TableCell>
+                  <TableCell colSpan={7} align="center">No orders found</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -359,9 +408,9 @@ export default function UserOrders() {
           component="div"
           count={total}
           page={page}
-          onPageChange={handleChangePage}
+          onPageChange={(_e, newPage) => setPage(newPage)}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
+          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10) || 10); setPage(0); }}
           rowsPerPageOptions={[5, 10, 20, 50]}
           labelRowsPerPage="Per page:"
         />
