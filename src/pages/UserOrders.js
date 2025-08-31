@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -20,6 +21,8 @@ import {
   Chip,
   Stack,
   Tooltip,
+  CircularProgress,
+  TablePagination,
 } from "@mui/material";
 import { Delete, Edit, Logout, ArrowBack, ReceiptLong } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
@@ -33,6 +36,13 @@ export default function UserOrders() {
   const [error, setError] = useState("");
   const [openDialog, setOpenDialog] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
+
+  // pagination state
+  const [page, setPage] = useState(0); // MUI is 0-based
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
@@ -51,7 +61,7 @@ export default function UserOrders() {
     return [...map.values()].sort((a, b) => {
       const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return bt - at || b.id - a.id;
+      return bt - at || (Number(b.id) - Number(a.id));
     });
   };
 
@@ -75,35 +85,66 @@ export default function UserOrders() {
 
   const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
-  // ---------- data loaders ----------
-  const fetchOrders = async () => {
+  // ---------- data loaders (with pagination) ----------
+  const fetchOrders = async (opts) => {
     if (!token) { navigate("/login"); return; }
+
+    // allow explicit page/rows override (e.g., on socket refresh)
+    const p = typeof opts?.page === "number" ? opts.page : page;
+    const rpp = typeof opts?.rowsPerPage === "number" ? opts.rowsPerPage : rowsPerPage;
+
+    setLoading(true);
     try {
-      const res = await fetch(`${API}/api/orders/my`, { headers });
+      // Backend expects 1-based page
+      const url = `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`;
+      const res = await fetch(url, { headers });
+
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
         navigate("/login");
         return;
       }
+
       const data = await safeJson(res);
       if (!res.ok) {
         setError(data?.message || "Failed to fetch orders.");
         setOrders([]);
+        setTotal(0);
         return;
       }
+
+      // Paginated shape
+      if (Array.isArray(data?.items) && typeof data?.total === "number") {
+        setOrders(normalizeList(data.items));
+        setTotal(Number(data.total) || 0);
+        return;
+      }
+
+      // Legacy fallback: backend returned full array
       const list =
         Array.isArray(data) ? data :
         Array.isArray(data?.orders) ? data.orders :
         Array.isArray(data?.items) ? data.items : [];
-      setOrders(normalizeList(list));
-    } catch (err) {
+
+      const normalized = normalizeList(list);
+      setTotal(normalized.length);
+
+      // client-side slice to emulate pagination
+      const start = p * rpp;
+      const pageSlice = normalized.slice(start, start + rpp);
+      setOrders(pageSlice);
+    } catch (_err) {
       setError("Failed to fetch orders.");
       setOrders([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchOrders(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { fetchOrders({ page: 0 }); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { fetchOrders({ page, rowsPerPage }); /* eslint-disable-next-line */ }, [page, rowsPerPage]);
 
   // ---------- sockets (live updates) ----------
   useEffect(() => {
@@ -113,38 +154,23 @@ export default function UserOrders() {
     join();
     const onConnect = () => { join(); fetchOrders(); };
 
+    const refill = () => fetchOrders({ page, rowsPerPage });
+
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
-      setOrders((prev) => normalizeList([fullOrder, ...safeArray(prev)]));
+      refill();
       toast.info(`New order #${fullOrder?.id ?? ""} placed`);
     };
 
     const onStatus = (payload) => {
       if (Number(payload?.UserId) !== Number(user.id)) return;
-      setOrders((prev) =>
-        normalizeList(safeArray(prev).map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o)))
-      );
+      refill();
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
-    const onPayProcessing = (p) => {
-      if (!p?.id) return;
-      setOrders((prev) =>
-        normalizeList(safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "processing" } : o)))
-      );
-    };
-    const onPaySuccess = (p) => {
-      if (!p?.id) return;
-      setOrders((prev) =>
-        normalizeList(safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "paid" } : o)))
-      );
-    };
-    const onPayFailed = (p) => {
-      if (!p?.id) return;
-      setOrders((prev) =>
-        normalizeList(safeArray(prev).map((o) => (o.id === p.id ? { ...o, paymentStatus: "failed" } : o)))
-      );
-    };
+    const onPayProcessing = () => refill();
+    const onPaySuccess = () => refill();
+    const onPayFailed = () => refill();
 
     socket.on("connect", onConnect);
     socket.on("order:new", onNew);
@@ -161,7 +187,7 @@ export default function UserOrders() {
       socket.off("payment:success", onPaySuccess);
       socket.off("payment:failed", onPayFailed);
     };
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, page, rowsPerPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- actions ----------
   const handleDelete = async (id) => {
@@ -174,13 +200,19 @@ export default function UserOrders() {
         return;
       }
       if (res.ok) {
-        setOrders((prev) => normalizeList(safeArray(prev).filter((o) => o.id !== id)));
+        // After delete, refetch the current page (handles last-row-on-page deletion gracefully)
+        const newTotal = Math.max(0, total - 1);
+        const maxPageIndex = Math.max(0, Math.ceil(newTotal / rowsPerPage) - 1);
+        const nextPage = Math.min(page, maxPageIndex);
+        setTotal(newTotal);
+        setPage(nextPage);
+        fetchOrders({ page: nextPage, rowsPerPage });
         setOpenDialog(false);
       } else {
         const data = await safeJson(res);
         setError(data?.message || "Delete failed");
       }
-    } catch (err) {
+    } catch (_err) {
       setError("Server error during delete");
     }
   };
@@ -206,13 +238,21 @@ export default function UserOrders() {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
+    } catch (_e) {
       toast.error("Network error while opening invoice");
     }
   };
 
   const handleLogout = () => { localStorage.removeItem("token"); localStorage.removeItem("user"); navigate("/login"); };
   const confirmDelete = (id) => { setOrderToDelete(id); setOpenDialog(true); };
+
+  // ---------- pagination handlers ----------
+  const handleChangePage = (_evt, newPage) => setPage(newPage);
+  const handleChangeRowsPerPage = (evt) => {
+    const value = parseInt(evt.target.value, 10) || 10;
+    setRowsPerPage(value);
+    setPage(0); // reset to first page
+  };
 
   return (
     <Container>
@@ -230,80 +270,102 @@ export default function UserOrders() {
 
       {error && <Snackbar open autoHideDuration={6000} message={error} />}
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Order ID</TableCell>
-              <TableCell>Vendor</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Payment</TableCell>
-              <TableCell>Total</TableCell>
-              <TableCell>Created</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
+      <Paper>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Order ID</TableCell>
+                <TableCell>Vendor</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Payment</TableCell>
+                <TableCell>Total</TableCell>
+                <TableCell>Created</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
 
-          <TableBody>
-            {safeArray(orders).map((order) => {
-              const items = getLineItems(order);
-              const payMethod = order.paymentMethod || "cod";
-              const payStatus = order.paymentStatus || "unpaid";
-              const isMock = payMethod === "mock_online";
-              return (
-                <TableRow key={order.id}>
-                  <TableCell>{order.id}</TableCell>
-                  <TableCell>{order.Vendor?.name || "-"}</TableCell>
-                  <TableCell>{order.status}</TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip size="small" label={payMethod === "mock_online" ? "Online" : "COD"} variant="outlined" />
-                      <Chip
-                        size="small"
-                        label={payStatus}
-                        color={
-                          payStatus === "paid" ? "success"
-                          : payStatus === "processing" ? "info"
-                          : payStatus === "failed" ? "error"
-                          : "default"
-                        }
-                      />
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center">
+                    <Stack direction="row" gap={1} alignItems="center" justifyContent="center" sx={{ py: 3 }}>
+                      <CircularProgress size={20} /> <span>Loading…</span>
                     </Stack>
                   </TableCell>
-                  <TableCell>{rupee(order.totalAmount)}</TableCell>
-                  <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
-                  <TableCell align="right">
-                    <Tooltip
-                      title={items.length
-                        ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
-                        : "No items"}
-                    >
-                      <span />
-                    </Tooltip>
-
-                    <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
-                      <ReceiptLong />
-                    </IconButton>
-
-                    {/* Delete */}
-                    <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
-                      <Delete />
-                    </IconButton>
-                    <IconButton disabled title="Edit (disabled)">
-                      <Edit />
-                    </IconButton>
-                  </TableCell>
                 </TableRow>
-              );
-            })}
-            {safeArray(orders).length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} align="center">No orders yet</TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              ) : safeArray(orders).length ? (
+                safeArray(orders).map((order) => {
+                  const items = getLineItems(order);
+                  const payMethod = order.paymentMethod || "cod";
+                  const payStatus = order.paymentStatus || "unpaid";
+                  return (
+                    <TableRow key={order.id}>
+                      <TableCell>{order.id}</TableCell>
+                      <TableCell>{order.Vendor?.name || "-"}</TableCell>
+                      <TableCell>{order.status}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Chip size="small" label={payMethod === "mock_online" ? "Online" : "COD"} variant="outlined" />
+                          <Chip
+                            size="small"
+                            label={payStatus}
+                            color={
+                              payStatus === "paid" ? "success"
+                              : payStatus === "processing" ? "info"
+                              : payStatus === "failed" ? "error"
+                              : "default"
+                            }
+                          />
+                        </Stack>
+                      </TableCell>
+                      <TableCell>{rupee(order.totalAmount)}</TableCell>
+                      <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
+                      <TableCell align="right">
+                        <Tooltip
+                          title={items.length
+                            ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
+                            : "No items"}
+                        >
+                          <span />
+                        </Tooltip>
+
+                        <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
+                          <ReceiptLong />
+                        </IconButton>
+
+                        {/* Delete */}
+                        <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
+                          <Delete />
+                        </IconButton>
+                        <IconButton disabled title="Edit (disabled)">
+                          <Edit />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={7} align="center">No orders yet</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Pagination bar */}
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          onPageChange={handleChangePage}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          labelRowsPerPage="Per page:"
+        />
+      </Paper>
 
       {/* Delete confirmation dialog */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
