@@ -1,3 +1,4 @@
+// src/pages/UserOrders.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -26,11 +27,23 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Badge,
+  Box
 } from "@mui/material";
-import { Delete, Edit, Logout, ArrowBack, ReceiptLong } from "@mui/icons-material";
+import {
+  Delete,
+  Edit,
+  Logout,
+  ArrowBack,
+  ReceiptLong
+} from "@mui/icons-material";
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
+import StorefrontIcon from "@mui/icons-material/Storefront";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
+import CartDrawer from "../components/CartDrawer";
+import { useCart } from "../context/CartContext";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -48,6 +61,10 @@ export default function UserOrders() {
 
   // status filter
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // cart drawer
+  const [openCart, setOpenCart] = useState(false);
+  const { totalQty } = useCart();
 
   const navigate = useNavigate();
 
@@ -284,11 +301,29 @@ export default function UserOrders() {
 
   return (
     <Container>
+      {/* Header with back, vendors, cart & checkout */}
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
         <Typography variant="h4">My Orders</Typography>
         <Stack direction="row" spacing={1}>
           <Button variant="outlined" startIcon={<ArrowBack />} onClick={() => navigate(-1)}>
             Back
+          </Button>
+          <Button variant="outlined" startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>
+            Browse Vendors
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={
+              <Badge color="primary" badgeContent={totalQty} invisible={!totalQty}>
+                <ShoppingCartIcon />
+              </Badge>
+            }
+            onClick={() => setOpenCart(true)}
+          >
+            Cart
+          </Button>
+          <Button variant="contained" color="primary" onClick={() => navigate("/checkout")} disabled={!totalQty}>
+            Go to Checkout
           </Button>
           <Button variant="contained" color="secondary" onClick={handleLogout} startIcon={<Logout />}>
             Logout
@@ -347,7 +382,6 @@ export default function UserOrders() {
                   const items = getLineItems(order);
                   const payMethod = order.paymentMethod || "cod";
                   const payStatus = order.paymentStatus || "unpaid";
-                  const isMock = payMethod === "mock_online";
                   return (
                     <TableRow key={order.id}>
                       <TableCell>{order.id}</TableCell>
@@ -371,17 +405,20 @@ export default function UserOrders() {
                       <TableCell>{rupee(order.totalAmount)}</TableCell>
                       <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
                       <TableCell align="right">
+                        {/* Items tooltip anchored to the receipt icon for real hover target */}
                         <Tooltip
-                          title={items.length
-                            ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
-                            : "No items"}
+                          title={
+                            items.length
+                              ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
+                              : "No items"
+                          }
                         >
-                          <span />
+                          <span>
+                            <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
+                              <ReceiptLong />
+                            </IconButton>
+                          </span>
                         </Tooltip>
-
-                        <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
-                          <ReceiptLong />
-                        </IconButton>
 
                         {/* Delete */}
                         <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
@@ -396,7 +433,16 @@ export default function UserOrders() {
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">No orders found</TableCell>
+                  <TableCell colSpan={7} align="center">
+                    <Box sx={{ py: 3 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        No orders found.
+                      </Typography>
+                      <Button variant="outlined" startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>
+                        Browse Vendors
+                      </Button>
+                    </Box>
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -427,6 +473,9 @@ export default function UserOrders() {
           <Button color="error" onClick={() => handleDelete(orderToDelete)}>Delete</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Cart Drawer */}
+      <CartDrawer open={openCart} onClose={() => setOpenCart(false)} />
     </Container>
   );
 }
