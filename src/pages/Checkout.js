@@ -1,7 +1,7 @@
-// src/pages/Checkout.js
+
 import React, { useMemo, useState } from "react";
 import {
-  Box, Container, Paper, Stack, Typography, TextField, Button, Divider, RadioGroup, FormControlLabel, Radio
+  Container, Paper, Stack, Typography, TextField, Button, Divider, RadioGroup, FormControlLabel, Radio
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -21,11 +21,18 @@ export default function Checkout() {
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" }), [token]);
+  const headers = useMemo(
+    () => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" }),
+    [token]
+  );
 
   const placeOrder = async () => {
     if (items.length === 0) {
       toast.error("Your cart is empty");
+      return;
+    }
+    if (!vendorId) {
+      toast.error("Missing vendor for cart");
       return;
     }
     if (!address.trim()) {
@@ -104,7 +111,6 @@ export default function Checkout() {
             <Typography variant="subtitle2">Subtotal</Typography>
             <Typography variant="subtitle2"><Money v={subtotal} /></Typography>
           </Stack>
-          {/* Add delivery/taxes here if needed */}
           <Button
             variant="contained"
             sx={{ mt: 2 }}

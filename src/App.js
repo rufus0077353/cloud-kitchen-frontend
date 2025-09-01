@@ -1,4 +1,4 @@
-// src/App.js
+
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
@@ -26,9 +26,9 @@ import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
 
-// ⬇️ Add these (assuming you already have these pages)
-import BrowseVendors from "./pages/BrowseVendors";   // vendors listing page
-import Checkout from "./pages/Checkout";             // checkout page
+// New shopping pages
+import BrowseVendors from "./pages/BrowseVendors";
+import Checkout from "./pages/Checkout";
 
 // Components
 import Navbar from "./components/Navbar";
@@ -206,7 +206,7 @@ function App() {
               }
             />
 
-            {/* ⬇️ New user-facing shopping routes */}
+            {/* New user-facing shopping routes */}
             <Route
               path="/vendors"
               element={

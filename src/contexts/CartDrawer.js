@@ -1,4 +1,4 @@
-// src/components/CartDrawer.jsx
+
 import React from "react";
 import {
   Drawer, Box, Typography, IconButton, Divider, Stack, TextField, Button
@@ -28,8 +28,8 @@ export default function CartDrawer({ open, onClose }) {
             <Typography variant="body2" color="text.secondary">Your cart is empty.</Typography>
           ) : items.map((it) => (
             <Stack key={it.id} direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle2" noWrap>{it.name}</Typography>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="subtitle2" noWrap title={it.name}>{it.name}</Typography>
                 <Typography variant="caption" color="text.secondary"><Money v={it.price} /> each</Typography>
               </Box>
               <TextField

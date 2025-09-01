@@ -1,11 +1,10 @@
-// src/pages/BrowseVendors.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box, Container, Grid, Paper, Stack, TextField, Typography, Chip, Button
+  Container, Grid, Paper, Stack, TextField, Typography, Chip, Button
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import axios from "axios";
 import { toast } from "react-toastify";
 import CartDrawer from "../components/CartDrawer";
@@ -20,8 +19,7 @@ export default function BrowseVendors() {
   const { totalQty } = useCart();
 
   const token = localStorage.getItem("token");
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const navigate = useNavigate();
+  const headers = { Authorization: `Bearer ${token}` };
 
   const load = async () => {
     try {
@@ -38,7 +36,8 @@ export default function BrowseVendors() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (vendors || []).filter(v =>
-      !q || (v.name || "").toLowerCase().includes(q) ||
+      !q ||
+      (v.name || "").toLowerCase().includes(q) ||
       (v.location || "").toLowerCase().includes(q) ||
       (v.cuisine || "").toLowerCase().includes(q)
     );
@@ -61,7 +60,7 @@ export default function BrowseVendors() {
         {filtered.map(v => (
           <Grid item xs={12} sm={6} md={4} key={v.id}>
             <Paper sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", gap: 1 }}>
-              <Typography variant="h6" noWrap>{v.name}</Typography>
+              <Typography variant="h6" noWrap title={v.name}>{v.name}</Typography>
               <Typography variant="body2" color="text.secondary">{v.location || "-"}</Typography>
               <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
                 {(v.cuisine || "").split(",").filter(Boolean).slice(0, 3).map((c, i) =>
