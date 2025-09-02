@@ -1,18 +1,11 @@
+
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   Box, Container, Typography, Paper, List, ListItem,
   ListItemText, Button, Stack, CircularProgress
 } from "@mui/material";
-
-// If you have CartContext set up, this will work; if not, it still builds
-let useCartSafe = () => ({ addItem: () => {} });
-try {
-  // optional import — won’t crash build if you don’t have it wired yet
-  // eslint-disable-next-line global-require
-  const mod = require("../context/CartContext");
-  if (mod && mod.useCart) useCartSafe = mod.useCart;
-} catch {}
+import { useCart } from "../context/CartContext";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -21,7 +14,7 @@ export default function UserVendorMenu() {
   const [vendor, setVendor] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { addItem } = useCartSafe();
+  const { addItem, openDrawer } = useCart();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -45,6 +38,11 @@ export default function UserVendorMenu() {
     })();
   }, [vendorId]);
 
+  const handleAdd = (it) => {
+    addItem({ id: it.id, name: it.name, price: it.price, qty: 1, vendorId });
+    openDrawer(); // automatically show cart
+  };
+
   return (
     <Container sx={{ py: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
@@ -64,15 +62,9 @@ export default function UserVendorMenu() {
                   <Button
                     variant="contained"
                     size="small"
-                    onClick={() => addItem({
-                      id: it.id,
-                      name: it.name,
-                      price: it.price,
-                      qty: 1,
-                      vendorId // lock cart to this vendor
-                    })}
+                    onClick={() => handleAdd(it)}
                   >
-                    Add
+                    Add to Cart
                   </Button>
                 }
               >
