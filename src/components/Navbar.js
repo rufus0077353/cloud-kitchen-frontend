@@ -1,8 +1,3 @@
-
-Rufus A
-01:11 (0 minutes ago)
-to me
-
 // src/components/Navbar.js
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
@@ -47,31 +42,49 @@ const BRAND = {
 
 const isPathActive = (location, path) => location.pathname.startsWith(path);
 
+// normalize role from various possible shapes/cases
+const getRole = (rawUser) => {
+  const r =
+    rawUser?.role ??
+    rawUser?.Role ??
+    rawUser?.userRole ??
+    rawUser?.user_type ??
+    "";
+  return (typeof r === "string" ? r : String(r || "")).toLowerCase();
+};
+
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const token = localStorage.getItem("token");
-  const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
+  const user = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "{}");
+    } catch {
+      return {};
+    }
+  }, []);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [vendorId, setVendorId] = useState(localStorage.getItem("vendorId") || null);
   const [vendorPendingCount, setVendorPendingCount] = useState(0);
   const [userActiveCount, setUserActiveCount] = useState(0);
 
-  // 🛒 cart bits
+  // 🛒 cart
   const { totalQty, isOpen, openDrawer, closeDrawer } = useCart();
 
   const headers = token
     ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
     : { "Content-Type": "application/json" };
 
-  const role = user?.role;
-  const isVendor = token && role === "vendor";
-  const isUser = token && role === "user";
-  const isAdmin = token && role === "admin";
+  const role = getRole(user);
+  const isAdmin = !!token && role === "admin";
+  const isVendor = !!token && role === "vendor";
+  // if logged in and not admin/vendor, treat as user
+  const isUser = !!token && !isAdmin && !isVendor;
 
-  // Badge counters
+  // --- badge counters ---
   const fetchVendorPending = async () => {
     if (!isVendor) return;
     try {
@@ -79,13 +92,16 @@ export default function Navbar() {
       if (!res.ok) return setVendorPendingCount(0);
       const data = await res.json();
       const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
-      setVendorPendingCount(list.filter((o) => (o.status || "").toLowerCase() === "pending").length);
+      setVendorPendingCount(
+        list.filter((o) => (o.status || "").toLowerCase() === "pending").length
+      );
     } catch {
       setVendorPendingCount(0);
     }
   };
 
   const fetchUserActive = async () => {
+    // show badge for any logged-in non-vendor/admin (or if backend marks role as "user")
     if (!isUser) return;
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -93,14 +109,16 @@ export default function Navbar() {
       const data = await res.json();
       const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
       setUserActiveCount(
-        list.filter((o) => ["pending", "accepted", "ready"].includes(String(o.status || "").toLowerCase())).length
+        list.filter((o) =>
+          ["pending", "accepted", "ready"].includes(String(o.status || "").toLowerCase())
+        ).length
       );
     } catch {
       setUserActiveCount(0);
     }
   };
 
-  // Socket joins
+  // --- sockets join ---
   useEffect(() => {
     if (!token) return;
 
@@ -172,7 +190,7 @@ export default function Navbar() {
   };
 
   const links = useMemo(() => {
-    if (!token || !role) return [];
+    if (!token) return [];
     if (isAdmin) {
       return [
         { to: "/admin/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
@@ -191,17 +209,17 @@ export default function Navbar() {
         },
       ];
     }
-    // USER LINKS — change path to your real UserOrders route
+    // default logged-in user
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {
-        to: "/user/orders", // ✅ was "/orders" before
+        to: "/orders",
         label: "My Orders",
         icon: <ListAltIcon />,
         badge: userActiveCount,
       },
     ];
-  }, [token, role, isAdmin, isVendor, vendorPendingCount, userActiveCount]);
+  }, [token, isAdmin, isVendor, vendorPendingCount, userActiveCount]);
 
   const Brand = (
     <Box
@@ -276,7 +294,7 @@ export default function Navbar() {
                 );
               })}
 
-              {/* 🛒 Cart button (works for user, vendor, admin) */}
+              {/* Cart button */}
               <Tooltip title="Cart">
                 <IconButton color="inherit" onClick={openDrawer} aria-label="open cart">
                   <Badge color="secondary" badgeContent={totalQty > 99 ? "99+" : totalQty}>
@@ -341,7 +359,7 @@ export default function Navbar() {
                 );
               })}
 
-              {/* 🛒 Cart button also in the drawer */}
+              {/* Cart in the drawer */}
               <ListItemButton
                 onClick={() => {
                   setDrawerOpen(false);
@@ -380,7 +398,7 @@ export default function Navbar() {
         </Box>
       </Drawer>
 
-      {/* 🧩 Mount the cart drawer globally so it opens anywhere */}
+      {/* Mount the cart drawer globally so it opens anywhere */}
       <CartDrawer open={isOpen} onClose={closeDrawer} />
     </>
   );
