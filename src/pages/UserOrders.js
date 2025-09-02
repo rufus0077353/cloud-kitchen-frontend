@@ -1,3 +1,4 @@
+
 // src/pages/UserOrders.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -28,14 +29,14 @@ import {
   Select,
   MenuItem,
   Badge,
-  Box
+  Box,
 } from "@mui/material";
 import {
   Delete,
   Edit,
   Logout,
   ArrowBack,
-  ReceiptLong
+  ReceiptLong,
 } from "@mui/icons-material";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import StorefrontIcon from "@mui/icons-material/Storefront";
@@ -46,6 +47,18 @@ import CartDrawer from "../components/CartDrawer";
 import { useCart } from "../context/CartContext";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
+
+/* ---------- status chip helper ---------- */
+const STATUS_COLORS = {
+  pending: "default",
+  accepted: "primary",
+  ready: "warning",
+  delivered: "success",
+  rejected: "error",
+};
+function StatusChip({ status }) {
+  return <Chip label={status} color={STATUS_COLORS[status] || "default"} size="small" />;
+}
 
 export default function UserOrders() {
   const [orders, setOrders] = useState([]);
@@ -73,7 +86,9 @@ export default function UserOrders() {
 
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const safeArray = (v) => (Array.isArray(v) ? v : []);
-  const safeJson = async (res) => { try { return await res.json(); } catch { return null; } };
+  const safeJson = async (res) => {
+    try { return await res.json(); } catch { return null; }
+  };
 
   const normalizeList = (list) => {
     const map = new Map();
@@ -109,13 +124,13 @@ export default function UserOrders() {
   const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
   // ---------- data loaders (supports server + client pagination depending on filter) ----------
-  const fetchOrders = async (opts) => {
+  const fetchOrders = async (opts = {}) => {
     if (!token) { navigate("/login"); return; }
 
     // allow explicit page/rows override
-    const p = typeof opts?.page === "number" ? opts.page : page;
-    const rpp = typeof opts?.rowsPerPage === "number" ? opts.rowsPerPage : rowsPerPage;
-    const status = opts?.statusFilter ?? statusFilter;
+    const p = typeof opts.page === "number" ? opts.page : page;
+    const rpp = typeof opts.rowsPerPage === "number" ? opts.rowsPerPage : rowsPerPage;
+    const status = opts.statusFilter ?? statusFilter;
 
     setLoading(true);
     try {
@@ -184,7 +199,10 @@ export default function UserOrders() {
   };
 
   // initial load
-  useEffect(() => { fetchOrders({ page: 0 }); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    fetchOrders({ page: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // When page/rowsPerPage/statusFilter change, (re)fetch
   useEffect(() => {
@@ -233,7 +251,8 @@ export default function UserOrders() {
       socket.off("payment:success", onPaySuccess);
       socket.off("payment:failed", onPayFailed);
     };
-  }, [user?.id, page, rowsPerPage, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, page, rowsPerPage, statusFilter]);
 
   // ---------- actions ----------
   const handleDelete = async (id) => {
@@ -288,7 +307,11 @@ export default function UserOrders() {
     }
   };
 
-  const handleLogout = () => { localStorage.removeItem("token"); localStorage.removeItem("user"); navigate("/login"); };
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
+  };
   const confirmDelete = (id) => { setOrderToDelete(id); setOpenDialog(true); };
 
   // ---------- pagination handlers ----------
@@ -298,6 +321,15 @@ export default function UserOrders() {
     setRowsPerPage(value);
     setPage(0); // reset to first page
   };
+
+  // tooltip content helper to preserve newlines
+  const ItemsTooltip = ({ items }) => (
+    <Box sx={{ whiteSpace: "pre-line" }}>
+      {items.length
+        ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
+        : "No items"}
+    </Box>
+  );
 
   return (
     <Container>
@@ -351,7 +383,14 @@ export default function UserOrders() {
         </FormControl>
       </Stack>
 
-      {error && <Snackbar open autoHideDuration={6000} message={error} />}
+      {error && (
+        <Snackbar
+          open
+          onClose={() => setError("")}
+          autoHideDuration={6000}
+          message={error}
+        />
+      )}
 
       <Paper>
         <TableContainer>
@@ -383,10 +422,12 @@ export default function UserOrders() {
                   const payMethod = order.paymentMethod || "cod";
                   const payStatus = order.paymentStatus || "unpaid";
                   return (
-                    <TableRow key={order.id}>
+                    <TableRow key={order.id} hover>
                       <TableCell>{order.id}</TableCell>
                       <TableCell>{order.Vendor?.name || "-"}</TableCell>
-                      <TableCell>{order.status}</TableCell>
+                      <TableCell>
+                        <StatusChip status={order.status} />
+                      </TableCell>
                       <TableCell>
                         <Stack direction="row" spacing={1} alignItems="center">
                           <Chip size="small" label={payMethod === "mock_online" ? "Online" : "COD"} variant="outlined" />
@@ -394,10 +435,13 @@ export default function UserOrders() {
                             size="small"
                             label={payStatus}
                             color={
-                              payStatus === "paid" ? "success"
-                              : payStatus === "processing" ? "info"
-                              : payStatus === "failed" ? "error"
-                              : "default"
+                              payStatus === "paid"
+                                ? "success"
+                                : payStatus === "processing"
+                                ? "info"
+                                : payStatus === "failed"
+                                ? "error"
+                                : "default"
                             }
                           />
                         </Stack>
@@ -405,14 +449,8 @@ export default function UserOrders() {
                       <TableCell>{rupee(order.totalAmount)}</TableCell>
                       <TableCell>{order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}</TableCell>
                       <TableCell align="right">
-                        {/* Items tooltip anchored to the receipt icon for real hover target */}
-                        <Tooltip
-                          title={
-                            items.length
-                              ? items.map((it) => `${it.name} × ${it.quantity} = ${rupee(it.price * it.quantity)}`).join("\n")
-                              : "No items"
-                          }
-                        >
+                        {/* Items tooltip on the receipt icon; preserves newlines */}
+                        <Tooltip title={<ItemsTooltip items={items} />}>
                           <span>
                             <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
                               <ReceiptLong />
@@ -424,6 +462,8 @@ export default function UserOrders() {
                         <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
                           <Delete />
                         </IconButton>
+
+                        {/* (Optional) Edit disabled placeholder */}
                         <IconButton disabled title="Edit (disabled)">
                           <Edit />
                         </IconButton>
@@ -454,9 +494,9 @@ export default function UserOrders() {
           component="div"
           count={total}
           page={page}
-          onPageChange={(_e, newPage) => setPage(newPage)}
+          onPageChange={handleChangePage}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10) || 10); setPage(0); }}
+          onRowsPerPageChange={handleChangeRowsPerPage}
           rowsPerPageOptions={[5, 10, 20, 50]}
           labelRowsPerPage="Per page:"
         />
