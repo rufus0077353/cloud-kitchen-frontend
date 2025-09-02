@@ -1,11 +1,10 @@
-
 // src/pages/AdminDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Typography, Grid, Paper, TextField, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Stack, Divider, Chip, Tooltip, CircularProgress, FormControl,
-  InputLabel, Select, MenuItem, Switch, LinearProgress, TablePagination,
+  InputLabel, Select, MenuItem, LinearProgress, TablePagination,
   Checkbox
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -17,12 +16,13 @@ import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
 import CloseIcon from "@mui/icons-material/Close";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import axios from "axios";
 import { toast } from "react-toastify";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
-// ---- helpers ----
+/* ---------------- helpers ---------------- */
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
 const fmtMoney = (n) =>
   `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
@@ -43,6 +43,16 @@ const downloadCsv = (filename, headerArr, rowsArr) => {
   a.click();
   URL.revokeObjectURL(url);
 };
+
+const STATUS_COLORS = {
+  pending: "default",
+  accepted: "primary",
+  rejected: "error",
+  ready: "warning",
+  delivered: "success",
+};
+
+/* ------------------------------------------------------------- */
 
 export default function AdminDashboard() {
   // top stats
@@ -82,17 +92,36 @@ export default function AdminDashboard() {
   const [vendorTotal, setVendorTotal] = useState(0);
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
+  // orders (NEW: admin view via /api/orders/filter, client-side paginate)
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [orderStatusFilter, setOrderStatusFilter] = useState("all");
+  const [orderVendorFilter, setOrderVendorFilter] = useState("all");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderFrom, setOrderFrom] = useState("");
+  const [orderTo, setOrderTo] = useState("");
+  const [orderPage, setOrderPage] = useState(0);
+  const [orderRowsPerPage, setOrderRowsPerPage] = useState(20);
+
   const token = localStorage.getItem("token");
   const headers = useMemo(
     () => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" }),
     [token]
   );
 
-  // ----- API calls -----
+  const handle401 = () => {
+    toast.error("Session expired. Please log in again.");
+    localStorage.clear();
+    window.location.href = "/login";
+  };
+
+  /* ---------------- API: Stats ---------------- */
   const fetchStats = async () => {
     setStatsLoading(true);
     try {
-      const res = await axios.get(`${API}/api/admin/overview`, { headers });
+      const res = await axios.get(`${API}/api/admin/overview`, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error();
       setStats(res.data || {});
     } catch {
       toast.error("Failed to load overview");
@@ -102,14 +131,16 @@ export default function AdminDashboard() {
     }
   };
 
-  // USERS: server-side pagination (fallback to array)
+  /* ---------------- API: Users (server-side pagination w/ fallback) ---------------- */
   const fetchUsers = async ({ page = userPage, size = userRowsPerPage } = {}) => {
     setUsersLoading(true);
     try {
       const res = await axios.get(`${API}/api/admin/users`, {
         headers,
-        params: { page: page + 1, pageSize: size } // backend 1-based
+        validateStatus: () => true,
+        params: { page: page + 1, pageSize: size }
       });
+      if (res.status === 401) return handle401();
       const data = res.data;
       if (Array.isArray(data)) {
         setUsers(data);
@@ -129,14 +160,16 @@ export default function AdminDashboard() {
     }
   };
 
-  // VENDORS: server-side pagination (fallback to array)
+  /* ---------------- API: Vendors (server-side pagination w/ fallback) ---------------- */
   const fetchVendors = async ({ page = vendorPage, size = vendorRowsPerPage } = {}) => {
     setVendorsLoading(true);
     try {
       const res = await axios.get(`${API}/api/vendors`, {
         headers,
+        validateStatus: () => true,
         params: { page: page + 1, pageSize: size }
       });
+      if (res.status === 401) return handle401();
       const data = res.data;
       if (Array.isArray(data)) {
         setVendors(data);
@@ -156,7 +189,38 @@ export default function AdminDashboard() {
     }
   };
 
-  // create vendor
+  /* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
+  const fetchOrders = async () => {
+    setOrdersLoading(true);
+    try {
+      const params = {};
+      if (orderStatusFilter !== "all") params.status = orderStatusFilter;
+      if (orderVendorFilter !== "all") params.VendorId = orderVendorFilter;
+      if (orderFrom) params.startDate = orderFrom;
+      if (orderTo) params.endDate = orderTo;
+
+      const res = await axios.get(`${API}/api/orders/filter`, {
+        headers,
+        validateStatus: () => true,
+        params
+      });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed");
+      const list =
+        Array.isArray(res.data) ? res.data :
+        Array.isArray(res.data?.items) ? res.data.items :
+        Array.isArray(res.data?.orders) ? res.data.orders : [];
+      setOrders(list);
+      setOrderPage(0); // reset to first page on new query
+    } catch (e) {
+      toast.error(e?.message || "Failed to load orders");
+      setOrders([]);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
+  /* ---------------- CRUD: Vendors/Users ---------------- */
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) {
       toast.error("Please fill in all fields");
@@ -164,90 +228,97 @@ export default function AdminDashboard() {
     }
     setAdding(true);
     try {
-      await axios.post(`${API}/api/vendors`, vendorForm, { headers });
+      const res = await axios.post(`${API}/api/vendors`, vendorForm, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to create vendor");
       toast.success("Vendor created");
       setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
       fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
       fetchStats();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to create vendor");
+      toast.error(err?.message || "Failed to create vendor");
     } finally {
       setAdding(false);
     }
   };
 
-  // delete vendor (hard delete)
   const handleDeleteVendor = async (id) => {
     if (!window.confirm(`Delete vendor #${id}? This cannot be undone.`)) return;
     try {
-      await axios.delete(`${API}/api/vendors/${id}`, { headers });
+      const res = await axios.delete(`${API}/api/vendors/${id}`, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to delete vendor");
       toast.success("Vendor deleted");
       fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
       fetchStats();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to delete vendor");
+      toast.error(e?.message || "Failed to delete vendor");
     }
   };
 
-  // soft delete / restore vendor
   const setVendorDeleted = async (v, isDeleted) => {
     setSavingVendorId(v.id);
     try {
-      await axios.put(`${API}/api/vendors/${v.id}`, { isDeleted }, { headers });
+      const res = await axios.put(`${API}/api/vendors/${v.id}`, { isDeleted }, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update vendor");
       toast.success(isDeleted ? "Vendor archived" : "Vendor restored");
       setVendors((prev) => prev.map((x) => (x.id === v.id ? { ...x, isDeleted } : x)));
       fetchStats();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update vendor");
+      toast.error(e?.message || "Failed to update vendor");
     } finally {
       setSavingVendorId(null);
     }
   };
 
-  // delete user (hard delete)
   const handleDeleteUser = async (id) => {
     if (!window.confirm(`Delete user #${id}? This cannot be undone.`)) return;
     try {
-      await axios.delete(`${API}/api/admin/users/${id}`, { headers });
+      const res = await axios.delete(`${API}/api/admin/users/${id}`, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to delete user");
       toast.success("User deleted");
       fetchUsers({ page: userPage, size: userRowsPerPage });
       fetchStats();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to delete user");
+      toast.error(e?.message || "Failed to delete user");
     }
   };
 
-  // soft delete / restore user
   const setUserDeleted = async (u, isDeleted) => {
     setSavingUserId(u.id);
     try {
-      await axios.patch(`${API}/api/admin/users/${u.id}`, { isDeleted }, { headers });
+      const res = await axios.patch(`${API}/api/admin/users/${u.id}`, { isDeleted }, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update user");
       toast.success(isDeleted ? "User archived" : "User restored");
       setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, isDeleted } : x)));
       fetchStats();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update user");
+      toast.error(e?.message || "Failed to update user");
     } finally {
       setSavingUserId(null);
     }
   };
 
-  // Toggle vendor Open/Closed
   const toggleVendorOpen = async (v) => {
     const next = !Boolean(v.isOpen);
     setSavingVendorId(v.id);
     try {
-      await axios.put(`${API}/api/vendors/${v.id}`, { isOpen: next }, { headers });
+      const res = await axios.put(`${API}/api/vendors/${v.id}`, { isOpen: next }, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update vendor status");
       toast.success(`Vendor ${next ? "opened" : "closed"}`);
       setVendors((prev) => prev.map((x) => (x.id === v.id ? { ...x, isOpen: next } : x)));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update vendor status");
+      toast.error(e?.message || "Failed to update vendor status");
     } finally {
       setSavingVendorId(null);
     }
   };
 
-  // ----- User role editing -----
+  /* ---------------- User role editing ---------------- */
   const handleRoleChangeLocal = (userId, role) => {
     setPendingRoleByUser((prev) => ({ ...prev, [userId]: role }));
   };
@@ -260,7 +331,9 @@ export default function AdminDashboard() {
     }
     setSavingUserId(user.id);
     try {
-      await axios.patch(`${API}/api/admin/users/${user.id}`, { role: nextRole }, { headers });
+      const res = await axios.patch(`${API}/api/admin/users/${user.id}`, { role: nextRole }, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update role");
       toast.success(`Role updated to ${nextRole}`);
       setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: nextRole } : u)));
       setPendingRoleByUser((prev) => {
@@ -269,7 +342,7 @@ export default function AdminDashboard() {
         return copy;
       });
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update role");
+      toast.error(e?.message || "Failed to update role");
     } finally {
       setSavingUserId(null);
     }
@@ -301,28 +374,32 @@ export default function AdminDashboard() {
     }
     setSavingVendorId(id);
     try {
-      await axios.put(`${API}/api/vendors/${id}`, { name, location, cuisine, UserId }, { headers });
+      const res = await axios.put(`${API}/api/vendors/${id}`, { name, location, cuisine, UserId }, { headers, validateStatus: () => true });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update vendor");
       toast.success("Vendor updated");
       setVendors((prev) =>
         prev.map((v) => (v.id === id ? { ...v, name, location, cuisine, UserId } : v))
       );
       cancelEditVendor();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update vendor");
+      toast.error(e?.message || "Failed to update vendor");
     } finally {
       setSavingVendorId(null);
     }
   };
 
-  // initial load
+  /* ---------------- initial load ---------------- */
   useEffect(() => {
     fetchStats();
     fetchUsers();
     fetchVendors();
+    // Also hydrate initial orders list
+    fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ----- derived lists (client-side extra filter/search) -----
+  /* ---------------- derived lists (client-side filter/search) ---------------- */
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     return (users || [])
@@ -362,7 +439,20 @@ export default function AdminDashboard() {
       });
   }, [vendors, vendorSearch, vendorStatusFilter]);
 
-  // ----- CSV exports -----
+  // Orders filtering: status/vendor/date handled server-side; search handled client-side
+  const visibleOrders = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    const list = Array.isArray(orders) ? orders : [];
+    if (!q) return list;
+    return list.filter((o) => {
+      const userName = (o?.User?.name || "").toLowerCase();
+      const vendorName = (o?.Vendor?.name || "").toLowerCase();
+      const idStr = String(o?.id || "");
+      return userName.includes(q) || vendorName.includes(q) || idStr.includes(q);
+    });
+  }, [orders, orderSearch]);
+
+  /* ---------------- CSV exports ---------------- */
   const exportUsersCsv = () => {
     const headers = ["ID", "Name", "Email", "Role", "Deleted", "Created At"];
     const rows = filteredUsers.map((u) =>
@@ -388,7 +478,23 @@ export default function AdminDashboard() {
     downloadCsv("admin-vendors", headers, rows);
   };
 
-  // ----- pagination handlers -----
+  const exportOrdersCsv = () => {
+    const headers = ["Order ID", "User", "Vendor", "Total", "Status", "Payment", "Created At"];
+    const rows = visibleOrders.map((o) =>
+      [
+        o.id,
+        safeCsv(o?.User?.name || ""),
+        safeCsv(o?.Vendor?.name || ""),
+        o.totalAmount,
+        o.status,
+        `${o.paymentMethod || ""}/${o.paymentStatus || ""}`,
+        o.createdAt ? new Date(o.createdAt).toLocaleString() : ""
+      ].join(",")
+    );
+    downloadCsv("admin-orders", headers, rows);
+  };
+
+  /* ---------------- pagination handlers ---------------- */
   const handleChangeUserPage = (_e, newPage) => {
     setUserPage(newPage);
     fetchUsers({ page: newPage, size: userRowsPerPage });
@@ -411,11 +517,17 @@ export default function AdminDashboard() {
     fetchVendors({ page: 0, size });
   };
 
-  // ----- selection helpers (Users) -----
+  // Orders pagination is client-side
+  const orderTotal = visibleOrders.length;
+  const pagedOrders = useMemo(() => {
+    const start = orderPage * orderRowsPerPage;
+    return visibleOrders.slice(start, start + orderRowsPerPage);
+  }, [visibleOrders, orderPage, orderRowsPerPage]);
+
+  /* ---------------- selection helpers (Users) ---------------- */
   const userIdsVisible = filteredUsers.map((u) => u.id);
   const allUsersChecked = userIdsVisible.length > 0 && userIdsVisible.every((id) => selectedUserIds.includes(id));
   const someUsersChecked = userIdsVisible.some((id) => selectedUserIds.includes(id));
-
   const toggleSelectAllUsers = () => {
     setSelectedUserIds(allUsersChecked ? [] : userIdsVisible);
   };
@@ -423,12 +535,11 @@ export default function AdminDashboard() {
     setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  // ----- selection helpers (Vendors) -----
+  /* ---------------- selection helpers (Vendors) ---------------- */
   const vendorIdsVisible = filteredVendors.map((v) => v.id);
   const allVendorsChecked =
     vendorIdsVisible.length > 0 && vendorIdsVisible.every((id) => selectedVendorIds.includes(id));
   const someVendorsChecked = vendorIdsVisible.some((id) => selectedVendorIds.includes(id));
-
   const toggleSelectAllVendors = () => {
     setSelectedVendorIds(allVendorsChecked ? [] : vendorIdsVisible);
   };
@@ -436,13 +547,13 @@ export default function AdminDashboard() {
     setSelectedVendorIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  // ----- bulk actions -----
+  /* ---------------- bulk actions ---------------- */
   const bulkArchiveUsers = async (archive) => {
     if (selectedUserIds.length === 0) return;
     const verb = archive ? "archive" : "restore";
     try {
       const ops = selectedUserIds.map((id) =>
-        axios.patch(`${API}/api/admin/users/${id}`, { isDeleted: archive }, { headers })
+        axios.patch(`${API}/api/admin/users/${id}`, { isDeleted: archive }, { headers, validateStatus: () => true })
       );
       const results = await Promise.allSettled(ops);
       const ok = results.filter((r) => r.status === "fulfilled").length;
@@ -459,7 +570,7 @@ export default function AdminDashboard() {
     if (selectedUserIds.length === 0) return;
     if (!window.confirm(`Delete ${selectedUserIds.length} user(s)? This cannot be undone.`)) return;
     try {
-      const ops = selectedUserIds.map((id) => axios.delete(`${API}/api/admin/users/${id}`, { headers }));
+      const ops = selectedUserIds.map((id) => axios.delete(`${API}/api/admin/users/${id}`, { headers, validateStatus: () => true }));
       const results = await Promise.allSettled(ops);
       const ok = results.filter((r) => r.status === "fulfilled").length;
       const fail = results.length - ok;
@@ -477,7 +588,7 @@ export default function AdminDashboard() {
     const verb = archive ? "archive" : "restore";
     try {
       const ops = selectedVendorIds.map((id) =>
-        axios.put(`${API}/api/vendors/${id}`, { isDeleted: archive }, { headers })
+        axios.put(`${API}/api/vendors/${id}`, { isDeleted: archive }, { headers, validateStatus: () => true })
       );
       const results = await Promise.allSettled(ops);
       const ok = results.filter((r) => r.status === "fulfilled").length;
@@ -494,7 +605,7 @@ export default function AdminDashboard() {
     if (selectedVendorIds.length === 0) return;
     if (!window.confirm(`Delete ${selectedVendorIds.length} vendor(s)? This cannot be undone.`)) return;
     try {
-      const ops = selectedVendorIds.map((id) => axios.delete(`${API}/api/vendors/${id}`, { headers }));
+      const ops = selectedVendorIds.map((id) => axios.delete(`${API}/api/vendors/${id}`, { headers, validateStatus: () => true }));
       const results = await Promise.allSettled(ops);
       const ok = results.filter((r) => r.status === "fulfilled").length;
       const fail = results.length - ok;
@@ -504,6 +615,28 @@ export default function AdminDashboard() {
       fetchStats();
     } catch {
       toast.error("Failed to delete vendors");
+    }
+  };
+
+  /* ---------------- invoice open ---------------- */
+  const openInvoice = async (orderId) => {
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) return handle401();
+      if (!res.ok) {
+        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+        toast.error(msg);
+        return;
+      }
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("Network error while opening invoice");
     }
   };
 
@@ -518,6 +651,7 @@ export default function AdminDashboard() {
                 fetchStats();
                 fetchUsers({ page: userPage, size: userRowsPerPage });
                 fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+                fetchOrders();
               }}
             >
               <RefreshIcon />
@@ -558,93 +692,46 @@ export default function AdminDashboard() {
       </Paper>
 
       <Grid container spacing={3}>
-        {/* Users */}
+        {/* USERS */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
               <Typography variant="h5">Users</Typography>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                <TextField
-                  size="small"
-                  label="Search users"
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                />
+                <TextField size="small" label="Search users" value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
                 <FormControl size="small" sx={{ minWidth: 140 }}>
                   <InputLabel id="roleFilter">Role</InputLabel>
-                  <Select
-                    labelId="roleFilter"
-                    label="Role"
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                  >
+                  <Select labelId="roleFilter" label="Role" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
                     <MenuItem value="all">All</MenuItem>
                     <MenuItem value="user">user</MenuItem>
                     <MenuItem value="vendor">vendor</MenuItem>
                     <MenuItem value="admin">admin</MenuItem>
                   </Select>
                 </FormControl>
-
                 <FormControl size="small" sx={{ minWidth: 160 }}>
                   <InputLabel id="userStatus">Status</InputLabel>
-                  <Select
-                    labelId="userStatus"
-                    label="Status"
-                    value={userStatusFilter}
-                    onChange={(e) => setUserStatusFilter(e.target.value)}
-                  >
+                  <Select labelId="userStatus" label="Status" value={userStatusFilter} onChange={(e) => setUserStatusFilter(e.target.value)}>
                     <MenuItem value="all">All</MenuItem>
                     <MenuItem value="active">Active</MenuItem>
                     <MenuItem value="archived">Archived</MenuItem>
                   </Select>
                 </FormControl>
 
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={exportUsersCsv}
-                  disabled={usersLoading || filteredUsers.length === 0}
-                >
+                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportUsersCsv} disabled={usersLoading || filteredUsers.length === 0}>
                   Export CSV
                 </Button>
                 <Tooltip title="Refresh users">
-                  <IconButton onClick={() => fetchUsers({ page: userPage, size: userRowsPerPage })}>
-                    <RefreshIcon />
-                  </IconButton>
+                  <IconButton onClick={() => fetchUsers({ page: userPage, size: userRowsPerPage })}><RefreshIcon /></IconButton>
                 </Tooltip>
               </Stack>
             </Stack>
 
-            {/* Bulk actions (Users) */}
+            {/* Users bulk actions */}
             <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
-              <Button
-                size="small"
-                startIcon={<BlockIcon />}
-                onClick={() => bulkArchiveUsers(true)}
-                disabled={selectedUserIds.length === 0}
-              >
-                Archive
-              </Button>
-              <Button
-                size="small"
-                startIcon={<RestoreIcon />}
-                onClick={() => bulkArchiveUsers(false)}
-                disabled={selectedUserIds.length === 0}
-              >
-                Restore
-              </Button>
-              <Button
-                size="small"
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={bulkDeleteUsers}
-                disabled={selectedUserIds.length === 0}
-              >
-                Delete
-              </Button>
-              {selectedUserIds.length > 0 && (
-                <Chip size="small" label={`${selectedUserIds.length} selected`} sx={{ ml: 1 }} />
-              )}
+              <Button size="small" startIcon={<BlockIcon />} onClick={() => bulkArchiveUsers(true)} disabled={selectedUserIds.length === 0}>Archive</Button>
+              <Button size="small" startIcon={<RestoreIcon />} onClick={() => bulkArchiveUsers(false)} disabled={selectedUserIds.length === 0}>Restore</Button>
+              <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={bulkDeleteUsers} disabled={selectedUserIds.length === 0}>Delete</Button>
+              {selectedUserIds.length > 0 && <Chip size="small" label={`${selectedUserIds.length} selected`} sx={{ ml: 1 }} />}
             </Stack>
 
             <TableContainer>
@@ -669,17 +756,9 @@ export default function AdminDashboard() {
                 </TableHead>
                 <TableBody>
                   {usersLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center">
-                        <CircularProgress size={20} />
-                      </TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={20} /></TableCell></TableRow>
                   ) : filteredUsers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center">
-                        No users found
-                      </TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={7} align="center">No users found</TableCell></TableRow>
                   ) : (
                     filteredUsers.map((u) => {
                       const pendingRole = pendingRoleByUser[u.id] ?? u.role;
@@ -724,11 +803,7 @@ export default function AdminDashboard() {
                             <Stack direction="row" justifyContent="flex-end" spacing={1}>
                               <Tooltip title="Save role">
                                 <span>
-                                  <IconButton
-                                    onClick={() => saveUserRole(u)}
-                                    disabled={!dirty || saving || archived}
-                                    color="primary"
-                                  >
+                                  <IconButton onClick={() => saveUserRole(u)} disabled={!dirty || saving || archived} color="primary">
                                     {saving ? <CircularProgress size={18} /> : <SaveIcon />}
                                   </IconButton>
                                 </span>
@@ -782,43 +857,26 @@ export default function AdminDashboard() {
           </Paper>
         </Grid>
 
-        {/* Vendors */}
+        {/* VENDORS */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
               <Typography variant="h5">Vendors</Typography>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                <TextField
-                  size="small"
-                  label="Search vendors"
-                  value={vendorSearch}
-                  onChange={(e) => setVendorSearch(e.target.value)}
-                />
+                <TextField size="small" label="Search vendors" value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} />
                 <FormControl size="small" sx={{ minWidth: 160 }}>
                   <InputLabel id="vendorStatus">Status</InputLabel>
-                  <Select
-                    labelId="vendorStatus"
-                    label="Status"
-                    value={vendorStatusFilter}
-                    onChange={(e) => setVendorStatusFilter(e.target.value)}
-                  >
+                  <Select labelId="vendorStatus" label="Status" value={vendorStatusFilter} onChange={(e) => setVendorStatusFilter(e.target.value)}>
                     <MenuItem value="all">All</MenuItem>
                     <MenuItem value="active">Active</MenuItem>
                     <MenuItem value="archived">Archived</MenuItem>
                   </Select>
                 </FormControl>
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={exportVendorsCsv}
-                  disabled={vendorsLoading || filteredVendors.length === 0}
-                >
+                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportVendorsCsv} disabled={vendorsLoading || filteredVendors.length === 0}>
                   Export CSV
                 </Button>
                 <Tooltip title="Refresh vendors">
-                  <IconButton onClick={() => fetchVendors({ page: vendorPage, size: vendorRowsPerPage })}>
-                    <RefreshIcon />
-                  </IconButton>
+                  <IconButton onClick={() => fetchVendors({ page: vendorPage, size: vendorRowsPerPage })}><RefreshIcon /></IconButton>
                 </Tooltip>
               </Stack>
             </Stack>
@@ -826,32 +884,13 @@ export default function AdminDashboard() {
             {/* Add vendor */}
             <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
+                <TextField size="small" label="Name" value={vendorForm.name} onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })} />
+                <TextField size="small" label="Location" value={vendorForm.location} onChange={(e) => setVendorForm({ ...vendorForm, location: e.target.value })} />
+                <TextField size="small" label="Cuisine" value={vendorForm.cuisine} onChange={(e) => setVendorForm({ ...vendorForm, cuisine: e.target.value })} />
                 <TextField
-                  size="small"
-                  label="Name"
-                  value={vendorForm.name}
-                  onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })}
-                />
-                <TextField
-                  size="small"
-                  label="Location"
-                  value={vendorForm.location}
-                  onChange={(e) => setVendorForm({ ...vendorForm, location: e.target.value })}
-                />
-                <TextField
-                  size="small"
-                  label="Cuisine"
-                  value={vendorForm.cuisine}
-                  onChange={(e) => setVendorForm({ ...vendorForm, cuisine: e.target.value })}
-                />
-                <TextField
-                  select
-                  size="small"
-                  label="User"
-                  value={vendorForm.UserId}
+                  select size="small" label="User" value={vendorForm.UserId}
                   onChange={(e) => setVendorForm({ ...vendorForm, UserId: e.target.value })}
-                  SelectProps={{ native: true }}
-                  sx={{ minWidth: 220 }}
+                  SelectProps={{ native: true }} sx={{ minWidth: 220 }}
                 >
                   <option value="">Select User</option>
                   {(users || [])
@@ -863,47 +902,18 @@ export default function AdminDashboard() {
                     ))}
                 </TextField>
 
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={handleAddVendor}
-                  disabled={adding}
-                >
+                <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddVendor} disabled={adding}>
                   {adding ? "Adding…" : "Add Vendor"}
                 </Button>
               </Stack>
             </Paper>
 
-            {/* Bulk actions (Vendors) */}
+            {/* Vendors bulk actions */}
             <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
-              <Button
-                size="small"
-                startIcon={<BlockIcon />}
-                onClick={() => bulkArchiveVendors(true)}
-                disabled={selectedVendorIds.length === 0}
-              >
-                Archive
-              </Button>
-              <Button
-                size="small"
-                startIcon={<RestoreIcon />}
-                onClick={() => bulkArchiveVendors(false)}
-                disabled={selectedVendorIds.length === 0}
-              >
-                Restore
-              </Button>
-              <Button
-                size="small"
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={bulkDeleteVendors}
-                disabled={selectedVendorIds.length === 0}
-              >
-                Delete
-              </Button>
-              {selectedVendorIds.length > 0 && (
-                <Chip size="small" label={`${selectedVendorIds.length} selected`} sx={{ ml: 1 }} />
-              )}
+              <Button size="small" startIcon={<BlockIcon />} onClick={() => bulkArchiveVendors(true)} disabled={selectedVendorIds.length === 0}>Archive</Button>
+              <Button size="small" startIcon={<RestoreIcon />} onClick={() => bulkArchiveVendors(false)} disabled={selectedVendorIds.length === 0}>Restore</Button>
+              <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={bulkDeleteVendors} disabled={selectedVendorIds.length === 0}>Delete</Button>
+              {selectedVendorIds.length > 0 && <Chip size="small" label={`${selectedVendorIds.length} selected`} sx={{ ml: 1 }} />}
             </Stack>
 
             <TableContainer>
@@ -930,17 +940,9 @@ export default function AdminDashboard() {
                 </TableHead>
                 <TableBody>
                   {vendorsLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={9} align="center">
-                        <CircularProgress size={20} />
-                      </TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={9} align="center"><CircularProgress size={20} /></TableCell></TableRow>
                   ) : filteredVendors.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} align="center">
-                        No vendors found
-                      </TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={9} align="center">No vendors found</TableCell></TableRow>
                   ) : (
                     filteredVendors.map((v) => {
                       const isEditing = editingVendorId === v.id;
@@ -973,9 +975,7 @@ export default function AdminDashboard() {
                               <TextField
                                 size="small"
                                 value={editVendorForm.location ?? ""}
-                                onChange={(e) =>
-                                  setEditVendorForm((prev) => ({ ...prev, location: e.target.value }))
-                                }
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, location: e.target.value }))}
                               />
                             ) : (
                               v.location
@@ -986,9 +986,7 @@ export default function AdminDashboard() {
                               <TextField
                                 size="small"
                                 value={editVendorForm.cuisine ?? ""}
-                                onChange={(e) =>
-                                  setEditVendorForm((prev) => ({ ...prev, cuisine: e.target.value }))
-                                }
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, cuisine: e.target.value }))}
                               />
                             ) : (
                               v.cuisine
@@ -997,12 +995,9 @@ export default function AdminDashboard() {
                           <TableCell>
                             {isEditing ? (
                               <TextField
-                                select
-                                size="small"
+                                select size="small"
                                 value={editVendorForm.UserId ?? ""}
-                                onChange={(e) =>
-                                  setEditVendorForm((prev) => ({ ...prev, UserId: e.target.value }))
-                                }
+                                onChange={(e) => setEditVendorForm((prev) => ({ ...prev, UserId: e.target.value }))}
                                 SelectProps={{ native: true }}
                                 sx={{ minWidth: 160 }}
                               >
@@ -1021,17 +1016,19 @@ export default function AdminDashboard() {
                           </TableCell>
                           <TableCell>
                             <Stack direction="row" alignItems="center" spacing={1}>
-                              <Switch
-                                checked={Boolean(v.isOpen)}
-                                onChange={() => toggleVendorOpen(v)}
-                                disabled={savingRow || isEditing || archived}
-                              />
                               <Chip
                                 size="small"
                                 label={Boolean(v.isOpen) ? "Open" : "Closed"}
                                 color={Boolean(v.isOpen) ? "success" : "default"}
                                 variant="outlined"
                               />
+                              <Button
+                                size="small"
+                                onClick={() => toggleVendorOpen(v)}
+                                disabled={savingRow || isEditing || archived}
+                              >
+                                Toggle
+                              </Button>
                             </Stack>
                           </TableCell>
                           <TableCell>
@@ -1053,19 +1050,13 @@ export default function AdminDashboard() {
                                     </span>
                                   </Tooltip>
                                   <Tooltip title="Cancel">
-                                    <IconButton onClick={cancelEditVendor}>
-                                      <CloseIcon />
-                                    </IconButton>
+                                    <IconButton onClick={cancelEditVendor}><CloseIcon /></IconButton>
                                   </Tooltip>
                                 </>
                               ) : archived ? (
                                 <Tooltip title="Restore vendor">
                                   <span>
-                                    <IconButton
-                                      color="primary"
-                                      onClick={() => setVendorDeleted(v, false)}
-                                      disabled={savingRow}
-                                    >
+                                    <IconButton color="primary" onClick={() => setVendorDeleted(v, false)} disabled={savingRow}>
                                       <RestoreIcon />
                                     </IconButton>
                                   </span>
@@ -1073,28 +1064,18 @@ export default function AdminDashboard() {
                               ) : (
                                 <>
                                   <Tooltip title="Edit vendor">
-                                    <IconButton onClick={() => startEditVendor(v)}>
-                                      <EditIcon />
-                                    </IconButton>
+                                    <IconButton onClick={() => startEditVendor(v)}><EditIcon /></IconButton>
                                   </Tooltip>
                                   <Tooltip title="Archive vendor (soft delete)">
                                     <span>
-                                      <IconButton
-                                        color="warning"
-                                        onClick={() => setVendorDeleted(v, true)}
-                                        disabled={savingRow}
-                                      >
+                                      <IconButton color="warning" onClick={() => setVendorDeleted(v, true)} disabled={savingRow}>
                                         <BlockIcon />
                                       </IconButton>
                                     </span>
                                   </Tooltip>
                                   <Tooltip title="Delete vendor (hard delete)">
                                     <span>
-                                      <IconButton
-                                        color="error"
-                                        onClick={() => handleDeleteVendor(v.id)}
-                                        disabled={savingRow}
-                                      >
+                                      <IconButton color="error" onClick={() => handleDeleteVendor(v.id)} disabled={savingRow}>
                                         <DeleteIcon />
                                       </IconButton>
                                     </span>
@@ -1122,6 +1103,119 @@ export default function AdminDashboard() {
             />
           </Paper>
         </Grid>
+
+        {/* ORDERS (NEW) */}
+        <Grid item xs={12}>
+          <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
+              <Typography variant="h5">Orders</Typography>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                <TextField size="small" label="Search (user/vendor/id)" value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} />
+                <FormControl size="small" sx={{ minWidth: 140 }}>
+                  <InputLabel id="order-status">Status</InputLabel>
+                  <Select
+                    labelId="order-status" label="Status" value={orderStatusFilter}
+                    onChange={(e) => setOrderStatusFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="pending">Pending</MenuItem>
+                    <MenuItem value="accepted">Accepted</MenuItem>
+                    <MenuItem value="ready">Ready</MenuItem>
+                    <MenuItem value="delivered">Delivered</MenuItem>
+                    <MenuItem value="rejected">Rejected</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel id="order-vendor">Vendor</InputLabel>
+                  <Select
+                    labelId="order-vendor" label="Vendor" value={orderVendorFilter}
+                    onChange={(e) => setOrderVendorFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All vendors</MenuItem>
+                    {(vendors || []).map((v) => (
+                      <MenuItem key={v.id} value={String(v.id)}>
+                        #{v.id} — {v.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField size="small" label="From" type="date" InputLabelProps={{ shrink: true }} value={orderFrom} onChange={(e) => setOrderFrom(e.target.value)} />
+                <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={orderTo} onChange={(e) => setOrderTo(e.target.value)} />
+
+                <Button variant="outlined" onClick={fetchOrders} startIcon={<RefreshIcon />}>Apply</Button>
+                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportOrdersCsv} disabled={ordersLoading || visibleOrders.length === 0}>
+                  Export CSV
+                </Button>
+              </Stack>
+            </Stack>
+
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Order #</TableCell>
+                    <TableCell>User</TableCell>
+                    <TableCell>Vendor</TableCell>
+                    <TableCell>Total</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Payment</TableCell>
+                    <TableCell>Created</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {ordersLoading ? (
+                    <TableRow><TableCell colSpan={8} align="center"><CircularProgress size={20} /></TableCell></TableRow>
+                  ) : pagedOrders.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} align="center">No orders found</TableCell></TableRow>
+                  ) : (
+                    pagedOrders.map((o) => {
+                      const payMethod = o.paymentMethod === "mock_online" ? "Online" : "COD";
+                      const payStatus = o.paymentStatus || "unpaid";
+                      const payColor =
+                        payStatus === "paid" ? "success" :
+                        payStatus === "processing" ? "info" :
+                        payStatus === "failed" ? "error" : "default";
+                      return (
+                        <TableRow key={o.id} hover>
+                          <TableCell>{o.id}</TableCell>
+                          <TableCell>{o?.User?.name || "-"}</TableCell>
+                          <TableCell>{o?.Vendor?.name || "-"}</TableCell>
+                          <TableCell>{fmtMoney(o.totalAmount)}</TableCell>
+                          <TableCell><Chip size="small" label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Chip size="small" label={payMethod} variant="outlined" />
+                              <Chip size="small" label={payStatus} color={payColor} />
+                            </Stack>
+                          </TableCell>
+                          <TableCell>{o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</TableCell>
+                          <TableCell align="right">
+                            <Tooltip title="Invoice">
+                              <span>
+                                <IconButton onClick={() => openInvoice(o.id)}><ReceiptLongIcon /></IconButton>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            <TablePagination
+              component="div"
+              count={orderTotal}
+              page={orderPage}
+              onPageChange={(_e, newPage) => setOrderPage(newPage)}
+              rowsPerPage={orderRowsPerPage}
+              onRowsPerPageChange={(e) => { setOrderRowsPerPage(parseInt(e.target.value, 10) || 20); setOrderPage(0); }}
+              rowsPerPageOptions={[10, 20, 50, 100]}
+            />
+          </Paper>
+        </Grid>
       </Grid>
 
       <Divider sx={{ my: 4 }} />
@@ -1134,6 +1228,7 @@ export default function AdminDashboard() {
             fetchStats();
             fetchUsers({ page: userPage, size: userRowsPerPage });
             fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+            fetchOrders();
           }}
         >
           Refresh All
