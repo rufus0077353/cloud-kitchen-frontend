@@ -40,7 +40,7 @@ export default function UserVendorMenu() {
 
   const handleAdd = (it) => {
     addItem({ id: it.id, name: it.name, price: it.price, qty: 1, vendorId });
-    openDrawer(); // automatically show cart
+    openDrawer(); // show cart immediately
   };
 
   return (
@@ -59,11 +59,7 @@ export default function UserVendorMenu() {
               <ListItem
                 key={it.id}
                 secondaryAction={
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={() => handleAdd(it)}
-                  >
+                  <Button variant="contained" size="small" onClick={() => handleAdd(it)}>
                     Add to Cart
                   </Button>
                 }

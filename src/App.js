@@ -1,4 +1,3 @@
-
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
@@ -16,9 +15,9 @@ import EditUser from "./pages/EditUser";
 import AdminVendors from "./pages/AdminVendors";
 import AdminMenuItems from "./pages/AdminMenuItems";
 import UserOrders from "./pages/UserOrders";
-import CreateOrder from "./pages/CreateOrder";
+import CreateOrder from "./pages/CreateOrder"; // optional legacy
 import OrderSuccess from "./pages/OrderSuccess";
-import OrderForm from "./pages/OrderForm";
+import OrderForm from "./pages/OrderForm";     // optional admin form
 import OrderHistory from "./pages/OrderHistory";
 import Invoice from "./pages/Invoice";
 import VendorOrders from "./pages/VendorOrders";
@@ -26,7 +25,7 @@ import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
 
-// New shopping pages
+// Shopping pages
 import BrowseVendors from "./pages/BrowseVendors";
 import Checkout from "./pages/Checkout";
 
@@ -36,7 +35,6 @@ import PrivateRoute from "./components/PrivateRoute";
 import AdminRoute from "./components/AdminRoute";
 import ConnectionBar from "./components/ConnectionBar";
 import { CartProvider } from "./context/CartContext";
-import CartDrawer from "./components/CartDrawer";
 
 function App() {
   return (
@@ -45,8 +43,6 @@ function App() {
         <CssBaseline />
         <Container maxWidth="lg">
           <Navbar />
-          {/* Cart drawer is available globally; opened from Navbar or when adding items */}
-          <CartDrawer />
           <ConnectionBar />
 
           <Routes>
@@ -132,9 +128,9 @@ function App() {
               path="/admin/vendors"
               element={
                 <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminVendors />
-                    </AdminRoute>
+                  <AdminRoute>
+                    <AdminVendors />
+                  </AdminRoute>
                 </PrivateRoute>
               }
             />
@@ -209,7 +205,7 @@ function App() {
               }
             />
 
-            {/* New user-facing shopping routes */}
+            {/* Shopping (users) */}
             <Route
               path="/vendors"
               element={
