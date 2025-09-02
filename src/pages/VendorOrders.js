@@ -1,10 +1,11 @@
-
+// src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppBar, Toolbar, Container, Typography, Table, TableHead, TableRow,
   TableCell, TableBody, Paper, Chip, Button, Box, CircularProgress,
   FormControl, InputLabel, Select, MenuItem, Stack, IconButton, TextField,
-  Collapse, Divider, Switch, FormControlLabel, Tooltip, TablePagination
+  Collapse, Divider, Switch, FormControlLabel, Tooltip, TablePagination,
+  Alert
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -21,8 +22,6 @@ const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL    || API_BASE;
 const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
 
-// Treat 'rejected' and 'declined' as the same.
-// Send 'declined' to the backend (most typical).
 const normalizeStatus = (s) => {
   const val = String(s || "").toLowerCase();
   if (val === "rejected") return "declined";
@@ -33,7 +32,7 @@ const STATUS_COLORS = {
   pending:   "default",
   accepted:  "primary",
   declined:  "error",
-  rejected:  "error",   // display-safe if the server returns this
+  rejected:  "error",
   ready:     "warning",
   delivered: "success",
 };
@@ -80,36 +79,49 @@ export default function VendorOrders() {
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  const loadOrders = async ({ silent = false, toPage = page, size = rowsPerPage } = {}) => {
+  // --- DEBUG: last raw payload (first page) + last error text
+  const [lastRawCount, setLastRawCount] = useState(null);
+  const [lastErrorText, setLastErrorText] = useState("");
+
+  const loadOrders = async ({ silent = false, toPage = page, size = rowsPerPage, debugLog = false } = {}) => {
     if (!silent) setLoading(true);
+    setLastErrorText("");
     try {
       const q = new URLSearchParams({ page: String(toPage + 1), pageSize: String(size) }).toString();
       const res = await fetch(`${API_BASE}/api/orders/vendor?${q}`, { headers });
+
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
         window.location.href = "/login";
         return;
       }
-      const data = await res.json().catch(() => ({}));
+
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+
+      if (debugLog) {
+        console.log("[VendorOrders] /api/orders/vendor response:", { status: res.status, data });
+      }
+
       if (!res.ok) {
-        const msg = data?.message || `Failed (${res.status})`;
+        const msg = (data && data.message) || `Failed (${res.status})`;
         if (!silent) toast.error(msg);
         setOrders([]);
         setTotal(0);
+        setLastRawCount(0);
+        setLastErrorText(msg);
         return;
       }
-      if (Array.isArray(data)) {
-        setOrders(data);
-        setTotal(data.length);
-      } else {
-        setOrders(Array.isArray(data.items) ? data.items : []);
-        setTotal(Number(data.total || 0));
-      }
 
-      const incoming = Array.isArray(data) ? data : (data.items || []);
+      const items = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      const grandTotal = Array.isArray(data) ? data.length : Number(data?.total || items.length || 0);
+      setOrders(items);
+      setTotal(grandTotal);
+      setLastRawCount(items.length);
+
       const currentPendingIds = new Set(
-        (incoming || []).filter((o) => normalizeStatus(o.status) === "pending").map((o) => o.id)
+        (items || []).filter((o) => normalizeStatus(o.status) === "pending").map((o) => o.id)
       );
       const hadNew =
         [...currentPendingIds].some((id) => !prevPendingIdsRef.current.has(id)) &&
@@ -120,17 +132,20 @@ export default function VendorOrders() {
         toast.info("New pending order received");
       }
     } catch (e) {
-      if (!silent) toast.error("Network error while loading orders");
+      const msg = "Network error while loading orders";
+      if (!silent) toast.error(msg);
       setOrders([]);
       setTotal(0);
+      setLastRawCount(0);
+      setLastErrorText(msg);
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
   const updateStatus = async (id, desired) => {
-    const status = normalizeStatus(desired);               // normalize UI input
-    const backendStatus = status === "rejected" ? "declined" : status; // ensure 'declined' goes to API
+    const status = normalizeStatus(desired);
+    const backendStatus = status === "rejected" ? "declined" : status;
 
     const prev = orders;
     const next = prev.map((o) => (o.id === id ? { ...o, status } : o));
@@ -165,7 +180,6 @@ export default function VendorOrders() {
     }
   };
 
-  // Mark COD order as paid
   const markPaid = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/api/payments/${id}/mark-paid`, {
@@ -186,7 +200,6 @@ export default function VendorOrders() {
     }
   };
 
-  // View/print invoice with Authorization header
   const openInvoice = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/${id}/invoice`, {
@@ -248,7 +261,6 @@ export default function VendorOrders() {
     });
 
     const onNew = (fullOrder) => {
-      // If we're paginated, safest is to reload silently; otherwise prepend
       if (page > 0 || rowsPerPage > 0) {
         loadOrders({ silent: true });
       } else {
@@ -460,6 +472,25 @@ export default function VendorOrders() {
 
       <Container sx={{ py: 3 }}>
         <audio ref={audioRef} src={beepSrc} preload="auto" />
+
+        {/* --- DEBUG/INSIGHT BANNER --- */}
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+            <Chip label={`VendorId: ${vendorId ?? "unknown"}`} variant="outlined" />
+            <Chip label={`Raw items this page: ${lastRawCount ?? "-"}`} variant="outlined" />
+            <Chip label={`Visible after filters: ${visibleOrders.length}`} variant="outlined" />
+            <Button size="small" variant="outlined" startIcon={<RefreshIcon />} onClick={() => loadOrders({ debugLog: true })}>
+              Reload & Log
+            </Button>
+            {statusFilter !== "all" && (
+              <Alert severity="info" sx={{ py: 0, px: 1 }}>
+                Filter “{statusFilter}” is active — try “All” to see everything
+              </Alert>
+            )}
+            {lastErrorText && <Alert severity="error" sx={{ py: 0, px: 1 }}>{lastErrorText}</Alert>}
+          </Stack>
+        </Paper>
+
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
           <Typography variant="h5">Orders</Typography>
 
@@ -476,7 +507,6 @@ export default function VendorOrders() {
                 <MenuItem value="accepted">Accepted</MenuItem>
                 <MenuItem value="ready">Ready</MenuItem>
                 <MenuItem value="delivered">Delivered</MenuItem>
-                {/* We standardize on 'declined' but show it here */}
                 <MenuItem value="declined">Declined</MenuItem>
               </Select>
             </FormControl>
@@ -560,10 +590,7 @@ export default function VendorOrders() {
                         <TableCell>{paymentChip(o)}</TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                            {/* View/Print Receipt */}
-                            <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
-                              Receipt
-                            </Button>
+                            <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>Receipt</Button>
 
                             {status === "pending" && (
                               <>
