@@ -1,5 +1,4 @@
 
-// src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppBar, Toolbar, Container, Typography, Table, TableHead, TableRow,
@@ -22,10 +21,19 @@ const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL    || API_BASE;
 const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
 
+// Treat 'rejected' and 'declined' as the same.
+// Send 'declined' to the backend (most typical).
+const normalizeStatus = (s) => {
+  const val = String(s || "").toLowerCase();
+  if (val === "rejected") return "declined";
+  return val;
+};
+
 const STATUS_COLORS = {
   pending:   "default",
   accepted:  "primary",
-  rejected:  "error",
+  declined:  "error",
+  rejected:  "error",   // display-safe if the server returns this
   ready:     "warning",
   delivered: "success",
 };
@@ -101,7 +109,7 @@ export default function VendorOrders() {
 
       const incoming = Array.isArray(data) ? data : (data.items || []);
       const currentPendingIds = new Set(
-        (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
+        (incoming || []).filter((o) => normalizeStatus(o.status) === "pending").map((o) => o.id)
       );
       const hadNew =
         [...currentPendingIds].some((id) => !prevPendingIdsRef.current.has(id)) &&
@@ -120,7 +128,10 @@ export default function VendorOrders() {
     }
   };
 
-  const updateStatus = async (id, status) => {
+  const updateStatus = async (id, desired) => {
+    const status = normalizeStatus(desired);               // normalize UI input
+    const backendStatus = status === "rejected" ? "declined" : status; // ensure 'declined' goes to API
+
     const prev = orders;
     const next = prev.map((o) => (o.id === id ? { ...o, status } : o));
     setOrders(next);
@@ -130,7 +141,7 @@ export default function VendorOrders() {
       const res = await fetch(`${API_BASE}/api/orders/${id}/status`, {
         method: "PATCH",
         headers,
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: backendStatus }),
       });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -144,7 +155,7 @@ export default function VendorOrders() {
         toast.error(msg);
         return;
       }
-      toast.success("Status updated");
+      toast.success(`Status updated to ${backendStatus.toUpperCase()}`);
       loadOrders({ silent: true });
     } catch (e) {
       setOrders(prev); // rollback
@@ -154,7 +165,7 @@ export default function VendorOrders() {
     }
   };
 
-  // NEW: mark COD order as paid
+  // Mark COD order as paid
   const markPaid = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/api/payments/${id}/mark-paid`, {
@@ -175,7 +186,7 @@ export default function VendorOrders() {
     }
   };
 
-  // 👇 View/print invoice with Authorization header (works with authenticateToken)
+  // View/print invoice with Authorization header
   const openInvoice = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/api/orders/${id}/invoice`, {
@@ -224,7 +235,8 @@ export default function VendorOrders() {
     if (!token) return;
 
     const s = io(SOCKET_URL, {
-      transports: ["websocket"],
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
       auth: { token },
       withCredentials: true,
       reconnectionAttempts: 5,
@@ -236,6 +248,7 @@ export default function VendorOrders() {
     });
 
     const onNew = (fullOrder) => {
+      // If we're paginated, safest is to reload silently; otherwise prepend
       if (page > 0 || rowsPerPage > 0) {
         loadOrders({ silent: true });
       } else {
@@ -247,7 +260,9 @@ export default function VendorOrders() {
 
     const onStatus = (payload) => {
       setOrders((prev) =>
-        prev.map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o))
+        prev.map((o) =>
+          o.id === payload.id ? { ...o, status: normalizeStatus(payload.status) } : o
+        )
       );
     };
 
@@ -333,7 +348,11 @@ export default function VendorOrders() {
   };
 
   const filtered = (Array.isArray(orders) ? orders : [])
-    .filter((o) => (statusFilter === "all" ? true : o.status === statusFilter))
+    .filter((o) => {
+      if (statusFilter === "all") return true;
+      const s = normalizeStatus(o.status);
+      return s === statusFilter;
+    })
     .filter((o) => matchesSearch(o, search))
     .filter((o) => withinDateRange(o));
 
@@ -364,7 +383,7 @@ export default function VendorOrders() {
       user: o.User?.name || "",
       items: itemsToText(o),
       total: o.totalAmount,
-      status: o.status,
+      status: normalizeStatus(o.status),
       payment: `${o.paymentMethod || ""}/${o.paymentStatus || ""}`,
       createdAt: o.createdAt,
     }));
@@ -457,7 +476,8 @@ export default function VendorOrders() {
                 <MenuItem value="accepted">Accepted</MenuItem>
                 <MenuItem value="ready">Ready</MenuItem>
                 <MenuItem value="delivered">Delivered</MenuItem>
-                <MenuItem value="rejected">Rejected</MenuItem>
+                {/* We standardize on 'declined' but show it here */}
+                <MenuItem value="declined">Declined</MenuItem>
               </Select>
             </FormControl>
 
@@ -522,6 +542,7 @@ export default function VendorOrders() {
                   const disabled = updatingId === o.id;
                   const lineItems = getLineItems(o);
                   const expandedRow = expanded.has(o.id);
+                  const status = normalizeStatus(o.status);
 
                   return (
                     <React.Fragment key={o.id}>
@@ -535,7 +556,7 @@ export default function VendorOrders() {
                         <TableCell>{o.User?.name || "-"}</TableCell>
                         <TableCell>{itemsToText(o)}</TableCell>
                         <TableCell>₹{o.totalAmount}</TableCell>
-                        <TableCell><Chip label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
+                        <TableCell><Chip label={status} color={STATUS_COLORS[status] || "default"} /></TableCell>
                         <TableCell>{paymentChip(o)}</TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
@@ -544,16 +565,16 @@ export default function VendorOrders() {
                               Receipt
                             </Button>
 
-                            {o.status === "pending" && (
+                            {status === "pending" && (
                               <>
                                 <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
-                                <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>Reject</Button>
+                                <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "declined")}>Decline</Button>
                               </>
                             )}
-                            {o.status === "accepted" && (
+                            {status === "accepted" && (
                               <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>Mark Ready</Button>
                             )}
-                            {o.status === "ready" && (
+                            {status === "ready" && (
                               <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
                             )}
 
