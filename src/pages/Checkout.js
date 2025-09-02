@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from "react";
 import {
   Container, Paper, Stack, Typography, TextField, Button, Divider, RadioGroup, FormControlLabel, Radio
@@ -39,11 +40,11 @@ export default function Checkout() {
       return;
     }
 
-    // backend expects: { vendorId, items: [{ MenuItemId, quantity }], paymentMethod, note, address }
+    // ⬇⬇ IMPORTANT: Align with backend (VendorId + MenuItemId + quantity)
     const payload = {
-      vendorId,
-      items: items.map(it => ({ MenuItemId: it.id, quantity: it.qty })),
-      paymentMethod: method,
+      VendorId: Number(vendorId),
+      items: items.map(it => ({ MenuItemId: Number(it.id), quantity: Number(it.qty) })),
+      paymentMethod: method, // keep if your backend uses it; otherwise the API can ignore it
       note,
       address
     };
