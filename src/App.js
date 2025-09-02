@@ -36,6 +36,7 @@ import PrivateRoute from "./components/PrivateRoute";
 import AdminRoute from "./components/AdminRoute";
 import ConnectionBar from "./components/ConnectionBar";
 import { CartProvider } from "./context/CartContext";
+import CartDrawer from "./components/CartDrawer";
 
 function App() {
   return (
@@ -44,6 +45,8 @@ function App() {
         <CssBaseline />
         <Container maxWidth="lg">
           <Navbar />
+          {/* Cart drawer is available globally; opened from Navbar or when adding items */}
+          <CartDrawer />
           <ConnectionBar />
 
           <Routes>
@@ -129,9 +132,9 @@ function App() {
               path="/admin/vendors"
               element={
                 <PrivateRoute role="admin">
-                  <AdminRoute>
-                    <AdminVendors />
-                  </AdminRoute>
+                    <AdminRoute>
+                      <AdminVendors />
+                    </AdminRoute>
                 </PrivateRoute>
               }
             />

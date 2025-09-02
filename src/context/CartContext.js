@@ -74,6 +74,7 @@ export function CartProvider({ children }) {
       // Different vendor item: reset cart to only this item
       setItems([{ ...item, qty: Math.max(1, Number(item.qty || delta || 1)) }]);
       setVendorId(incomingVendor);
+      setIsOpen(true); // show the change to the user
       return;
     }
 
@@ -89,6 +90,8 @@ export function CartProvider({ children }) {
       next[idx] = { ...next[idx], qty: nextQty };
       return next;
     });
+
+    setIsOpen(true); // open cart when an item is added
   };
 
   const setQty = (id, qty) => {
@@ -126,8 +129,7 @@ export function CartProvider({ children }) {
     addItem,
     setQty,
     removeItem,
-    // alias (for components that call remove())
-    remove: removeItem,
+    remove: removeItem, // alias
     clear,
 
     // drawer

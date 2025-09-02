@@ -64,7 +64,13 @@ export default function UserVendorMenu() {
                   <Button
                     variant="contained"
                     size="small"
-                    onClick={() => addItem({ id: it.id, name: it.name, price: it.price, qty: 1, vendorId })}
+                    onClick={() => addItem({
+                      id: it.id,
+                      name: it.name,
+                      price: it.price,
+                      qty: 1,
+                      vendorId // lock cart to this vendor
+                    })}
                   >
                     Add
                   </Button>

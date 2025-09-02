@@ -1,6 +1,8 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
+import { useCart } from "../context/CartContext";
 
 import {
   AppBar,
@@ -26,6 +28,7 @@ import StorefrontIcon from "@mui/icons-material/Storefront";
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PeopleIcon from "@mui/icons-material/People";
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -48,6 +51,9 @@ export default function Navbar() {
   const [vendorId, setVendorId] = useState(localStorage.getItem("vendorId") || null);
   const [vendorPendingCount, setVendorPendingCount] = useState(0);
   const [userActiveCount, setUserActiveCount] = useState(0);
+
+  // CART
+  const { totalQty, openDrawer } = useCart();
 
   const headers = token
     ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
@@ -234,6 +240,15 @@ export default function Navbar() {
 
           <Box sx={{ flexGrow: 1 }} />
 
+          {/* CART BUTTON visible for logged-in users */}
+          {token && (
+            <IconButton color="inherit" aria-label="cart" onClick={openDrawer}>
+              <Badge color="secondary" badgeContent={totalQty || 0}>
+                <ShoppingCartIcon />
+              </Badge>
+            </IconButton>
+          )}
+
           {token && (
             <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", gap: 1 }}>
               {links.map((lnk) => {
@@ -275,6 +290,7 @@ export default function Navbar() {
         </Toolbar>
       </AppBar>
 
+      {/* SIDE MENU (NAV) */}
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box sx={{ width: 270, display: "flex", flexDirection: "column", height: "100%" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, p: 2 }}>

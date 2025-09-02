@@ -1,4 +1,3 @@
-
 import React from "react";
 import {
   Drawer, Box, Typography, IconButton, Divider, Stack, TextField, Button
@@ -10,16 +9,16 @@ import { useCart } from "../context/CartContext";
 
 const Money = ({ v }) => <strong>₹{Number(v || 0).toFixed(2)}</strong>;
 
-export default function CartDrawer({ open, onClose }) {
-  const { items, setQty, remove, subtotal, totalQty } = useCart();
+export default function CartDrawer() {
+  const { items, setQty, remove, subtotal, totalQty, isOpen, closeDrawer } = useCart();
   const navigate = useNavigate();
 
   return (
-    <Drawer anchor="right" open={open} onClose={onClose}>
+    <Drawer anchor="right" open={isOpen} onClose={closeDrawer}>
       <Box sx={{ width: { xs: 330, sm: 380 }, p: 2, display: "flex", flexDirection: "column", height: "100%" }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
           <Typography variant="h6">Your Cart</Typography>
-          <IconButton onClick={onClose}><CloseIcon /></IconButton>
+          <IconButton onClick={closeDrawer}><CloseIcon /></IconButton>
         </Stack>
         <Divider sx={{ mb: 2 }} />
 
@@ -60,7 +59,7 @@ export default function CartDrawer({ open, onClose }) {
         <Button
           variant="contained"
           disabled={items.length === 0}
-          onClick={() => { onClose?.(); navigate("/checkout"); }}
+          onClick={() => { closeDrawer(); navigate("/checkout"); }}
         >
           Go to Checkout
         </Button>
