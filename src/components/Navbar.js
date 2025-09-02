@@ -1,3 +1,8 @@
+
+Rufus A
+01:11 (0 minutes ago)
+to me
+
 // src/components/Navbar.js
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
@@ -30,7 +35,7 @@ import PeopleIcon from "@mui/icons-material/People";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 
 import { useCart } from "../context/CartContext";
-import CartDrawer from "./CartDrawer"; // make sure path is correct
+import CartDrawer from "./CartDrawer";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -186,10 +191,11 @@ export default function Navbar() {
         },
       ];
     }
+    // USER LINKS — change path to your real UserOrders route
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {
-        to: "/orders",
+        to: "/user/orders", // ✅ was "/orders" before
         label: "My Orders",
         icon: <ListAltIcon />,
         badge: userActiveCount,
