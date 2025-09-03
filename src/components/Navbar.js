@@ -28,6 +28,7 @@ import ListAltIcon from "@mui/icons-material/ListAlt";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PeopleIcon from "@mui/icons-material/People";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
+import NotificationBell from "./NotificationBell";  
 
 import { useCart } from "../context/CartContext";
 import CartDrawer from "./CartDrawer";
@@ -294,6 +295,9 @@ export default function Navbar() {
                 );
               })}
 
+              {/* Notifications */ }
+              <NotificationBell />
+              
               {/* Cart button */}
               <Tooltip title="Cart">
                 <IconButton color="inherit" onClick={openDrawer} aria-label="open cart">
