@@ -1,3 +1,4 @@
+
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
@@ -24,6 +25,7 @@ import VendorOrders from "./pages/VendorOrders";
 import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
+import NotAuthorized from "./pages/NotAuthorized";
 
 // Shopping pages
 import BrowseVendors from "./pages/BrowseVendors";
@@ -230,6 +232,13 @@ function App() {
                 </PrivateRoute>
               }
             />
+
+            {/* Authz fallback */}
+            <Route path="/403" element={<NotAuthorized />} />
+
+            {/* Optional 404:
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            */}
           </Routes>
 
           <ToastContainer position="top-right" autoClose={5000} />
