@@ -1,4 +1,5 @@
 
+// src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppBar, Toolbar, Container, Typography, Table, TableHead, TableRow,
@@ -18,7 +19,7 @@ import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
 import PaymentBadge from "../components/PaymentBadge";
 
-const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
 
 const STATUS_COLORS = {
@@ -28,7 +29,8 @@ const STATUS_COLORS = {
   ready:     "warning",
   delivered: "success",
 };
-const titleCase = (s="") => s.slice(0,1).toUpperCase()+s.slice(1);
+const titleCase = (s = "") => s.slice(0, 1).toUpperCase() + s.slice(1);
+const inr = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
 export default function VendorOrders() {
   const navigate = useNavigate();
@@ -38,6 +40,7 @@ export default function VendorOrders() {
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
+  const [payingId, setPayingId] = useState(null); // << disable "Mark Paid" while sending
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("created_desc");
   const [search, setSearch] = useState("");
@@ -154,8 +157,9 @@ export default function VendorOrders() {
     }
   };
 
-  // mark payment via new orders endpoint
+  // Mark COD order as paid (correct route + body)
   const markPaid = async (id) => {
+    setPayingId(id);
     try {
       const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
         method: "PATCH",
@@ -164,15 +168,20 @@ export default function VendorOrders() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // Typical reasons: not vendor of this order, or order canceled/rejected
         toast.error(data?.message || "Failed to mark paid");
         return;
       }
       toast.success("Payment marked as paid");
       setOrders((prev) =>
-        prev.map((o) => (o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o))
+        prev.map((o) =>
+          o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
+        )
       );
     } catch (e) {
       toast.error("Network error");
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -203,7 +212,7 @@ export default function VendorOrders() {
     }
   };
 
-  // get vendor id
+  // get vendor id (optional, but useful for room join)
   useEffect(() => {
     const getMe = async () => {
       try {
@@ -223,7 +232,7 @@ export default function VendorOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // sockets — reuse global `socket`
+  // sockets
   useEffect(() => {
     if (!token) return;
     const s = socket;
@@ -257,8 +266,8 @@ export default function VendorOrders() {
 
     s.on("order:new", onNew);
     s.on("order:status", onStatus);
-    s.on("order:payment", onPayment); // backend emits this in your routes
-    s.on("payments:refresh", () => loadOrders({ silent: true })); // keep optional
+    s.on("order:payment", onPayment);
+    s.on("payments:refresh", () => loadOrders({ silent: true }));
 
     return () => {
       try {
@@ -344,11 +353,15 @@ export default function VendorOrders() {
     const aTotal = Number(a.totalAmount) || 0;
     const bTotal = Number(b.totalAmount) || 0;
     switch (sortBy) {
-      case "created_asc": return aTime - bTime;
-      case "total_desc":  return bTotal - aTotal;
-      case "total_asc":   return aTotal - bTotal;
+      case "created_asc":
+        return aTime - bTime;
+      case "total_desc":
+        return bTotal - aTotal;
+      case "total_asc":
+        return aTotal - bTotal;
       case "created_desc":
-      default:            return bTime - aTime;
+      default:
+        return bTime - aTime;
     }
   });
 
@@ -373,7 +386,15 @@ export default function VendorOrders() {
     const csv = [
       headers.join(","),
       ...rows.map((r) =>
-        [r.id, safeCsv(r.user), safeCsv(r.items), r.total, r.status, r.payment, r.createdAt ? new Date(r.createdAt).toLocaleString() : ""].join(",")
+        [
+          r.id,
+          safeCsv(r.user),
+          safeCsv(r.items),
+          r.total,
+          r.status,
+          r.payment,
+          r.createdAt ? new Date(r.createdAt).toLocaleString() : "",
+        ].join(",")
       ),
     ].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -396,7 +417,8 @@ export default function VendorOrders() {
   };
 
   const handleBack = () => {
-    const canGoBack = (window.history?.state && window.history.state.idx > 0) || window.history.length > 1;
+    const canGoBack =
+      (window.history?.state && window.history.state.idx > 0) || window.history.length > 1;
     if (canGoBack) navigate(-1);
     else navigate(DASHBOARD_PATH);
   };
@@ -422,7 +444,12 @@ export default function VendorOrders() {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Vendor Orders
           </Typography>
-          <Button onClick={() => navigate(DASHBOARD_PATH)} variant="outlined" size="small" sx={{ textTransform: "none" }}>
+          <Button
+            onClick={() => navigate(DASHBOARD_PATH)}
+            variant="outlined"
+            size="small"
+            sx={{ textTransform: "none" }}
+          >
             Back to Dashboard
           </Button>
         </Toolbar>
@@ -430,17 +457,46 @@ export default function VendorOrders() {
 
       <Container sx={{ py: 3 }}>
         <audio ref={audioRef} src={beepSrc} preload="auto" />
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}
+        >
           <Typography variant="h5">Orders</Typography>
 
           <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
-            <TextField size="small" label="Search (user/email/item)" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <TextField size="small" label="From" type="date" InputLabelProps={{ shrink: true }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <TextField
+              size="small"
+              label="Search (user/email/item)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <TextField
+              size="small"
+              label="From"
+              type="date"
+              InputLabelProps={{ shrink: true }}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+            <TextField
+              size="small"
+              label="To"
+              type="date"
+              InputLabelProps={{ shrink: true }}
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
 
             <FormControl size="small" sx={{ minWidth: 160 }}>
               <InputLabel id="status-filter-label">Status</InputLabel>
-              <Select labelId="status-filter-label" label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <Select
+                labelId="status-filter-label"
+                label="Status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
                 <MenuItem value="all">All</MenuItem>
                 <MenuItem value="pending">Pending</MenuItem>
                 <MenuItem value="accepted">Accepted</MenuItem>
@@ -452,7 +508,12 @@ export default function VendorOrders() {
 
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <InputLabel id="sort-by-label">Sort by</InputLabel>
-              <Select labelId="sort-by-label" label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <Select
+                labelId="sort-by-label"
+                label="Sort by"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
                 <MenuItem value="created_desc">Newest first</MenuItem>
                 <MenuItem value="created_asc">Oldest first</MenuItem>
                 <MenuItem value="total_desc">Total: high → low</MenuItem>
@@ -460,10 +521,19 @@ export default function VendorOrders() {
               </Select>
             </FormControl>
 
-            <FormControlLabel control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />} label="Polling fallback" />
+            <FormControlLabel
+              control={<Switch checked={realtime} onChange={(e) => setRealtime(e.target.checked)} />}
+              label="Polling fallback"
+            />
             <FormControl size="small" sx={{ minWidth: 130 }}>
               <InputLabel id="poll-ms">Every</InputLabel>
-              <Select labelId="poll-ms" label="Every" value={pollMs} onChange={(e) => setPollMs(Number(e.target.value))} disabled={!realtime}>
+              <Select
+                labelId="poll-ms"
+                label="Every"
+                value={pollMs}
+                onChange={(e) => setPollMs(Number(e.target.value))}
+                disabled={!realtime}
+              >
                 <MenuItem value={10000}>10s</MenuItem>
                 <MenuItem value={30000}>30s</MenuItem>
                 <MenuItem value={60000}>60s</MenuItem>
@@ -503,12 +573,21 @@ export default function VendorOrders() {
 
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} align="center"><CircularProgress size={24} /></TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    <CircularProgress size={24} />
+                  </TableCell>
+                </TableRow>
               ) : visibleOrders.length === 0 ? (
-                <TableRow><TableCell colSpan={8} align="center">No orders found</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    No orders found
+                  </TableCell>
+                </TableRow>
               ) : (
                 visibleOrders.map((o) => {
-                  const disabled = updatingId === o.id;
+                  const disableStatusBtns = updatingId === o.id;
+                  const disablePayBtn = payingId === o.id;
                   const lineItems = getLineItems(o);
                   const expandedRow = expanded.has(o.id);
 
@@ -520,41 +599,84 @@ export default function VendorOrders() {
                             {expandedRow ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                           </IconButton>
                         </TableCell>
-                        <TableCell>{o.id} {disabled && <CircularProgress size={14} sx={{ ml: 1 }} />}</TableCell>
+                        <TableCell>
+                          {o.id}{" "}
+                          {(disableStatusBtns || disablePayBtn) && (
+                            <CircularProgress size={14} sx={{ ml: 1 }} />
+                          )}
+                        </TableCell>
                         <TableCell>{o.User?.name || "-"}</TableCell>
                         <TableCell>{itemsToText(o)}</TableCell>
-                        <TableCell>₹{o.totalAmount}</TableCell>
+                        <TableCell>{inr(o.totalAmount)}</TableCell>
                         <TableCell>
-                          <Chip label={titleCase(o.status || "-")} color={STATUS_COLORS[o.status] || "default"} />
+                          <Chip
+                            label={titleCase(o.status || "-")}
+                            color={STATUS_COLORS[o.status] || "default"}
+                          />
                         </TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={1} alignItems="center">
                             <PaymentBadge status={o.paymentStatus} />
-                            <Chip size="small" label={(o.paymentMethod === "mock_online" ? "Online" : "COD")} variant="outlined" />
+                            <Chip
+                              size="small"
+                              label={o.paymentMethod === "mock_online" ? "Online" : "COD"}
+                              variant="outlined"
+                            />
                           </Stack>
                         </TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                            {/* View/Print Receipt */}
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
 
                             {o.status === "pending" && (
                               <>
-                                <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "accepted")}>Accept</Button>
-                                <Button size="small" color="error" disabled={disabled} onClick={() => updateStatus(o.id, "rejected")}>Reject</Button>
+                                <Button
+                                  size="small"
+                                  disabled={disableStatusBtns}
+                                  onClick={() => updateStatus(o.id, "accepted")}
+                                >
+                                  Accept
+                                </Button>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  disabled={disableStatusBtns}
+                                  onClick={() => updateStatus(o.id, "rejected")}
+                                >
+                                  Reject
+                                </Button>
                               </>
                             )}
                             {o.status === "accepted" && (
-                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "ready")}>Mark Ready</Button>
+                              <Button
+                                size="small"
+                                disabled={disableStatusBtns}
+                                onClick={() => updateStatus(o.id, "ready")}
+                              >
+                                Mark Ready
+                              </Button>
                             )}
                             {o.status === "ready" && (
-                              <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
+                              <Button
+                                size="small"
+                                disabled={disableStatusBtns}
+                                onClick={() => updateStatus(o.id, "delivered")}
+                              >
+                                Mark Delivered
+                              </Button>
                             )}
 
                             {o.paymentMethod !== "mock_online" && o.paymentStatus === "unpaid" && (
-                              <Button size="small" variant="outlined" onClick={() => markPaid(o.id)}>Mark Paid</Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => markPaid(o.id)}
+                                disabled={disablePayBtn}
+                              >
+                                {disablePayBtn ? "Marking…" : "Mark Paid"}
+                              </Button>
                             )}
                           </Box>
                         </TableCell>
@@ -564,26 +686,57 @@ export default function VendorOrders() {
                         <TableCell colSpan={8} sx={{ p: 0, border: 0 }}>
                           <Collapse in={expandedRow} timeout="auto" unmountOnExit>
                             <Box sx={{ px: 3, py: 2, bgcolor: "background.default" }}>
-                              <Typography variant="subtitle1" gutterBottom>Order Details</Typography>
+                              <Typography variant="subtitle1" gutterBottom>
+                                Order Details
+                              </Typography>
                               <Divider sx={{ mb: 2 }} />
                               {lineItems.length === 0 ? (
-                                <Typography variant="body2" color="text.secondary">No line items</Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  No line items
+                                </Typography>
                               ) : (
-                                <Box sx={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 1 }}>
-                                  <Typography variant="caption" sx={{ fontWeight: 600 }}>Item</Typography>
-                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Qty</Typography>
-                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Price</Typography>
-                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>Line Total</Typography>
+                                <Box
+                                  sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr auto auto auto",
+                                    gap: 1,
+                                  }}
+                                >
+                                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                    Item
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 600, textAlign: "right" }}
+                                  >
+                                    Qty
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 600, textAlign: "right" }}
+                                  >
+                                    Price
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 600, textAlign: "right" }}
+                                  >
+                                    Line Total
+                                  </Typography>
 
                                   {lineItems.map((it, idx) => (
                                     <React.Fragment key={idx}>
                                       <Typography variant="body2">{it.name}</Typography>
-                                      <Typography variant="body2" sx={{ textAlign: "right" }}>{it.quantity}</Typography>
                                       <Typography variant="body2" sx={{ textAlign: "right" }}>
-                                        {it.price != null ? `₹${it.price}` : "-"}
+                                        {it.quantity}
                                       </Typography>
                                       <Typography variant="body2" sx={{ textAlign: "right" }}>
-                                        {it.price != null ? `₹${(Number(it.price) * Number(it.quantity || 1)).toFixed(2)}` : "-"}
+                                        {it.price != null ? inr(it.price) : "-"}
+                                      </Typography>
+                                      <Typography variant="body2" sx={{ textAlign: "right" }}>
+                                        {it.price != null
+                                          ? inr(Number(it.price) * Number(it.quantity || 1))
+                                          : "-"}
                                       </Typography>
                                     </React.Fragment>
                                   ))}
@@ -591,18 +744,27 @@ export default function VendorOrders() {
                               )}
 
                               <Divider sx={{ my: 2 }} />
-                              <Stack direction="row" justifyContent="space-between" sx={{ mb: 1, flexWrap: "wrap", gap: 1 }}>
+                              <Stack
+                                direction="row"
+                                justifyContent="space-between"
+                                sx={{ mb: 1, flexWrap: "wrap", gap: 1 }}
+                              >
                                 <Typography variant="body2" color="text.secondary">
                                   Placed: {o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                  Payment: {o.paymentMethod === "mock_online" ? "Online" : "COD"} · {o.paymentStatus || "unpaid"}
-                                  {o.paidAt ? ` · Paid at: ${new Date(o.paidAt).toLocaleString()}` : ""}
+                                  Payment: {o.paymentMethod === "mock_online" ? "Online" : "COD"} ·{" "}
+                                  {o.paymentStatus || "unpaid"}
+                                  {o.paidAt
+                                    ? ` · Paid at: ${new Date(o.paidAt).toLocaleString()}`
+                                    : ""}
                                 </Typography>
-                                <Typography variant="subtitle2">Total: ₹{o.totalAmount}</Typography>
+                                <Typography variant="subtitle2">Total: {inr(o.totalAmount)}</Typography>
                               </Stack>
                               {o.User?.email && (
-                                <Typography variant="body2" color="text.secondary">User Email: {o.User.email}</Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  User Email: {o.User.email}
+                                </Typography>
                               )}
                             </Box>
                           </Collapse>
