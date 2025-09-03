@@ -1,5 +1,4 @@
 
-// src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppBar, Toolbar, Container, Typography, Table, TableHead, TableRow,
@@ -17,6 +16,7 @@ import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
+import PaymentBadge from "../components/PaymentBadge";
 
 const API_BASE   = process.env.REACT_APP_API_BASE_URL  || "";
 const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
@@ -154,12 +154,13 @@ export default function VendorOrders() {
     }
   };
 
-  // mark COD order as paid
+  // mark payment via new orders endpoint
   const markPaid = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/api/payments/${id}/mark-paid`, {
+      const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
         method: "PATCH",
         headers,
+        body: JSON.stringify({ status: "paid" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -246,21 +247,25 @@ export default function VendorOrders() {
 
     const onPayment = (payload) => {
       setOrders((prev) =>
-        prev.map((o) => (o.id === payload.orderId ? { ...o, paymentStatus: payload.paymentStatus } : o))
+        prev.map((o) =>
+          o.id === (payload.orderId || payload.id)
+            ? { ...o, paymentStatus: payload.paymentStatus, paidAt: payload.paidAt || o.paidAt }
+            : o
+        )
       );
     };
 
     s.on("order:new", onNew);
     s.on("order:status", onStatus);
-    s.on("payment:status", onPayment);
-    s.on("orders:refresh", () => loadOrders({ silent: true }));
+    s.on("order:payment", onPayment); // backend emits this in your routes
+    s.on("payments:refresh", () => loadOrders({ silent: true })); // keep optional
 
     return () => {
       try {
         s.off("order:new", onNew);
         s.off("order:status", onStatus);
-        s.off("payment:status", onPayment);
-        s.off("orders:refresh");
+        s.off("order:payment", onPayment);
+        s.off("payments:refresh");
       } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -396,18 +401,6 @@ export default function VendorOrders() {
     else navigate(DASHBOARD_PATH);
   };
 
-  const paymentChip = (o) => {
-    const method = o.paymentMethod || "cod";
-    const status = o.paymentStatus || "unpaid";
-    const label = `${method === "mock_online" ? "Online" : "COD"} · ${status}`;
-    let color = "default";
-    if (status === "paid") color = "success";
-    else if (status === "refunded") color = "warning";
-    else if (status === "processing") color = "info";
-    else color = "default";
-    return <Chip size="small" label={label} color={color} />;
-  };
-
   const handleChangePage = (_e, newPage) => {
     setPage(newPage);
     loadOrders({ toPage: newPage, size: rowsPerPage });
@@ -534,7 +527,12 @@ export default function VendorOrders() {
                         <TableCell>
                           <Chip label={titleCase(o.status || "-")} color={STATUS_COLORS[o.status] || "default"} />
                         </TableCell>
-                        <TableCell>{paymentChip(o)}</TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <PaymentBadge status={o.paymentStatus} />
+                            <Chip size="small" label={(o.paymentMethod === "mock_online" ? "Online" : "COD")} variant="outlined" />
+                          </Stack>
+                        </TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                             {/* View/Print Receipt */}
@@ -555,7 +553,7 @@ export default function VendorOrders() {
                               <Button size="small" disabled={disabled} onClick={() => updateStatus(o.id, "delivered")}>Mark Delivered</Button>
                             )}
 
-                            {o.paymentMethod === "cod" && o.paymentStatus === "unpaid" && (
+                            {o.paymentMethod !== "mock_online" && o.paymentStatus === "unpaid" && (
                               <Button size="small" variant="outlined" onClick={() => markPaid(o.id)}>Mark Paid</Button>
                             )}
                           </Box>

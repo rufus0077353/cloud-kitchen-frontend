@@ -1,5 +1,4 @@
 
-// src/pages/UserOrders.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -45,6 +44,7 @@ import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
 import CartDrawer from "../components/CartDrawer";
 import { useCart } from "../context/CartContext";
+import PaymentBadge from "../components/PaymentBadge";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -138,7 +138,7 @@ export default function UserOrders() {
       const url =
         status === "all"
           ? `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`
-          : `${API}/api/orders/my?page=0`; // 0 => legacy return all (your backend supports this)
+          : `${API}/api/orders/my?page=0`; // 0 => legacy return all
 
       const res = await fetch(url, { headers });
 
@@ -177,7 +177,7 @@ export default function UserOrders() {
           setOrders(normalizeList(data.items));
           setTotal(Number(data.total) || 0);
         } else {
-          // (If backend didn’t paginate for some reason, fall back to client slice)
+          // fallback to client slice
           setTotal(normalized.length);
           const start = p * rpp;
           setOrders(normalized.slice(start, start + rpp));
@@ -232,6 +232,7 @@ export default function UserOrders() {
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
+    // (keep existing custom events if your app uses them)
     const onPayProcessing = () => refill();
     const onPaySuccess = () => refill();
     const onPayFailed = () => refill();
@@ -242,6 +243,7 @@ export default function UserOrders() {
     socket.on("payment:processing", onPayProcessing);
     socket.on("payment:success", onPaySuccess);
     socket.on("payment:failed", onPayFailed);
+    socket.on("order:payment", refill); // new backend event
 
     return () => {
       socket.off("connect", onConnect);
@@ -250,6 +252,7 @@ export default function UserOrders() {
       socket.off("payment:processing", onPayProcessing);
       socket.off("payment:success", onPaySuccess);
       socket.off("payment:failed", onPayFailed);
+      socket.off("order:payment", refill);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, page, rowsPerPage, statusFilter]);
@@ -281,7 +284,7 @@ export default function UserOrders() {
     }
   };
 
-   const cancelOrder = async (id) => {
+  const cancelOrder = async (id) => {
     try {
       const res = await fetch(`${API}/api/orders/${id}/cancel`, {
         method: "PATCH",
@@ -308,7 +311,6 @@ export default function UserOrders() {
       toast.error("Network error while cancelling order");
     }
   };
-
 
   const openInvoice = async (orderId) => {
     try {
@@ -450,6 +452,8 @@ export default function UserOrders() {
                   const items = getLineItems(order);
                   const payMethod = order.paymentMethod || "cod";
                   const payStatus = order.paymentStatus || "unpaid";
+                  const canCancel = order.status === "pending" && payStatus !== "paid";
+
                   return (
                     <TableRow key={order.id} hover>
                       <TableCell>{order.id}</TableCell>
@@ -459,20 +463,8 @@ export default function UserOrders() {
                       </TableCell>
                       <TableCell>
                         <Stack direction="row" spacing={1} alignItems="center">
+                          <PaymentBadge status={order.paymentStatus} />
                           <Chip size="small" label={payMethod === "mock_online" ? "Online" : "COD"} variant="outlined" />
-                          <Chip
-                            size="small"
-                            label={payStatus}
-                            color={
-                              payStatus === "paid"
-                                ? "success"
-                                : payStatus === "processing"
-                                ? "info"
-                                : payStatus === "failed"
-                                ? "error"
-                                : "default"
-                            }
-                          />
                         </Stack>
                       </TableCell>
                       <TableCell>{rupee(order.totalAmount)}</TableCell>
@@ -486,29 +478,27 @@ export default function UserOrders() {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        {order.status === "pending" && (
-                        <Button 
+
+                        <Button
                           size="small"
                           color="warning"
                           variant="outlined"
                           onClick={() => cancelOrder(order.id)}
                           sx={{ mr: 1 }}
-                          >
+                          disabled={!canCancel}
+                        >
                           Cancel Order
-                          </Button>
-                        )}
+                        </Button>
 
-                        <IconButton size="small" onClick={() => navigate(`/track/${order.id}`)}>
+                        <Button size="small" onClick={() => navigate(`/track/${order.id}`)}>
                           Track
-                        </IconButton>
-
+                        </Button>
 
                         {/* Delete */}
                         <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
                           <Delete />
                         </IconButton>
 
-                        
                         {/* (Optional) Edit disabled placeholder */}
                         <IconButton disabled title="Edit (disabled)">
                           <Edit />
@@ -540,9 +530,9 @@ export default function UserOrders() {
           component="div"
           count={total}
           page={page}
-          onPageChange={handleChangePage}
+          onPageChange={(_e, newPage) => setPage(newPage)}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
+          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10) || 10); setPage(0); }}
           rowsPerPageOptions={[5, 10, 20, 50]}
           labelRowsPerPage="Per page:"
         />
