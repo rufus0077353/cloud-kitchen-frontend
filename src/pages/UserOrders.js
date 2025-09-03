@@ -281,6 +281,35 @@ export default function UserOrders() {
     }
   };
 
+   const cancelOrder = async (id) => {
+    try {
+      const res = await fetch(`${API}/api/orders/${id}/cancel`, {
+        method: "PATCH",
+        headers,
+      });
+
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        navigate("/login");
+        return;
+      }
+
+      const data = await safeJson(res);
+      if (!res.ok) {
+        toast.error(data?.message || "Failed to cancel order");
+        return;
+      }
+
+      toast.success("Order cancelled");
+      // refresh current page
+      fetchOrders({ page, rowsPerPage, statusFilter });
+    } catch (err) {
+      toast.error("Network error while cancelling order");
+    }
+  };
+
+
   const openInvoice = async (orderId) => {
     try {
       const res = await fetch(`${API}/api/orders/${orderId}/invoice`, {
@@ -457,6 +486,17 @@ export default function UserOrders() {
                             </IconButton>
                           </span>
                         </Tooltip>
+                        {order.status === "pending" && (
+                        <Button 
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          onClick={() => cancelOrder(order.id)}
+                          sx={{ mr: 1 }}
+                          >
+                          Cancel Order
+                          </Button>
+                        )}
 
                         <IconButton size="small" onClick={() => navigate(`/track/${order.id}`)}>
                           Track
