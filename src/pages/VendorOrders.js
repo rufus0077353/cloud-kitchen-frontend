@@ -1,8 +1,3 @@
-
-Rufus A
-03:19 (0 minutes ago)
-to me
-
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
