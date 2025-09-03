@@ -458,11 +458,17 @@ export default function UserOrders() {
                           </span>
                         </Tooltip>
 
+                        <IconButton size="small" onClick={() => navigate(`/track/${order.id}`)}>
+                          Track
+                        </IconButton>
+
+
                         {/* Delete */}
                         <IconButton color="error" onClick={() => confirmDelete(order.id)} title="Delete">
                           <Delete />
                         </IconButton>
 
+                        
                         {/* (Optional) Edit disabled placeholder */}
                         <IconButton disabled title="Edit (disabled)">
                           <Edit />

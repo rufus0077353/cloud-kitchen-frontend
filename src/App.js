@@ -41,6 +41,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 
 // NEW
 import { NotificationsProvider } from "./context/NotificationsContext";
+import TrackOrder from "./pages/TrackOrder";
 
 function App() {
   return (
@@ -234,6 +235,14 @@ function App() {
                 element={
                   <PrivateRoute>
                     <Checkout />
+                  </PrivateRoute>
+                }
+              />
+              <Route 
+                path="/track/:id"
+                element={
+                  <PrivateRoute>
+                    <TrackOrder />
                   </PrivateRoute>
                 }
               />
