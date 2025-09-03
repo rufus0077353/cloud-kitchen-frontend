@@ -1,4 +1,8 @@
 
+Rufus A
+03:19 (0 minutes ago)
+to me
+
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -40,7 +44,7 @@ export default function VendorOrders() {
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
-  const [payingId, setPayingId] = useState(null); // << disable "Mark Paid" while sending
+  const [payingId, setPayingId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("created_desc");
   const [search, setSearch] = useState("");
@@ -79,7 +83,10 @@ export default function VendorOrders() {
     if (!silent) setLoading(true);
     try {
       const q = new URLSearchParams({ page: String(toPage + 1), pageSize: String(size) }).toString();
-      const res = await fetch(`${API_BASE}/api/orders/vendor?${q}`, { headers });
+      const res = await fetch(`${API_BASE}/api/orders/vendor?${q}`, {
+        headers,
+        credentials: "include",
+      });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -133,6 +140,7 @@ export default function VendorOrders() {
       const res = await fetch(`${API_BASE}/api/orders/${id}/status`, {
         method: "PATCH",
         headers,
+        credentials: "include",
         body: JSON.stringify({ status }),
       });
       if (res.status === 401) {
@@ -157,32 +165,62 @@ export default function VendorOrders() {
     }
   };
 
-  // Mark COD order as paid (correct route + body)
+  /**
+   * Mark COD order as paid
+   * 1) Preferred: PATCH /api/orders/:id/payment  { paymentStatus: "paid" }
+   * 2) Legacy fallback: PATCH /api/payments/:id/mark-paid
+   */
   const markPaid = async (id) => {
     setPayingId(id);
-    try {
-      const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ status: "paid" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Typical reasons: not vendor of this order, or order canceled/rejected
-        toast.error(data?.message || "Failed to mark paid");
-        return;
+    const tryEndpoints = [
+      async () => {
+        const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
+          method: "PATCH",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({ paymentStatus: "paid" }),
+        });
+        return res;
+      },
+      async () => {
+        const res = await fetch(`${API_BASE}/api/payments/${id}/mark-paid`, {
+          method: "PATCH",
+          headers,
+          credentials: "include",
+        });
+        return res;
+      },
+    ];
+
+    let lastErr = "";
+    for (const fn of tryEndpoints) {
+      try {
+        const res = await fn();
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          toast.success("Payment marked as paid");
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
+            )
+          );
+          setPayingId(null);
+          return;
+        }
+        // Save best error; continue to next variant only for 403/404/405
+        lastErr =
+          data?.message ||
+          (res.status === 403
+            ? "Not authorized to update payment for this order"
+            : `Failed (${res.status})`);
+        if (![403, 404, 405].includes(res.status)) break;
+      } catch (e) {
+        lastErr = "Network error";
       }
-      toast.success("Payment marked as paid");
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
-        )
-      );
-    } catch (e) {
-      toast.error("Network error");
-    } finally {
-      setPayingId(null);
     }
+
+    toast.error(lastErr || "Failed to mark paid");
+    setPayingId(null);
   };
 
   // View/print invoice
@@ -190,6 +228,7 @@ export default function VendorOrders() {
     try {
       const res = await fetch(`${API_BASE}/api/orders/${id}/invoice`, {
         headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -212,11 +251,11 @@ export default function VendorOrders() {
     }
   };
 
-  // get vendor id (optional, but useful for room join)
+  // get vendor id (optional, for socket room)
   useEffect(() => {
     const getMe = async () => {
       try {
-        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers, credentials: "include" });
         if (!r.ok) return;
         const me = await r.json();
         if (me?.vendorId) setVendorId(me.vendorId);
@@ -591,6 +630,11 @@ export default function VendorOrders() {
                   const lineItems = getLineItems(o);
                   const expandedRow = expanded.has(o.id);
 
+                  const canShowMarkPaid =
+                    o.paymentMethod !== "mock_online" &&
+                    o.paymentStatus === "unpaid" &&
+                    !["rejected", "cancelled", "canceled"].includes(o.status || "");
+
                   return (
                     <React.Fragment key={o.id}>
                       <TableRow hover>
@@ -668,7 +712,7 @@ export default function VendorOrders() {
                               </Button>
                             )}
 
-                            {o.paymentMethod !== "mock_online" && o.paymentStatus === "unpaid" && (
+                            {canShowMarkPaid && (
                               <Button
                                 size="small"
                                 variant="outlined"
