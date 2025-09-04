@@ -1,4 +1,3 @@
-
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,6 +13,7 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
@@ -162,7 +162,7 @@ export default function VendorOrders() {
     }
   };
 
-  // Mark COD order as paid (correct backend shape: { status: "paid" })
+  // Mark COD order as paid (backend expects { status: "paid" })
   const markPaid = async (id) => {
     setPayingId(id);
     try {
@@ -190,17 +190,21 @@ export default function VendorOrders() {
     }
   };
 
-  // View/print invoice (HTML or PDF)
+  // View/print invoice (tries PDF first; falls back to HTML)
   const openInvoice = async (orderId, { pdf = false } = {}) => {
-    try {
-      const endpoint = pdf
-        ? `${API_BASE}/api/orders/${orderId}/invoice.pdf`
-        : `${API_BASE}/api/orders/${orderId}/invoice`;
-
-      const res = await fetch(endpoint, {
+    const tryOnce = async (url) => {
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
+      return res;
+    };
+
+    try {
+      const pdfUrl = `${API_BASE}/api/orders/${orderId}/invoice.pdf`;
+      const htmlUrl = `${API_BASE}/api/orders/${orderId}/invoice`;
+
+      const res = pdf ? await tryOnce(pdfUrl) : await tryOnce(htmlUrl);
 
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -208,13 +212,28 @@ export default function VendorOrders() {
         window.location.href = "/login";
         return;
       }
+
+      // If we asked for PDF and got 404/405, fall back to HTML
+      if (pdf && [404, 405].includes(res.status)) {
+        const resHtml = await tryOnce(htmlUrl);
+        if (!resHtml.ok) {
+          const msg = (await resHtml.text().catch(() => "")) || "Failed to load invoice";
+          toast.error(msg);
+          return;
+        }
+        const blob = await resHtml.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return;
+      }
+
       if (!res.ok) {
         const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
         toast.error(msg);
         return;
       }
 
-      // Use blob for both HTML and PDF so we can open a new tab reliably
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
@@ -333,7 +352,7 @@ export default function VendorOrders() {
     if (!q) return true;
     const needle = q.toLowerCase();
     const userName = (order?.User?.name || "").toLowerCase();
-       const userEmail = (order?.User?.email || "").toLowerCase();
+    const userEmail = (order?.User?.email || "").toLowerCase();
     const itemsStr = itemsToText(order).toLowerCase();
     return userName.includes(needle) || userEmail.includes(needle) || itemsStr.includes(needle);
   };
@@ -643,12 +662,15 @@ export default function VendorOrders() {
                         </TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                            {/* HTML invoice in new tab */}
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
-                            {/* PDF invoice in new tab */}
-                            <Button size="small" variant="text" onClick={() => openInvoice(o.id, { pdf: true })}>
+                            <Button
+                              size="small"
+                              variant="text"
+                              startIcon={<PictureAsPdfIcon />}
+                              onClick={() => openInvoice(o.id, { pdf: true })}
+                            >
                               PDF
                             </Button>
 
