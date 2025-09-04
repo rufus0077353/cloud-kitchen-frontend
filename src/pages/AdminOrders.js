@@ -1,7 +1,8 @@
+
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, Stack, Select, MenuItem, TextField, Button,
-  Table, TableHead, TableRow, TableCell, TableBody, Chip, Paper, Divider
+  Table, TableHead, TableRow, TableCell, TableBody, Chip, Paper, Divider, Alert
 } from '@mui/material';
 import { socket } from '../utils/socket';
 
@@ -28,6 +29,7 @@ export default function AdminOrders() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
 
   const commissionFor = (o) => {
     const explicit = o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
@@ -45,23 +47,85 @@ export default function AdminOrders() {
 
   const load = async () => {
     setLoading(true);
+    setErr('');
     try {
+      // --- Build filters once ---
       const params = new URLSearchParams();
       if (status)  params.set('status', status);
-      if (vendorId) params.set('VendorId', vendorId);     // 👈 uppercase to match backend
-      if (userId)   params.set('UserId', userId);         // 👈 uppercase to match backend
-      if (dateFrom) params.set('startDate', dateFrom);    // accepts either startDate or From
-      if (dateTo)   params.set('endDate', dateTo);        // accepts either endDate or To
+      if (vendorId) params.set('VendorId', vendorId);   // uppercase supported by backend
+      if (userId)   params.set('UserId', userId);
+      if (dateFrom) params.set('startDate', dateFrom);
+      if (dateTo)   params.set('endDate', dateTo);
 
-      const res = await fetch(`${API_BASE}/api/admin/orders?${params.toString()}`, {
-        headers,
-        credentials: 'include',
-      });
+      const getUrl = `${API_BASE}/api/admin/orders?${params.toString()}`;
 
-      const data = await res.json().catch(() => []);
-      setRows(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error(err);
+      // --- Try GET first ---
+      let res = await fetch(getUrl, { headers, credentials: 'include' });
+
+      // If GET fails (404/405/500/403/etc.), try POST with JSON body as a fallback
+      if (!res.ok) {
+        // collect readable reason
+        const text = await res.text().catch(() => '');
+        console.warn('[AdminOrders] GET failed:', res.status, text);
+
+        const postUrl = `${API_BASE}/api/admin/orders`;
+        const body = {
+          status: status || undefined,
+          VendorId: vendorId || undefined,
+          UserId: userId || undefined,
+          startDate: dateFrom || undefined,
+          endDate: dateTo || undefined,
+        };
+
+        res = await fetch(postUrl, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const fallbackText = await res.text().catch(() => '');
+          setRows([]);
+          setErr(
+            `Admin orders request failed.
+Tried GET ${getUrl} and POST ${postUrl}.
+Last response: ${res.status} ${res.statusText}
+${fallbackText || '(no response text)'}`
+          );
+          return;
+        }
+      }
+
+      // Parse JSON safely
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        const raw = await res.text().catch(() => '');
+        setRows([]);
+        setErr(
+          `Server returned non-JSON for admin orders.
+Status: ${res.status} ${res.statusText}
+Payload (first 400 chars): ${raw.slice(0, 400)}`
+        );
+        return;
+      }
+
+      if (!Array.isArray(data)) {
+        if (data && data.message) {
+          setErr(`Backend error: ${data.message}`);
+        } else {
+          setErr('Unexpected response shape (not an array).');
+        }
+        setRows([]);
+        return;
+      }
+
+      setRows(data);
+    } catch (e) {
+      console.error(e);
+      setErr(`Network error: ${e?.message || e}`);
       setRows([]);
     } finally {
       setLoading(false);
@@ -80,7 +144,8 @@ export default function AdminOrders() {
       socket.off('order:status', onStatus);
       socket.off('order:payment', onPayment);
     };
-  }, []); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const summary = useMemo(() => {
     const eligible = rows.filter(o =>
@@ -96,6 +161,12 @@ export default function AdminOrders() {
   return (
     <Box sx={{ p:2 }}>
       <Typography variant="h5" sx={{ mb: 2 }}>All Orders</Typography>
+
+      {err ? (
+        <Alert severity="error" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+          {err}
+        </Alert>
+      ) : null}
 
       <Stack direction={{ xs:'column', sm:'row' }} spacing={1.5} sx={{ mb: 2 }}>
         <Select size="small" displayEmpty value={status} onChange={e=>setStatus(e.target.value)}>
