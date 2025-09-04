@@ -1,4 +1,3 @@
-// src/pages/AdminDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Typography, Grid, Paper, TextField, Button, IconButton,
@@ -92,7 +91,7 @@ export default function AdminDashboard() {
   const [vendorTotal, setVendorTotal] = useState(0);
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
-  // orders (NEW: admin view via /api/orders/filter, client-side paginate)
+  // orders (admin view via /api/admin/orders, client-side paginate)
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [orderStatusFilter, setOrderStatusFilter] = useState("all");
@@ -189,27 +188,32 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
+  /* ---------------- API: Orders (admin list via /api/admin/orders) ---------------- */
   const fetchOrders = async () => {
     setOrdersLoading(true);
     try {
+      // Build query params for admin endpoint
       const params = {};
       if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-      if (orderVendorFilter !== "all") params.VendorId = orderVendorFilter;
+      if (orderVendorFilter !== "all") params.VendorId = orderVendorFilter; // NOTE: uppercase V matches backend
       if (orderFrom) params.startDate = orderFrom;
       if (orderTo) params.endDate = orderTo;
 
-      const res = await axios.get(`${API}/api/orders/filter`, {
+      // ✅ Correct endpoint for admin orders:
+      const res = await axios.get(`${API}/api/admin/orders`, {
         headers,
         validateStatus: () => true,
         params
       });
+
       if (res.status === 401) return handle401();
-      if (res.status >= 400) throw new Error(res.data?.message || "Failed");
+      if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
+
       const list =
         Array.isArray(res.data) ? res.data :
         Array.isArray(res.data?.items) ? res.data.items :
         Array.isArray(res.data?.orders) ? res.data.orders : [];
+
       setOrders(list);
       setOrderPage(0); // reset to first page on new query
     } catch (e) {
@@ -1104,7 +1108,7 @@ export default function AdminDashboard() {
           </Paper>
         </Grid>
 
-        {/* ORDERS (NEW) */}
+        {/* ORDERS (ADMIN) */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
