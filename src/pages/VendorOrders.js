@@ -1,3 +1,4 @@
+
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,6 +29,7 @@ const STATUS_COLORS = {
   ready:     "warning",
   delivered: "success",
 };
+
 const titleCase = (s = "") => s.slice(0, 1).toUpperCase() + s.slice(1);
 const inr = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
@@ -160,88 +162,65 @@ export default function VendorOrders() {
     }
   };
 
-  /**
-   * Mark COD order as paid
-   * 1) Preferred: PATCH /api/orders/:id/payment  { paymentStatus: "paid" }
-   * 2) Legacy fallback: PATCH /api/payments/:id/mark-paid
-   */
+  // Mark COD order as paid (correct backend shape: { status: "paid" })
   const markPaid = async (id) => {
     setPayingId(id);
-    const tryEndpoints = [
-      async () => {
-        const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
-          method: "PATCH",
-          headers,
-          credentials: "include",
-          body: JSON.stringify({ paymentStatus: "paid" }),
-        });
-        return res;
-      },
-      async () => {
-        const res = await fetch(`${API_BASE}/api/payments/${id}/mark-paid`, {
-          method: "PATCH",
-          headers,
-          credentials: "include",
-        });
-        return res;
-      },
-    ];
-
-    let lastErr = "";
-    for (const fn of tryEndpoints) {
-      try {
-        const res = await fn();
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          toast.success("Payment marked as paid");
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
-            )
-          );
-          setPayingId(null);
-          return;
-        }
-        // Save best error; continue to next variant only for 403/404/405
-        lastErr =
-          data?.message ||
-          (res.status === 403
-            ? "Not authorized to update payment for this order"
-            : `Failed (${res.status})`);
-        if (![403, 404, 405].includes(res.status)) break;
-      } catch (e) {
-        lastErr = "Network error";
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
+        method: "PATCH",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ status: "paid" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.message || "Failed to mark paid");
+        return;
       }
+      toast.success("Payment marked as paid");
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
+        )
+      );
+    } catch (e) {
+      toast.error("Network error");
+    } finally {
+      setPayingId(null);
     }
-
-    toast.error(lastErr || "Failed to mark paid");
-    setPayingId(null);
   };
 
-  // View/print invoice
+  // View/print invoice (HTML or PDF)
   const openInvoice = async (orderId, { pdf = false } = {}) => {
-  try {
-    const endpoint = pdf ? `${API}/api/orders/${orderId}/invoice.pdf` : `${API}/api/orders/${orderId}/invoice`;
-    const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+    try {
+      const endpoint = pdf
+        ? `${API_BASE}/api/orders/${orderId}/invoice.pdf`
+        : `${API_BASE}/api/orders/${orderId}/invoice`;
 
-    if (res.status === 401) {
-      toast.error("Session expired. Please log in again.");
-      localStorage.clear();
-      (navigate ? navigate("/login") : (window.location.href = "/login"));
-      return;
-    }
-     if (!res.ok) {
-      const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
-      toast.error(msg);
-      return;
-    }
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
 
-     const blob = await res.blob();
-     const url = URL.createObjectURL(blob);
-     window.open(url, "_blank", "noopener,noreferrer");
-     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        window.location.href = "/login";
+        return;
+      }
+      if (!res.ok) {
+        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+        toast.error(msg);
+        return;
+      }
+
+      // Use blob for both HTML and PDF so we can open a new tab reliably
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-     toast.error("Network error while opening invoice");
+      toast.error("Network error while opening invoice");
     }
   };
 
@@ -354,7 +333,7 @@ export default function VendorOrders() {
     if (!q) return true;
     const needle = q.toLowerCase();
     const userName = (order?.User?.name || "").toLowerCase();
-    const userEmail = (order?.User?.email || "").toLowerCase();
+       const userEmail = (order?.User?.email || "").toLowerCase();
     const itemsStr = itemsToText(order).toLowerCase();
     return userName.includes(needle) || userEmail.includes(needle) || itemsStr.includes(needle);
   };
@@ -664,12 +643,14 @@ export default function VendorOrders() {
                         </TableCell>
                         <TableCell>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                            {/* HTML invoice in new tab */}
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
+                            {/* PDF invoice in new tab */}
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id, { pdf: true })}>
                               PDF
-                            </Button> 
+                            </Button>
 
                             {o.status === "pending" && (
                               <>

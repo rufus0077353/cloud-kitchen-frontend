@@ -1,4 +1,4 @@
-
+// src/pages/UserOrders.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -36,6 +36,7 @@ import {
   Logout,
   ArrowBack,
   ReceiptLong,
+  Download as DownloadIcon,
 } from "@mui/icons-material";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import StorefrontIcon from "@mui/icons-material/Storefront";
@@ -140,7 +141,7 @@ export default function UserOrders() {
           ? `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`
           : `${API}/api/orders/my?page=0`; // 0 => legacy return all
 
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers, credentials: "include" });
 
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -232,7 +233,7 @@ export default function UserOrders() {
       toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
     };
 
-    // (keep existing custom events if your app uses them)
+    // custom & new payment event
     const onPayProcessing = () => refill();
     const onPaySuccess = () => refill();
     const onPayFailed = () => refill();
@@ -243,7 +244,7 @@ export default function UserOrders() {
     socket.on("payment:processing", onPayProcessing);
     socket.on("payment:success", onPaySuccess);
     socket.on("payment:failed", onPayFailed);
-    socket.on("order:payment", refill); // new backend event
+    socket.on("order:payment", refill);
 
     return () => {
       socket.off("connect", onConnect);
@@ -260,7 +261,7 @@ export default function UserOrders() {
   // ---------- actions ----------
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers });
+      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers, credentials: "include" });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -289,6 +290,7 @@ export default function UserOrders() {
       const res = await fetch(`${API}/api/orders/${id}/cancel`, {
         method: "PATCH",
         headers,
+        credentials: "include",
       });
 
       if (res.status === 401) {
@@ -312,30 +314,36 @@ export default function UserOrders() {
     }
   };
 
+  // View/print invoice (HTML or PDF)
   const openInvoice = async (orderId, { pdf = false } = {}) => {
-  try {
-    const endpoint = pdf ? `${API}/api/orders/${orderId}/invoice.pdf` : `${API}/api/orders/${orderId}/invoice`;
-    const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+    try {
+      const endpoint = pdf
+        ? `${API}/api/orders/${orderId}/invoice.pdf`
+        : `${API}/api/orders/${orderId}/invoice`;
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
 
-    if (res.status === 401) {
-      toast.error("Session expired. Please log in again.");
-      localStorage.clear();
-      (navigate ? navigate("/login") : (window.location.href = "/login"));
-      return;
-    }
-    if (!res.ok) {
-      const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
-      toast.error(msg);
-      return;
-    }
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        navigate("/login");
+        return;
+      }
+      if (!res.ok) {
+        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+        toast.error(msg);
+        return;
+      }
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-   } catch (e) {
-    toast.error("Network error while opening invoice");
-   } 
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      toast.error("Network error while opening invoice");
+    }
   };
 
   const handleLogout = () => {
@@ -473,12 +481,15 @@ export default function UserOrders() {
                         {/* Items tooltip on the receipt icon; preserves newlines */}
                         <Tooltip title={<ItemsTooltip items={items} />}>
                           <span>
-                            <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
+                            <IconButton onClick={() => openInvoice(order.id)} title="Receipt (HTML)">
                               <ReceiptLong />
                             </IconButton>
                             <IconButton
                               onClick={() => openInvoice(order.id, { pdf: true })}
-                              title="Download PDF">PDF</IconButton>
+                              title="Download PDF"
+                            >
+                              <DownloadIcon />
+                            </IconButton>
                           </span>
                         </Tooltip>
 
