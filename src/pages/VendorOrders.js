@@ -219,30 +219,29 @@ export default function VendorOrders() {
   };
 
   // View/print invoice
-  const openInvoice = async (id) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/orders/${id}/invoice`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        window.location.href = "/login";
-        return;
-      }
-      if (!res.ok) {
-        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
-        toast.error(msg);
-        return;
-      }
-      const html = await res.text();
-      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const openInvoice = async (orderId, { pdf = false } = {}) => {
+  try {
+    const endpoint = pdf ? `${API}/api/orders/${orderId}/invoice.pdf` : `${API}/api/orders/${orderId}/invoice`;
+    const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+
+    if (res.status === 401) {
+      toast.error("Session expired. Please log in again.");
+      localStorage.clear();
+      (navigate ? navigate("/login") : (window.location.href = "/login"));
+      return;
+    }
+     if (!res.ok) {
+      const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+      toast.error(msg);
+      return;
+    }
+
+     const blob = await res.blob();
+     const url = URL.createObjectURL(blob);
+     window.open(url, "_blank", "noopener,noreferrer");
+     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      toast.error("Network error while opening invoice");
+     toast.error("Network error while opening invoice");
     }
   };
 
@@ -668,6 +667,9 @@ export default function VendorOrders() {
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
+                            <Button size="small" variant="text" onClick={() => openInvoice(o.id, { pdf: true })}>
+                              PDF
+                            </Button> 
 
                             {o.status === "pending" && (
                               <>

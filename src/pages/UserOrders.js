@@ -312,30 +312,30 @@ export default function UserOrders() {
     }
   };
 
-  const openInvoice = async (orderId) => {
-    try {
-      const res = await fetch(`${API}/api/orders/${orderId}/invoice`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        navigate("/login");
-        return;
-      }
-      if (!res.ok) {
-        const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
-        toast.error(msg);
-        return;
-      }
-      const html = await res.text();
-      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      toast.error("Network error while opening invoice");
+  const openInvoice = async (orderId, { pdf = false } = {}) => {
+  try {
+    const endpoint = pdf ? `${API}/api/orders/${orderId}/invoice.pdf` : `${API}/api/orders/${orderId}/invoice`;
+    const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+
+    if (res.status === 401) {
+      toast.error("Session expired. Please log in again.");
+      localStorage.clear();
+      (navigate ? navigate("/login") : (window.location.href = "/login"));
+      return;
     }
+    if (!res.ok) {
+      const msg = (await res.text().catch(() => "")) || "Failed to load invoice";
+      toast.error(msg);
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+   } catch (e) {
+    toast.error("Network error while opening invoice");
+   } 
   };
 
   const handleLogout = () => {
@@ -476,6 +476,9 @@ export default function UserOrders() {
                             <IconButton onClick={() => openInvoice(order.id)} title="Receipt">
                               <ReceiptLong />
                             </IconButton>
+                            <IconButton
+                              onClick={() => openInvoice(order.id, { pdf: true })}
+                              title="Download PDF">PDF</IconButton>
                           </span>
                         </Tooltip>
 
