@@ -665,15 +665,7 @@ export default function VendorOrders() {
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
-                            {/* PDF may not be supported, so keep it separate */}
-                            <Button
-                              size="small"
-                              variant="text"
-                              startIcon={<PictureAsPdfIcon />}
-                              onClick={() => openInvoice(o.id, { pdf: true })}
-                            >
-                              PDF
-                            </Button>
+                            
 
                             {o.status === "pending" && (
                               <>
