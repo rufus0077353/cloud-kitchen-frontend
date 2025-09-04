@@ -8,7 +8,7 @@ import {
 import { socket } from '../utils/socket';
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || '';
-const DEFAULT_RATE = Number(process.env.REACT_APP_PLATFORM_RATE || 0.10); // 10% fallback
+const DEFAULT_RATE = Number(process.env.REACT_APP_PLATFORM_RATE || 0.10); // 10%
 
 const inr = (n) => `₹${Number(n || 0).toFixed(2)}`;
 const STATUS_COLORS = {
@@ -32,19 +32,12 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(false);
 
   const commissionFor = (o) => {
-    // 1) explicit amounts from backend (if present)
-    const explicit =
-      o?.commissionAmount ??
-      o?.platformCommission ??
-      o?.platformFee;
+    const explicit = o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
     if (explicit != null) return Number(explicit) || 0;
-
-    // 2) derive using rate
     const rate =
       (o?.commissionRate != null ? Number(o.commissionRate) : null) ??
       (o?.Vendor?.commissionRate != null ? Number(o.Vendor.commissionRate) : null) ??
       DEFAULT_RATE;
-
     const total = Number(o?.totalAmount || 0);
     return Math.max(0, total * (isFinite(rate) ? rate : DEFAULT_RATE));
   };
@@ -61,18 +54,20 @@ export default function AdminOrders() {
     if (dateFrom) params.set('startDate', dateFrom);
     if (dateTo) params.set('endDate', dateTo);
 
-    const res = await fetch(`${API_BASE}/api/admin/orders?` + params.toString(), { headers });
+    // 👇 use the existing backend route
+    const res = await fetch(`${API_BASE}/api/orders/filter?` + params.toString(), {
+      headers,
+      credentials: 'include',
+    });
     const data = await res.json().catch(() => []);
     setRows(Array.isArray(data) ? data : []);
     setLoading(false);
   };
 
-  useEffect(() => { load(); /* initial */ }, []); // eslint-disable-line
+  useEffect(() => { load(); }, []); // eslint-disable-line
 
   useEffect(() => {
-    const onNew = () => load();
-    const onStatus = () => load();
-    const onPayment = () => load();
+    const onNew = load, onStatus = load, onPayment = load;
     socket.on('order:new', onNew);
     socket.on('order:status', onStatus);
     socket.on('order:payment', onPayment);
@@ -84,7 +79,6 @@ export default function AdminOrders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // -------- Summary (paid + non-canceled) --------
   const summary = useMemo(() => {
     const eligible = rows.filter(o =>
       isRevenueOrder(o) && String(o?.paymentStatus || '').toLowerCase() === 'paid'
@@ -100,7 +94,6 @@ export default function AdminOrders() {
     <Box sx={{ p:2 }}>
       <Typography variant="h5" sx={{ mb: 2 }}>All Orders</Typography>
 
-      {/* Filters */}
       <Stack direction={{ xs:'column', sm:'row' }} spacing={1.5} sx={{ mb: 2 }}>
         <Select size="small" displayEmpty value={status} onChange={e=>setStatus(e.target.value)}>
           <MenuItem value=""><em>All statuses</em></MenuItem>
@@ -118,7 +111,6 @@ export default function AdminOrders() {
         <Button variant="contained" onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Apply'}</Button>
       </Stack>
 
-      {/* Summary bar */}
       <Paper sx={{ p:2, mb:2 }}>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
           Earnings (Paid & non-canceled in current view)
@@ -148,7 +140,6 @@ export default function AdminOrders() {
         </Stack>
       </Paper>
 
-      {/* Table */}
       <Table size="small">
         <TableHead>
           <TableRow>
