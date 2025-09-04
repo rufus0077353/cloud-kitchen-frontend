@@ -46,24 +46,31 @@ export default function AdminOrders() {
     !['rejected','canceled','cancelled'].includes((o?.status || '').toLowerCase());
 
   const load = async () => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (status) params.set('status', status);
-    if (vendorId) params.set('VendorId', vendorId);
-    if (userId) params.set('UserId', userId);
-    if (dateFrom) params.set('startDate', dateFrom);
-    if (dateTo) params.set('endDate', dateTo);
+   setLoading(true);
+   try {
+    const body = {};
+    if (status) body.status = status;
+    if (vendorId) body.VendorId = vendorId;
+    if (userId) body.UserId = userId;
+    if (dateFrom) body.startDate = dateFrom;
+    if (dateTo) body.endDate = dateTo;
 
-    // 👇 use the existing backend route
-    const res = await fetch(`${API_BASE}/api/orders/filter?` + params.toString(), {
+    const res = await fetch(`${API_BASE}/api/orders/filter`, {
+      method: "POST", // 👈 must be POST
       headers,
-      credentials: 'include',
+      credentials: "include",
+      body: JSON.stringify(body),
     });
+
     const data = await res.json().catch(() => []);
     setRows(Array.isArray(data) ? data : []);
+  } catch (err) {
+    console.error(err);
+    setRows([]);
+  } finally {
     setLoading(false);
-  };
-
+ }
+ };
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   useEffect(() => {
