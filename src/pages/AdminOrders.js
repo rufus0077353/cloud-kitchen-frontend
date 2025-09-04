@@ -1,5 +1,3 @@
-
-// src/pages/AdminOrders.js
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, Stack, Select, MenuItem, TextField, Button,
@@ -46,31 +44,30 @@ export default function AdminOrders() {
     !['rejected','canceled','cancelled'].includes((o?.status || '').toLowerCase());
 
   const load = async () => {
-   setLoading(true);
-   try {
-    const body = {};
-    if (status) body.status = status;
-    if (vendorId) body.VendorId = vendorId;
-    if (userId) body.UserId = userId;
-    if (dateFrom) body.startDate = dateFrom;
-    if (dateTo) body.endDate = dateTo;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (status)  params.set('status', status);
+      if (vendorId) params.set('VendorId', vendorId);     // 👈 uppercase to match backend
+      if (userId)   params.set('UserId', userId);         // 👈 uppercase to match backend
+      if (dateFrom) params.set('startDate', dateFrom);    // accepts either startDate or From
+      if (dateTo)   params.set('endDate', dateTo);        // accepts either endDate or To
 
-    const res = await fetch(`${API_BASE}/api/orders/filter`, {
-      method: "POST", // 👈 must be POST
-      headers,
-      credentials: "include",
-      body: JSON.stringify(body),
-    });
+      const res = await fetch(`${API_BASE}/api/admin/orders?${params.toString()}`, {
+        headers,
+        credentials: 'include',
+      });
 
-    const data = await res.json().catch(() => []);
-    setRows(Array.isArray(data) ? data : []);
-  } catch (err) {
-    console.error(err);
-    setRows([]);
-  } finally {
-    setLoading(false);
- }
- };
+      const data = await res.json().catch(() => []);
+      setRows(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   useEffect(() => {
@@ -83,8 +80,7 @@ export default function AdminOrders() {
       socket.off('order:status', onStatus);
       socket.off('order:payment', onPayment);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line
 
   const summary = useMemo(() => {
     const eligible = rows.filter(o =>
