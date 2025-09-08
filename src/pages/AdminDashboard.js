@@ -657,36 +657,52 @@ export default function AdminDashboard() {
         </Stack>
       </Stack>
 
-      {/* Top stats */}
-      <Paper elevation={0} sx={{ p: 2, mb: 3, border: (t) => `1px solid ${t.palette.divider}` }}>
-        {statsLoading && <LinearProgress sx={{ mb: 2 }} />}
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">Total Users</Typography>
-              <Typography variant="h5">{fmtNum(stats?.totalUsers)}</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">Total Vendors</Typography>
-              <Typography variant="h5">{fmtNum(stats?.totalVendors)}</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">Total Orders</Typography>
-              <Typography variant="h5">{fmtNum(stats?.totalOrders)}</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 2, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">Total Revenue</Typography>
-              <Typography variant="h5">{fmtMoney(stats?.totalRevenue)}</Typography>
-            </Paper>
-          </Grid>
-        </Grid>
+ {/* Top stats */}
+  <Paper elevation={0} sx={{ p: 2, mb: 3, border: (t) => `1px solid ${t.palette.divider}` }}>
+  {statsLoading && <LinearProgress sx={{ mb: 2 }} />}
+  <Grid container spacing={2}>
+    <Grid item xs={12} sm={6} md={3}>
+      <Paper sx={{ p: 2, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">Total Users</Typography>
+        <Typography variant="h5">{fmtNum(stats?.totalUsers)}</Typography>
       </Paper>
+    </Grid>
+    <Grid item xs={12} sm={6} md={3}>
+      <Paper sx={{ p: 2, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">Total Vendors</Typography>
+        <Typography variant="h5">{fmtNum(stats?.totalVendors)}</Typography>
+      </Paper>
+    </Grid>
+    <Grid item xs={12} sm={6} md={3}>
+      <Paper sx={{ p: 2, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">Total Orders</Typography>
+        <Typography variant="h5">{fmtNum(stats?.totalOrders)}</Typography>
+      </Paper>
+    </Grid>
+    <Grid item xs={12} sm={6} md={3}>
+      <Paper sx={{ p: 2, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">Total Revenue</Typography>
+        <Typography variant="h5">{fmtMoney(stats?.totalRevenue)}</Typography>
+      </Paper>
+    </Grid>
+
+    {/* NEW: Total Commission (lifetime) */}
+    <Grid item xs={12} sm={6} md={3}>
+      <Paper sx={{ p: 2, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">Total Commission</Typography>
+        <Typography variant="h5">{fmtMoney(stats?.totalCommission)}</Typography>
+      </Paper>
+    </Grid>
+
+    {/* NEW: Commission This Month */}
+    <Grid item xs={12} sm={6} md={3}>
+      <Paper sx={{ p: 2, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">Commission (This Month)</Typography>
+        <Typography variant="h5">{fmtMoney(stats?.monthCommission)}</Typography>
+      </Paper>
+    </Grid>
+  </Grid>
+ </Paper>
 
       <Grid container spacing={3}>
         {/* USERS */}
