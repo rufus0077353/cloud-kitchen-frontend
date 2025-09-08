@@ -193,66 +193,30 @@ export default function AdminDashboard() {
  const fetchOrders = async () => {
   setOrdersLoading(true);
   try {
-    // build query params; don't send "all"
     const params = {};
     if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-    if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter).trim();
-    if (orderFrom) params.startDate = orderFrom; // YYYY-MM-DD
-    if (orderTo)   params.endDate   = orderTo;   // YYYY-MM-DD
+    if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
+    if (orderFrom) params.startDate = orderFrom;
+    if (orderTo)   params.endDate   = orderTo;
 
-    // primary (admin) endpoint
-    const res = await axios.get(`${API}/api/admin/orders`, {
-      headers,
-      validateStatus: () => true,
-      params,
-    });
+    const res = await axios.get(`${API}/api/admin/orders`, { headers, params, validateStatus: () => true });
 
     if (res.status === 401) return handle401();
-    if (res.status >= 400) {
-      // show precise server message and try legacy fallback
-      const msg = res.data?.message || `Failed (${res.status})`;
-      console.warn("Admin orders error:", res.status, res.data);
-      // legacy fallback: POST /api/orders/filter
-      const body = {
-        ...(params.status ? { status: params.status } : {}),
-        ...(params.VendorId ? { VendorId: params.VendorId } : {}),
-        ...(params.startDate ? { startDate: params.startDate } : {}),
-        ...(params.endDate ? { endDate: params.endDate } : {}),
-      };
-      const legacy = await axios.post(`${API}/api/orders/filter`, body, {
-        headers,
-        validateStatus: () => true,
-      });
-      if (legacy.status >= 400) {
-        const lmsg = legacy.data?.message || `Failed (${legacy.status})`;
-        throw new Error(`Admin orders: ${msg} · Legacy filter: ${lmsg}`);
-      }
-      const list =
-        Array.isArray(legacy.data) ? legacy.data :
-        Array.isArray(legacy.data?.items) ? legacy.data.items :
-        Array.isArray(legacy.data?.orders) ? legacy.data.orders : [];
-      setOrders(list);
-      setOrderPage(0);
-      toast.info("Using legacy orders endpoint (filter)");
-      return;
-    }
+    if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
-    // success path
-    const list =
-      Array.isArray(res.data) ? res.data :
+    const list = Array.isArray(res.data) ? res.data :
       Array.isArray(res.data?.items) ? res.data.items :
       Array.isArray(res.data?.orders) ? res.data.orders : [];
+
     setOrders(list);
     setOrderPage(0);
   } catch (e) {
-    console.error("fetchOrders fatal:", e);
     toast.error(e?.message || "Orders fetch failed");
     setOrders([]);
   } finally {
     setOrdersLoading(false);
   }
 };
-
   /* ---------------- CRUD: Vendors/Users ---------------- */
   const handleAddVendor = async () => {
     if (!vendorForm.name || !vendorForm.location || !vendorForm.cuisine || !vendorForm.UserId) {
