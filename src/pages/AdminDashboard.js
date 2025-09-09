@@ -21,7 +21,8 @@ import axios from "axios";
 import { toast } from "react-toastify";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
-const DEFAULT_RATE = Number(process.env.REACT_APP_PLATFORM_RATE || 0.15); // fallback 15%
+// Fallback rate if an order/vendor doesn't provide one (e.g. 0.15 for 15%)
+const DEFAULT_RATE = Number(process.env.REACT_APP_PLATFORM_RATE || 0.15);
 
 /* ---------------- helpers ---------------- */
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
@@ -53,17 +54,14 @@ const STATUS_COLORS = {
   delivered: "success",
 };
 
-// Compute commission with graceful fallbacks
+// Calculate commission for an order with several fallbacks
 const commissionFor = (o) => {
-  // explicit amounts if backend already stored something
+  // explicit amount on order (if backend sends one)
   const explicit =
-    o?.commission ??
-    o?.commissionAmount ??
-    o?.platformCommission ??
-    o?.platformFee;
+    o?.commission ?? o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
   if (explicit != null) return Number(explicit) || 0;
 
-  // rate resolution: order > vendor > env default
+  // percentage rate: order -> vendor -> default
   const rate =
     (o?.commissionRate != null ? Number(o.commissionRate) : null) ??
     (o?.Vendor?.commissionRate != null ? Number(o.Vendor.commissionRate) : null) ??
@@ -73,6 +71,7 @@ const commissionFor = (o) => {
   return Math.max(0, total * (isFinite(rate) ? rate : DEFAULT_RATE));
 };
 
+// treat these as non-revenue for commission
 const isRevenueOrder = (o) =>
   !["rejected", "canceled", "cancelled"].includes(String(o?.status || "").toLowerCase());
 
@@ -116,7 +115,7 @@ export default function AdminDashboard() {
   const [vendorTotal, setVendorTotal] = useState(0);
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
-  // orders (admin view via /api/admin/orders, client-side paginate)
+  // orders (admin view via /api/orders/filter, client-side paginate)
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [orderStatusFilter, setOrderStatusFilter] = useState("all");
@@ -213,29 +212,31 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Orders (admin list via /api/admin/orders, with fallback) ---------------- */
+  /* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
   const fetchOrders = async () => {
     setOrdersLoading(true);
     try {
       const params = {};
       if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-      if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
+      if (orderVendorFilter !== "all") params.VendorId = orderVendorFilter;
       if (orderFrom) params.startDate = orderFrom;
-      if (orderTo)   params.endDate   = orderTo;
+      if (orderTo) params.endDate = orderTo;
 
-      const res = await axios.get(`${API}/api/admin/orders`, { headers, params, validateStatus: () => true });
-
+      const res = await axios.get(`${API}/api/orders/filter`, {
+        headers,
+        validateStatus: () => true,
+        params
+      });
       if (res.status === 401) return handle401();
-      if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
-
-      const list = Array.isArray(res.data) ? res.data :
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed");
+      const list =
+        Array.isArray(res.data) ? res.data :
         Array.isArray(res.data?.items) ? res.data.items :
         Array.isArray(res.data?.orders) ? res.data.orders : [];
-
       setOrders(list);
-      setOrderPage(0);
+      setOrderPage(0); // reset to first page on new query
     } catch (e) {
-      toast.error(e?.message || "Orders fetch failed");
+      toast.error(e?.message || "Failed to load orders");
       setOrders([]);
     } finally {
       setOrdersLoading(false);
@@ -474,19 +475,18 @@ export default function AdminDashboard() {
     });
   }, [orders, orderSearch]);
 
-  // Earnings summary (current visible list): only PAID & not canceled
-  const summary = useMemo(() => {
+  // Earnings summary (paid + non-canceled) based on visible orders
+  const earnings = useMemo(() => {
     const eligible = visibleOrders.filter(
       (o) => isRevenueOrder(o) && String(o?.paymentStatus || "").toLowerCase() === "paid"
     );
     const count = eligible.length;
     const gross = eligible.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
     const commission = eligible.reduce((s, o) => s + commissionFor(o), 0);
-    const payout = gross - commission;
-    return { count, gross, commission, payout };
+    return { count, gross, commission, payout: gross - commission };
   }, [visibleOrders]);
 
-  // Fallback: This month's commission computed locally from ALL orders (paid & non-canceled)
+  // If backend doesn't provide monthCommission, compute it locally
   const monthCommissionLocal = useMemo(() => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -594,6 +594,77 @@ export default function AdminDashboard() {
     setSelectedVendorIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  /* ---------------- bulk actions ---------------- */
+  const bulkArchiveUsers = async (archive) => {
+    if (selectedUserIds.length === 0) return;
+    const verb = archive ? "archive" : "restore";
+    try {
+      const ops = selectedUserIds.map((id) =>
+        axios.patch(`${API}/api/admin/users/${id}`, { isDeleted: archive }, { headers, validateStatus: () => true })
+      );
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Users ${verb}d: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchUsers({ page: userPage, size: userRowsPerPage });
+      setSelectedUserIds([]);
+      fetchStats();
+    } catch {
+      toast.error(`Failed to ${verb} users`);
+    }
+  };
+  const bulkDeleteUsers = async () => {
+    if (selectedUserIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedUserIds.length} user(s)? This cannot be undone.`)) return;
+    try {
+      const ops = selectedUserIds.map((id) => axios.delete(`${API}/api/admin/users/${id}`, { headers, validateStatus: () => true }));
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Users deleted: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchUsers({ page: userPage, size: userRowsPerPage });
+      setSelectedUserIds([]);
+      fetchStats();
+    } catch {
+      toast.error("Failed to delete users");
+    }
+  };
+
+  const bulkArchiveVendors = async (archive) => {
+    if (selectedVendorIds.length === 0) return;
+    const verb = archive ? "archive" : "restore";
+    try {
+      const ops = selectedVendorIds.map((id) =>
+        axios.put(`${API}/api/vendors/${id}`, { isDeleted: archive }, { headers, validateStatus: () => true })
+      );
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Vendors ${verb}d: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+      setSelectedVendorIds([]);
+      fetchStats();
+    } catch {
+      toast.error(`Failed to ${verb} vendors`);
+    }
+  };
+  const bulkDeleteVendors = async () => {
+    if (selectedVendorIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedVendorIds.length} vendor(s)? This cannot be undone.`)) return;
+    try {
+      const ops = selectedVendorIds.map((id) => axios.delete(`${API}/api/vendors/${id}`, { headers, validateStatus: () => true }));
+      const results = await Promise.allSettled(ops);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      toast.success(`Vendors deleted: ${ok}${fail ? ` · failed: ${fail}` : ""}`);
+      fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
+      setSelectedVendorIds([]);
+      fetchStats();
+    } catch {
+      toast.error("Failed to delete vendors");
+    }
+  };
+
   /* ---------------- invoice open ---------------- */
   const openInvoice = async (orderId) => {
     try {
@@ -665,15 +736,13 @@ export default function AdminDashboard() {
             </Paper>
           </Grid>
 
-          {/* NEW: Total Commission (lifetime; uses API if provided) */}
+          {/* NEW: Commission earned tiles */}
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: "center" }}>
               <Typography variant="body2" color="text.secondary">Total Commission</Typography>
               <Typography variant="h5">{fmtMoney(stats?.totalCommission || 0)}</Typography>
             </Paper>
           </Grid>
-
-          {/* NEW: Commission This Month (API or local fallback) */}
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: "center" }}>
               <Typography variant="body2" color="text.secondary">Commission (This Month)</Typography>
@@ -1098,7 +1167,7 @@ export default function AdminDashboard() {
           </Paper>
         </Grid>
 
-        {/* ORDERS (ADMIN) */}
+        {/* ORDERS */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{ p: 2, border: (t) => `1px solid ${t.palette.divider}` }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
@@ -1143,27 +1212,27 @@ export default function AdminDashboard() {
               </Stack>
             </Stack>
 
-            {/* NEW: Earnings summary for current visible orders */}
-            <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+            {/* NEW: Earnings summary (uses current filtered view) */}
+            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 Earnings (Paid & non-canceled in current view)
               </Typography>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} divider={<Divider flexItem orientation="vertical" />}>
                 <Box>
                   <Typography variant="body2" color="text.secondary">Orders</Typography>
-                  <Typography variant="h6">{summary.count}</Typography>
+                  <Typography variant="h6">{earnings.count}</Typography>
                 </Box>
                 <Box>
                   <Typography variant="body2" color="text.secondary">Gross Sales</Typography>
-                  <Typography variant="h6">{fmtMoney(summary.gross)}</Typography>
+                  <Typography variant="h6">{fmtMoney(earnings.gross)}</Typography>
                 </Box>
                 <Box>
                   <Typography variant="body2" color="text.secondary">Commission</Typography>
-                  <Typography variant="h6">{fmtMoney(summary.commission)}</Typography>
+                  <Typography variant="h6">{fmtMoney(earnings.commission)}</Typography>
                 </Box>
                 <Box>
                   <Typography variant="body2" color="text.secondary">Vendor Payout</Typography>
-                  <Typography variant="h6">{fmtMoney(summary.payout)}</Typography>
+                  <Typography variant="h6">{fmtMoney(earnings.payout)}</Typography>
                 </Box>
                 <Box sx={{ ml: "auto" }}>
                   <Typography variant="caption" color="text.secondary">
@@ -1181,7 +1250,6 @@ export default function AdminDashboard() {
                     <TableCell>User</TableCell>
                     <TableCell>Vendor</TableCell>
                     <TableCell>Total</TableCell>
-                    {/* NEW: Commission column */}
                     <TableCell>Commission</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Payment</TableCell>
@@ -1202,15 +1270,16 @@ export default function AdminDashboard() {
                         payStatus === "paid" ? "success" :
                         payStatus === "processing" ? "info" :
                         payStatus === "failed" ? "error" : "default";
-                      const commission = commissionFor(o);
                       return (
                         <TableRow key={o.id} hover>
                           <TableCell>{o.id}</TableCell>
                           <TableCell>{o?.User?.name || "-"}</TableCell>
                           <TableCell>{o?.Vendor?.name || "-"}</TableCell>
                           <TableCell>{fmtMoney(o.totalAmount)}</TableCell>
-                          <TableCell>{fmtMoney(commission)}</TableCell>
-                          <TableCell><Chip size="small" label={o.status} color={STATUS_COLORS[o.status] || "default"} /></TableCell>
+                          <TableCell>{fmtMoney(commissionFor(o))}</TableCell>
+                          <TableCell>
+                            <Chip size="small" label={o.status} color={STATUS_COLORS[o.status] || "default"} />
+                          </TableCell>
                           <TableCell>
                             <Stack direction="row" spacing={1} alignItems="center">
                               <Chip size="small" label={payMethod} variant="outlined" />
