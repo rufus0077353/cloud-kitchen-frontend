@@ -213,41 +213,59 @@ export default function AdminDashboard() {
     }
   };
 
-/* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
+
+/* ---------------- API: Orders (robust — tries /api/orders/filter then falls back to /api/admin/orders) ---------------- */
 const fetchOrders = async () => {
   setOrdersLoading(true);
-  try {
-    const body = {};
-    if (orderStatusFilter !== "all") body.status = orderStatusFilter;
-    if (orderVendorFilter !== "all") body.VendorId = String(orderVendorFilter);
-    if (orderFrom) body.startDate = orderFrom;
-    if (orderTo) body.endDate = orderTo;
 
-    // 👇 must be POST because your backend filter is a POST route
-    const res = await axios.post(`${API}/api/orders/filter`, body, {
+  // Build one set of filters we can reuse
+  const params = {};
+  if (orderStatusFilter !== "all") params.status = orderStatusFilter;
+  if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
+  if (orderFrom) params.startDate = orderFrom;
+  if (orderTo) params.endDate = orderTo;
+
+  const parseList = (data) =>
+    Array.isArray(data) ? data :
+    Array.isArray(data?.items) ? data.items :
+    Array.isArray(data?.orders) ? data.orders : [];
+
+  try {
+    // 1) Try the new endpoint first (if it exists in your backend)
+    const res = await axios.post(`${API}/api/orders/filter`, params, {
       headers,
       validateStatus: () => true,
     });
 
-    console.log("Orders filter response:", res.status, res.data);
-
+    // If this endpoint doesn't exist in this env, fall back
+    if (res.status === 404) {
+      throw Object.assign(new Error("filter endpoint not found"), { code: "NO_FILTER_ROUTE" });
+    }
     if (res.status === 401) return handle401();
     if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
-    const list = Array.isArray(res.data)
-      ? res.data
-      : Array.isArray(res.data?.items)
-      ? res.data.items
-      : Array.isArray(res.data?.orders)
-      ? res.data.orders
-      : [];
-
+    const list = parseList(res.data);
     setOrders(list);
-    setOrderPage(0); // reset to first page on new query
-  } catch (e) {
-    console.error("Orders fetch error:", e);
-    toast.error(e?.message || "Failed to load orders");
-    setOrders([]);
+    setOrderPage(0);
+  } catch (err) {
+    // 2) Fallback to the classic admin route (GET with query params)
+    try {
+      const res2 = await axios.get(`${API}/api/admin/orders`, {
+        headers,
+        params,
+        validateStatus: () => true,
+      });
+      if (res2.status === 401) return handle401();
+      if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
+
+      const list2 = parseList(res2.data);
+      setOrders(list2);
+      setOrderPage(0);
+    } catch (e2) {
+      console.error("Orders fetch failed (both routes):", err, e2);
+      toast.error(e2?.message || err?.message || "Failed to load orders");
+      setOrders([]);
+    }
   } finally {
     setOrdersLoading(false);
   }
