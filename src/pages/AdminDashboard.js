@@ -56,7 +56,7 @@ const STATUS_COLORS = {
 
 // Calculate commission for an order with several fallbacks
 const commissionFor = (o) => {
-  if(!o) return 0;  
+  if(!o) return 0;
   // explicit amount on order (if backend sends one)
   const explicit =
     o?.commission ?? o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
@@ -214,33 +214,66 @@ export default function AdminDashboard() {
   };
 
   /* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
-  const fetchOrders = async () => {
-    setOrdersLoading(true);
-    try {
-      const params = {};
-      if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-      if (orderVendorFilter !== "all") params.VendorId = orderVendorFilter;
-      if (orderFrom) params.startDate = orderFrom;
-      if (orderTo) params.endDate = orderTo;
+  
+/* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */ 
+ const fetchOrders = async () => {
+  setOrdersLoading(true);
+   try {
+     const params = {};
+     if (orderStatusFilter !== "all") params.status = orderStatusFilter;
+     if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
+     if (orderFrom) params.startDate = orderFrom;
+     if (orderTo) params.endDate = orderTo;
 
-      const res = await axios.get(`${API}/api/orders/filter`, {
+     // Try the filter endpoint first
+     const res = await axios.get(`${API}/api/orders/filter`, {
+      headers,
+      validateStatus: () => true,
+      params
+     });
+
+     console.log("Orders API response:", res.status, res.data); // 👈 debug
+
+     // If filter endpoint isn’t there, fall back to admin list
+     if (res.status === 404) {
+      const res2 = await axios.get(`${API}/api/admin/orders`, {
         headers,
         validateStatus: () => true,
         params
       });
-      if (res.status === 401) return handle401();
-      if (res.status >= 400) throw new Error(res.data?.message || "Failed");
-      const list =
-        Array.isArray(res.data) ? res.data :
-        Array.isArray(res.data?.items) ? res.data.items :
-        Array.isArray(res.data?.orders) ? res.data.orders : [];
-      setOrders(list);
-      setOrderPage(0); // reset to first page on new query
-    } catch (e) {
-      toast.error(e?.message || "Failed to load orders");
-      setOrders([]);
+      if (res2.status === 401) return handle401();
+      if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
+      const list2 = Array.isArray(res2.data)
+        ? res2.data
+        : Array.isArray(res2.data?.items)
+        ? res2.data.items
+        : Array.isArray(res2.data?.orders)
+        ? res2.data.orders
+        : [];
+      setOrders(list2);
+      setOrderPage(0);
+      return;
+     }
+
+     if (res.status === 401) return handle401();
+     if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
+
+     const list = Array.isArray(res.data)
+      ? res.data
+      : Array.isArray(res.data?.items)
+      ? res.data.items
+      : Array.isArray(res.data?.orders)
+      ? res.data.orders
+      : [];
+
+     setOrders(list);
+     setOrderPage(0); // reset to first page on new query
+    }  catch (e) {
+     console.error("Orders fetch error:", e);
+    toast.error(e?.message || "Failed to load orders");
+     setOrders([]);
     } finally {
-      setOrdersLoading(false);
+     setOrdersLoading(false);
     }
   };
 
@@ -1260,43 +1293,54 @@ export default function AdminDashboard() {
                 </TableHead>
                 <TableBody>
                   {ordersLoading ? (
-                    <TableRow><TableCell colSpan={9} align="center"><CircularProgress size={20} /></TableCell></TableRow>
-                  ) : pagedOrders.length === 0 ? (
-                    <TableRow><TableCell colSpan={9} align="center">No orders found</TableCell></TableRow>
-                  ) : (
-                    pagedOrders.map((o) => {
-                      const payMethod = o.paymentMethod === "mock_online" ? "Online" : "COD";
-                      const payStatus = o.paymentStatus || "unpaid";
-                      const payColor =
-                        payStatus === "paid" ? "success" :
-                        payStatus === "processing" ? "info" :
-                        payStatus === "failed" ? "error" : "default";
-                      return (
-                        <TableRow key={o.id} hover>
-                          <TableCell>{o.id}</TableCell>
-                          <TableCell>{o?.User?.name || "-"}</TableCell>
-                          <TableCell>{o?.Vendor?.name || "-"}</TableCell>
-                          <TableCell>{fmtMoney(o.totalAmount)}</TableCell>
-                          <TableCell>{fmtMoney(commissionFor(o))}</TableCell>
-                          <TableCell>
-                            <Chip size="small" label={o.status} color={STATUS_COLORS[o.status] || "default"} />
-                          </TableCell>
-                          <TableCell>
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Chip size="small" label={payMethod} variant="outlined" />
-                              <Chip size="small" label={payStatus} color={payColor} />
-                            </Stack>
-                          </TableCell>
-                          <TableCell>{o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</TableCell>
-                          <TableCell align="right">
-                            <Tooltip title="Invoice">
-                              <span>
-                                <IconButton onClick={() => openInvoice(o.id)}><ReceiptLongIcon /></IconButton>
-                              </span>
-                            </Tooltip>
-                          </TableCell>
-                        </TableRow>
-                      );
+                            <TableRow>
+                              <TableCell colSpan={8} align="center">
+                               <CircularProgress size={20} />
+                              </TableCell>
+                            </TableRow>
+                            ) : !Array.isArray(pagedOrders) || pagedOrders.length === 0 ? (
+                           <TableRow>
+                              <TableCell colSpan={8} align="center">No orders found</TableCell>
+                           </TableRow>
+                           ) : (
+                           (pagedOrders || []).map((o, idx) => {
+                           const id = o?.id ?? o?._id ?? idx;
+                           const total = Number(o?.totalAmount ?? 0);
+                           const payMethod =
+                           (o?.paymentMethod === "mock_online" || o?.paymentMethod === "online")
+                           ? "Online"
+                           : "COD";
+                           const payStatus = (o?.paymentStatus || "unpaid").toLowerCase();
+                           const payColor =
+                            payStatus === "paid" ? "success" :
+                            payStatus === "processing" ? "info" :
+                           payStatus === "failed" ? "error" : "default";
+
+                           return (
+                           <TableRow key={id} hover>
+                           <TableCell>{id}</TableCell>
+                           <TableCell>{o?.User?.name || "-"}</TableCell>
+                           <TableCell>{o?.Vendor?.name || "-"}</TableCell>
+                           <TableCell>{fmtMoney(total)}</TableCell>
+                           <TableCell>
+                            <Chip size="small" label={o?.status || "-"} color={STATUS_COLORS[o?.status] || "default"} />
+                           </TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                           <Chip size="small" label={payMethod} variant="outlined" />
+                           <Chip size="small" label={payStatus} color={payColor} />
+                          </Stack>
+                        </TableCell>
+                        <TableCell>{o?.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</TableCell>
+                        <TableCell align="right">
+                        <Tooltip title="Invoice">
+                         <span>
+                          <IconButton onClick={() => openInvoice(id)}><ReceiptLongIcon /></IconButton>
+                         </span>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                    );
                     })
                   )}
                 </TableBody>
