@@ -56,6 +56,7 @@ const STATUS_COLORS = {
 
 // Calculate commission for an order with several fallbacks
 const commissionFor = (o) => {
+  if(!o) return 0;  
   // explicit amount on order (if backend sends one)
   const explicit =
     o?.commission ?? o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
