@@ -213,34 +213,29 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Orders (admin list via /api/admin/orders) ---------------- */
+  /* ---------------- API: Orders (admin list via /api/admin/orders, with fallback) ---------------- */
   const fetchOrders = async () => {
     setOrdersLoading(true);
     try {
       const params = {};
       if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-      if (orderVendorFilter !== "all") params.VendorId = orderVendorFilter; // NOTE: uppercase V matches backend
+      if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
       if (orderFrom) params.startDate = orderFrom;
-      if (orderTo) params.endDate = orderTo;
+      if (orderTo)   params.endDate   = orderTo;
 
-      const res = await axios.get(`${API}/api/admin/orders`, {
-        headers,
-        validateStatus: () => true,
-        params
-      });
+      const res = await axios.get(`${API}/api/admin/orders`, { headers, params, validateStatus: () => true });
 
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
-      const list =
-        Array.isArray(res.data) ? res.data :
+      const list = Array.isArray(res.data) ? res.data :
         Array.isArray(res.data?.items) ? res.data.items :
         Array.isArray(res.data?.orders) ? res.data.orders : [];
 
       setOrders(list);
-      setOrderPage(0); // reset to first page on new query
+      setOrderPage(0);
     } catch (e) {
-      toast.error(e?.message || "Failed to load orders");
+      toast.error(e?.message || "Orders fetch failed");
       setOrders([]);
     } finally {
       setOrdersLoading(false);
@@ -491,6 +486,18 @@ export default function AdminDashboard() {
     return { count, gross, commission, payout };
   }, [visibleOrders]);
 
+  // Fallback: This month's commission computed locally from ALL orders (paid & non-canceled)
+  const monthCommissionLocal = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const eligible = (orders || []).filter((o) => {
+      const created = o?.createdAt ? new Date(o.createdAt).getTime() : 0;
+      const paid = String(o?.paymentStatus || "").toLowerCase() === "paid";
+      return isRevenueOrder(o) && paid && created >= start;
+    });
+    return eligible.reduce((s, o) => s + commissionFor(o), 0);
+  }, [orders]);
+
   /* ---------------- CSV exports ---------------- */
   const exportUsersCsv = () => {
     const headers = ["ID", "Name", "Email", "Role", "Deleted", "Created At"];
@@ -655,6 +662,24 @@ export default function AdminDashboard() {
             <Paper sx={{ p: 2, textAlign: "center" }}>
               <Typography variant="body2" color="text.secondary">Total Revenue</Typography>
               <Typography variant="h5">{fmtMoney(stats?.totalRevenue)}</Typography>
+            </Paper>
+          </Grid>
+
+          {/* NEW: Total Commission (lifetime; uses API if provided) */}
+          <Grid item xs={12} sm={6} md={3}>
+            <Paper sx={{ p: 2, textAlign: "center" }}>
+              <Typography variant="body2" color="text.secondary">Total Commission</Typography>
+              <Typography variant="h5">{fmtMoney(stats?.totalCommission || 0)}</Typography>
+            </Paper>
+          </Grid>
+
+          {/* NEW: Commission This Month (API or local fallback) */}
+          <Grid item xs={12} sm={6} md={3}>
+            <Paper sx={{ p: 2, textAlign: "center" }}>
+              <Typography variant="body2" color="text.secondary">Commission (This Month)</Typography>
+              <Typography variant="h5">
+                {fmtMoney(stats?.monthCommission != null ? stats.monthCommission : monthCommissionLocal)}
+              </Typography>
             </Paper>
           </Grid>
         </Grid>
@@ -1118,7 +1143,7 @@ export default function AdminDashboard() {
               </Stack>
             </Stack>
 
-            {/* Earnings summary for current visible orders */}
+            {/* NEW: Earnings summary for current visible orders */}
             <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 Earnings (Paid & non-canceled in current view)
@@ -1156,6 +1181,7 @@ export default function AdminDashboard() {
                     <TableCell>User</TableCell>
                     <TableCell>Vendor</TableCell>
                     <TableCell>Total</TableCell>
+                    {/* NEW: Commission column */}
                     <TableCell>Commission</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Payment</TableCell>
