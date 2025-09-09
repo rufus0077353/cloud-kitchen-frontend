@@ -213,52 +213,28 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
-  
-/* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */ 
- const fetchOrders = async () => {
+/* ---------------- API: Orders (admin list via /api/orders/filter) ---------------- */
+const fetchOrders = async () => {
   setOrdersLoading(true);
-   try {
-     const params = {};
-     if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-     if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
-     if (orderFrom) params.startDate = orderFrom;
-     if (orderTo) params.endDate = orderTo;
+  try {
+    const body = {};
+    if (orderStatusFilter !== "all") body.status = orderStatusFilter;
+    if (orderVendorFilter !== "all") body.VendorId = String(orderVendorFilter);
+    if (orderFrom) body.startDate = orderFrom;
+    if (orderTo) body.endDate = orderTo;
 
-     // Try the filter endpoint first
-     const res = await axios.get(`${API}/api/orders/filter`, {
+    // 👇 must be POST because your backend filter is a POST route
+    const res = await axios.post(`${API}/api/orders/filter`, body, {
       headers,
       validateStatus: () => true,
-      params
-     });
+    });
 
-     console.log("Orders API response:", res.status, res.data); // 👈 debug
+    console.log("Orders filter response:", res.status, res.data);
 
-     // If filter endpoint isn’t there, fall back to admin list
-     if (res.status === 404) {
-      const res2 = await axios.get(`${API}/api/admin/orders`, {
-        headers,
-        validateStatus: () => true,
-        params
-      });
-      if (res2.status === 401) return handle401();
-      if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
-      const list2 = Array.isArray(res2.data)
-        ? res2.data
-        : Array.isArray(res2.data?.items)
-        ? res2.data.items
-        : Array.isArray(res2.data?.orders)
-        ? res2.data.orders
-        : [];
-      setOrders(list2);
-      setOrderPage(0);
-      return;
-     }
+    if (res.status === 401) return handle401();
+    if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
-     if (res.status === 401) return handle401();
-     if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
-
-     const list = Array.isArray(res.data)
+    const list = Array.isArray(res.data)
       ? res.data
       : Array.isArray(res.data?.items)
       ? res.data.items
@@ -266,16 +242,16 @@ export default function AdminDashboard() {
       ? res.data.orders
       : [];
 
-     setOrders(list);
-     setOrderPage(0); // reset to first page on new query
-    }  catch (e) {
-     console.error("Orders fetch error:", e);
+    setOrders(list);
+    setOrderPage(0); // reset to first page on new query
+  } catch (e) {
+    console.error("Orders fetch error:", e);
     toast.error(e?.message || "Failed to load orders");
-     setOrders([]);
-    } finally {
-     setOrdersLoading(false);
-    }
-  };
+    setOrders([]);
+  } finally {
+    setOrdersLoading(false);
+  }
+};
 
   /* ---------------- CRUD: Vendors/Users ---------------- */
   const handleAddVendor = async () => {
