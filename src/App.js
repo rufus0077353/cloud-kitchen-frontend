@@ -42,6 +42,10 @@ import ProtectedRoute from "./components/ProtectedRoute";
 // NEW
 import { NotificationsProvider } from "./context/NotificationsContext";
 import TrackOrder from "./pages/TrackOrder";
+import Contact from "./pages/static/Contact";
+import Terms from "./pages/static/Terms";
+import Privacy from "./pages/static/Privacy";
+import Refund from "./pages/static/Refund";
 
 function App() {
   return (
@@ -54,6 +58,10 @@ function App() {
             <ConnectionBar />
 
             <Routes>
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/refund" element={<Refund />} />
               {/* Auth */}
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<Login />} />
