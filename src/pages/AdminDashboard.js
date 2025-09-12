@@ -54,9 +54,21 @@ const STATUS_COLORS = {
   delivered: "success",
 };
 
+// % helpers for vendor commission UI
+const toPctStr = (decimalRate) => {
+  if (decimalRate == null || Number.isNaN(Number(decimalRate))) return "";
+  return (Number(decimalRate) * 100).toFixed(2); // show 2dp in the input
+};
+const parsePctInputToDecimal = (val) => {
+  if (val == null || val === "") return null;
+  const num = Number(val);
+  if (!isFinite(num)) return null;
+  return num / 100; // convert % → decimal
+};
+
 // Calculate commission for an order with several fallbacks
 const commissionFor = (o) => {
-  if(!o) return 0;
+  if (!o) return 0;
   // explicit amount on order (if backend sends one)
   const explicit =
     o?.commission ?? o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
@@ -109,7 +121,8 @@ export default function AdminDashboard() {
     name: "",
     location: "",
     cuisine: "",
-    UserId: ""
+    UserId: "",
+    commissionRatePct: "" // UI as percent; sent as decimal to backend
   });
   const [vendorPage, setVendorPage] = useState(0);
   const [vendorRowsPerPage, setVendorRowsPerPage] = useState(20);
@@ -213,63 +226,57 @@ export default function AdminDashboard() {
     }
   };
 
+  /* ---------------- API: Orders (robust fetch with fallback) ---------------- */
+  const fetchOrders = async () => {
+    setOrdersLoading(true);
 
-/* ---------------- API: Orders (robust — tries /api/orders/filter then falls back to /api/admin/orders) ---------------- */
-const fetchOrders = async () => {
-  setOrdersLoading(true);
+    const params = {};
+    if (orderStatusFilter !== "all") params.status = orderStatusFilter;
+    if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
+    if (orderFrom) params.startDate = orderFrom;
+    if (orderTo) params.endDate = orderTo;
 
-  // Build one set of filters we can reuse
-  const params = {};
-  if (orderStatusFilter !== "all") params.status = orderStatusFilter;
-  if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
-  if (orderFrom) params.startDate = orderFrom;
-  if (orderTo) params.endDate = orderTo;
+    const parseList = (data) =>
+      Array.isArray(data) ? data :
+      Array.isArray(data?.items) ? data.items :
+      Array.isArray(data?.orders) ? data.orders : [];
 
-  const parseList = (data) =>
-    Array.isArray(data) ? data :
-    Array.isArray(data?.items) ? data.items :
-    Array.isArray(data?.orders) ? data.orders : [];
-
-  try {
-    // 1) Try the new endpoint first (if it exists in your backend)
-    const res = await axios.post(`${API}/api/orders/filter`, params, {
-      headers,
-      validateStatus: () => true,
-    });
-
-    // If this endpoint doesn't exist in this env, fall back
-    if (res.status === 404) {
-      throw Object.assign(new Error("filter endpoint not found"), { code: "NO_FILTER_ROUTE" });
-    }
-    if (res.status === 401) return handle401();
-    if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
-
-    const list = parseList(res.data);
-    setOrders(list);
-    setOrderPage(0);
-  } catch (err) {
-    // 2) Fallback to the classic admin route (GET with query params)
     try {
-      const res2 = await axios.get(`${API}/api/admin/orders`, {
+      // Try new endpoint first
+      const res = await axios.post(`${API}/api/orders/filter`, params, {
         headers,
-        params,
         validateStatus: () => true,
       });
-      if (res2.status === 401) return handle401();
-      if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
+      if (res.status === 404) throw Object.assign(new Error("filter endpoint not found"), { code: "NO_FILTER_ROUTE" });
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
-      const list2 = parseList(res2.data);
-      setOrders(list2);
+      const list = parseList(res.data);
+      setOrders(list);
       setOrderPage(0);
-    } catch (e2) {
-      console.error("Orders fetch failed (both routes):", err, e2);
-      toast.error(e2?.message || err?.message || "Failed to load orders");
-      setOrders([]);
+    } catch (err) {
+      // Fallback to admin route
+      try {
+        const res2 = await axios.get(`${API}/api/admin/orders`, {
+          headers,
+          params,
+          validateStatus: () => true,
+        });
+        if (res2.status === 401) return handle401();
+        if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
+
+        const list2 = parseList(res2.data);
+        setOrders(list2);
+        setOrderPage(0);
+      } catch (e2) {
+        console.error("Orders fetch failed (both routes):", err, e2);
+        toast.error(e2?.message || err?.message || "Failed to load orders");
+        setOrders([]);
+      }
+    } finally {
+      setOrdersLoading(false);
     }
-  } finally {
-    setOrdersLoading(false);
-  }
-};
+  };
 
   /* ---------------- CRUD: Vendors/Users ---------------- */
   const handleAddVendor = async () => {
@@ -279,11 +286,21 @@ const fetchOrders = async () => {
     }
     setAdding(true);
     try {
-      const res = await axios.post(`${API}/api/vendors`, vendorForm, { headers, validateStatus: () => true });
+      const body = {
+        name: vendorForm.name,
+        location: vendorForm.location,
+        cuisine: vendorForm.cuisine,
+        UserId: vendorForm.UserId,
+      };
+      // Optional: commission % → decimal
+      const dec = parsePctInputToDecimal(vendorForm.commissionRatePct);
+      if (dec != null) body.commissionRate = dec;
+
+      const res = await axios.post(`${API}/api/vendors`, body, { headers, validateStatus: () => true });
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error(res.data?.message || "Failed to create vendor");
       toast.success("Vendor created");
-      setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
+      setVendorForm({ name: "", location: "", cuisine: "", UserId: "", commissionRatePct: "" });
       fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
       fetchStats();
     } catch (err) {
@@ -407,7 +424,9 @@ const fetchOrders = async () => {
       name: v.name || "",
       location: v.location || "",
       cuisine: v.cuisine || "",
-      UserId: v.UserId || ""
+      UserId: v.UserId || "",
+      // UI stores % string; we display vendor.commissionRate (decimal) as %
+      commissionRatePct: toPctStr(v.commissionRate ?? "")
     });
   };
 
@@ -417,7 +436,7 @@ const fetchOrders = async () => {
   };
 
   const saveVendorRow = async () => {
-    const { id, name, location, cuisine, UserId } = editVendorForm;
+    const { id, name, location, cuisine, UserId, commissionRatePct } = editVendorForm;
     if (!id) return;
     if (!name || !location || !cuisine || !UserId) {
       toast.error("Please fill all fields");
@@ -425,14 +444,31 @@ const fetchOrders = async () => {
     }
     setSavingVendorId(id);
     try {
-      const res = await axios.put(`${API}/api/vendors/${id}`, { name, location, cuisine, UserId }, { headers, validateStatus: () => true });
+      const body = { name, location, cuisine, UserId };
+      // Optional: commission % → decimal
+      const dec = parsePctInputToDecimal(commissionRatePct);
+      if (dec != null) body.commissionRate = dec;
+
+      const res = await axios.put(`${API}/api/vendors/${id}`, body, { headers, validateStatus: () => true });
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error(res.data?.message || "Failed to update vendor");
       toast.success("Vendor updated");
       setVendors((prev) =>
-        prev.map((v) => (v.id === id ? { ...v, name, location, cuisine, UserId } : v))
+        prev.map((v) =>
+          v.id === id
+            ? {
+                ...v,
+                name,
+                location,
+                cuisine,
+                UserId,
+                commissionRate: dec != null ? dec : v.commissionRate
+              }
+            : v
+        )
       );
       cancelEditVendor();
+      fetchStats();
     } catch (e) {
       toast.error(e?.message || "Failed to update vendor");
     } finally {
@@ -445,7 +481,6 @@ const fetchOrders = async () => {
     fetchStats();
     fetchUsers();
     fetchVendors();
-    // Also hydrate initial orders list
     fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -536,7 +571,7 @@ const fetchOrders = async () => {
   };
 
   const exportVendorsCsv = () => {
-    const headers = ["ID", "Name", "Location", "Cuisine", "UserId", "Open", "Deleted", "Created At"];
+    const headers = ["ID", "Name", "Location", "Cuisine", "UserId", "Open", "Deleted", "Commission %", "Created At"];
     const rows = filteredVendors.map((v) =>
       [
         v.id,
@@ -546,6 +581,7 @@ const fetchOrders = async () => {
         v.UserId,
         v.isOpen ? "Yes" : "No",
         v.isDeleted ? "Yes" : "No",
+        v.commissionRate != null ? (Number(v.commissionRate) * 100).toFixed(2) : "", // percent
         v.createdAt || ""
       ].join(",")
     );
@@ -992,11 +1028,25 @@ const fetchOrders = async () => {
                       </option>
                     ))}
                 </TextField>
+                {/* NEW: Commission % */}
+                <TextField
+                  size="small"
+                  label="Commission %"
+                  type="number"
+                  inputProps={{ step: "0.01", min: "0", max: "100" }}
+                  value={vendorForm.commissionRatePct}
+                  placeholder={(DEFAULT_RATE * 100).toFixed(2)}
+                  onChange={(e) => setVendorForm({ ...vendorForm, commissionRatePct: e.target.value })}
+                  sx={{ width: 140 }}
+                />
 
                 <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddVendor} disabled={adding}>
                   {adding ? "Adding…" : "Add Vendor"}
                 </Button>
               </Stack>
+              <Typography variant="caption" color="text.secondary">
+                Leave Commission % empty to use default {Math.round(DEFAULT_RATE * 100)}%.
+              </Typography>
             </Paper>
 
             {/* Vendors bulk actions */}
@@ -1026,20 +1076,23 @@ const fetchOrders = async () => {
                     <TableCell>UserId</TableCell>
                     <TableCell>Open</TableCell>
                     <TableCell>Status</TableCell>
+                    {/* NEW: Commission column */}
+                    <TableCell>Commission %</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {vendorsLoading ? (
-                    <TableRow><TableCell colSpan={9} align="center"><CircularProgress size={20} /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} align="center"><CircularProgress size={20} /></TableCell></TableRow>
                   ) : filteredVendors.length === 0 ? (
-                    <TableRow><TableCell colSpan={9} align="center">No vendors found</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} align="center">No vendors found</TableCell></TableRow>
                   ) : (
                     filteredVendors.map((v) => {
                       const isEditing = editingVendorId === v.id;
                       const savingRow = savingVendorId === v.id;
                       const archived = Boolean(v.isDeleted);
                       const checked = selectedVendorIds.includes(v.id);
+                      const displayPct = v.commissionRate != null ? (Number(v.commissionRate) * 100).toFixed(2) : "";
                       return (
                         <TableRow key={v.id} hover>
                           <TableCell padding="checkbox">
@@ -1123,10 +1176,22 @@ const fetchOrders = async () => {
                             </Stack>
                           </TableCell>
                           <TableCell>
-                            {archived ? (
-                              <Chip size="small" label="archived" color="default" />
+                            {isEditing ? (
+                              <TextField
+                                size="small"
+                                label="Commission %"
+                                type="number"
+                                inputProps={{ step: "0.01", min: "0", max: "100" }}
+                                value={editVendorForm.commissionRatePct ?? ""}
+                                onChange={(e) =>
+                                  setEditVendorForm((prev) => ({ ...prev, commissionRatePct: e.target.value }))
+                                }
+                                sx={{ width: 140 }}
+                              />
                             ) : (
-                              <Chip size="small" label="active" color="success" variant="outlined" />
+                              displayPct
+                                ? `${displayPct}%`
+                                : <Typography variant="body2" color="text.secondary">Default {Math.round(DEFAULT_RATE * 100)}%</Typography>
                             )}
                           </TableCell>
                           <TableCell align="right">
@@ -1240,7 +1305,7 @@ const fetchOrders = async () => {
               </Stack>
             </Stack>
 
-            {/* NEW: Earnings summary (uses current filtered view) */}
+            {/* Earnings summary (uses current filtered view) */}
             <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 Earnings (Paid & non-canceled in current view)
@@ -1287,54 +1352,56 @@ const fetchOrders = async () => {
                 </TableHead>
                 <TableBody>
                   {ordersLoading ? (
-                            <TableRow>
-                              <TableCell colSpan={8} align="center">
-                               <CircularProgress size={20} />
-                              </TableCell>
-                            </TableRow>
-                            ) : !Array.isArray(pagedOrders) || pagedOrders.length === 0 ? (
-                           <TableRow>
-                              <TableCell colSpan={8} align="center">No orders found</TableCell>
-                           </TableRow>
-                           ) : (
-                           (pagedOrders || []).map((o, idx) => {
-                           const id = o?.id ?? o?._id ?? idx;
-                           const total = Number(o?.totalAmount ?? 0);
-                           const payMethod =
-                           (o?.paymentMethod === "mock_online" || o?.paymentMethod === "online")
-                           ? "Online"
-                           : "COD";
-                           const payStatus = (o?.paymentStatus || "unpaid").toLowerCase();
-                           const payColor =
-                            payStatus === "paid" ? "success" :
-                            payStatus === "processing" ? "info" :
-                           payStatus === "failed" ? "error" : "default";
-
-                           return (
-                           <TableRow key={id} hover>
-                           <TableCell>{id}</TableCell>
-                           <TableCell>{o?.User?.name || "-"}</TableCell>
-                           <TableCell>{o?.Vendor?.name || "-"}</TableCell>
-                           <TableCell>{fmtMoney(total)}</TableCell>
-                           <TableCell>
-                            <Chip size="small" label={o?.status || "-"} color={STATUS_COLORS[o?.status] || "default"} />
-                           </TableCell>
-                        <TableCell>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                           <Chip size="small" label={payMethod} variant="outlined" />
-                           <Chip size="small" label={payStatus} color={payColor} />
-                          </Stack>
-                        </TableCell>
-                        <TableCell>{o?.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</TableCell>
-                        <TableCell align="right">
-                        <Tooltip title="Invoice">
-                         <span>
-                          <IconButton onClick={() => openInvoice(id)}><ReceiptLongIcon /></IconButton>
-                         </span>
-                        </Tooltip>
+                    <TableRow>
+                      <TableCell colSpan={9} align="center">
+                        <CircularProgress size={20} />
                       </TableCell>
                     </TableRow>
-                    );
+                  ) : !Array.isArray(pagedOrders) || pagedOrders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} align="center">No orders found</TableCell>
+                    </TableRow>
+                  ) : (
+                    (pagedOrders || []).map((o, idx) => {
+                      const id = o?.id ?? o?._id ?? idx;
+                      const total = Number(o?.totalAmount ?? 0);
+                      const commission = commissionFor(o);
+                      const payMethod =
+                        (o?.paymentMethod === "mock_online" || o?.paymentMethod === "online")
+                          ? "Online"
+                          : "COD";
+                      const payStatus = (o?.paymentStatus || "unpaid").toLowerCase();
+                      const payColor =
+                        payStatus === "paid" ? "success" :
+                        payStatus === "processing" ? "info" :
+                        payStatus === "failed" ? "error" : "default";
+
+                      return (
+                        <TableRow key={id} hover>
+                          <TableCell>{id}</TableCell>
+                          <TableCell>{o?.User?.name || "-"}</TableCell>
+                          <TableCell>{o?.Vendor?.name || "-"}</TableCell>
+                          <TableCell>{fmtMoney(total)}</TableCell>
+                          <TableCell>{fmtMoney(commission)}</TableCell>
+                          <TableCell>
+                            <Chip size="small" label={o?.status || "-"} color={STATUS_COLORS[o?.status] || "default"} />
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Chip size="small" label={payMethod} variant="outlined" />
+                              <Chip size="small" label={payStatus} color={payColor} />
+                            </Stack>
+                          </TableCell>
+                          <TableCell>{o?.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</TableCell>
+                          <TableCell align="right">
+                            <Tooltip title="Invoice">
+                              <span>
+                                <IconButton onClick={() => openInvoice(id)}><ReceiptLongIcon /></IconButton>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
                     })
                   )}
                 </TableBody>
