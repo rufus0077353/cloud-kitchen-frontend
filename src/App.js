@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useMemo } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -26,7 +26,7 @@ import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
 
-// Shopping pages
+// Shopping
 import BrowseVendors from "./pages/BrowseVendors";
 import Checkout from "./pages/Checkout";
 
@@ -42,35 +42,45 @@ import NotAuthorized from "./pages/NotAuthorized";
 import { NotificationsProvider } from "./context/NotificationsContext";
 import TrackOrder from "./pages/TrackOrder";
 
-// Public compliance pages (must remain PUBLIC)
+// Public compliance pages
 import Contact from "./pages/static/Contact";
 import Terms from "./pages/static/Terms";
 import Privacy from "./pages/static/Privacy";
 import Refund from "./pages/static/Refund";
 
 function App() {
+  // read token safely (avoid server-side issues)
+  const token = useMemo(() => {
+    try {
+      return typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   return (
     <CartProvider>
       <NotificationsProvider>
         <Router>
           <CssBaseline />
           <Container maxWidth="lg">
-            <Navbar />
-            <ConnectionBar />
+            {/* Mount Navbar/ConnectionBar ONLY when authenticated */}
+            {token && <Navbar />}
+            {token && <ConnectionBar />}
 
             <Routes>
-              {/* ---------- PUBLIC ROUTES (no auth) ---------- */}
+              {/* ---------- PUBLIC (no auth) ---------- */}
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
 
-              {/* Compliance pages for Razorpay reviewers */}
+              {/* Razorpay reviewer pages */}
               <Route path="/contact" element={<Contact />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/refund" element={<Refund />} />
 
-              {/* ---------- USER ROUTES (auth required) ---------- */}
+              {/* ---------- USER (auth) ---------- */}
               <Route
                 path="/dashboard"
                 element={
@@ -79,8 +89,6 @@ function App() {
                   </PrivateRoute>
                 }
               />
-
-              {/* Orders */}
               <Route
                 path="/orders"
                 element={
@@ -129,8 +137,6 @@ function App() {
                   </PrivateRoute>
                 }
               />
-
-              {/* Shopping */}
               <Route
                 path="/vendors"
                 element={
@@ -164,7 +170,7 @@ function App() {
                 }
               />
 
-              {/* ---------- VENDOR ROUTES ---------- */}
+              {/* ---------- VENDOR ---------- */}
               <Route
                 path="/vendor/dashboard"
                 element={
@@ -190,7 +196,7 @@ function App() {
                 }
               />
 
-              {/* ---------- ADMIN ROUTES ---------- */}
+              {/* ---------- ADMIN ---------- */}
               <Route
                 path="/admin/dashboard"
                 element={
@@ -252,7 +258,7 @@ function App() {
                 }
               />
 
-              {/* Not authorized + catch-all */}
+              {/* Fallbacks */}
               <Route path="/not-authorized" element={<NotAuthorized />} />
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
