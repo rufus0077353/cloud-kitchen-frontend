@@ -1,23 +1,10 @@
-// src/components/Navbar.js
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
 import {
-  AppBar,
-  Toolbar,
-  IconButton,
-  Typography,
-  Button,
-  Box,
-  Drawer,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Badge,
-  Avatar,
-  Tooltip,
+  AppBar, Toolbar, IconButton, Typography, Button, Box, Drawer, List,
+  ListItemButton, ListItemIcon, ListItemText, Divider, Badge, Avatar, Tooltip
 } from "@mui/material";
 
 import MenuIcon from "@mui/icons-material/Menu";
@@ -28,12 +15,15 @@ import ListAltIcon from "@mui/icons-material/ListAlt";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PeopleIcon from "@mui/icons-material/People";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
-import NotificationBell from "./NotificationBell";  
+import NotificationBell from "./NotificationBell";
 
 import { useCart } from "../context/CartContext";
 import CartDrawer from "./CartDrawer";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+
+// ---- PUBLIC PATHS (no auth redirect) ----
+const PUBLIC_PATHS = ["/", "/login", "/register", "/terms", "/privacy", "/refund", "/contact"];
 
 const BRAND = {
   src: "/servezy-logo.png",
@@ -58,7 +48,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const token = localStorage.getItem("token");
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const user = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
@@ -68,7 +58,9 @@ export default function Navbar() {
   }, []);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [vendorId, setVendorId] = useState(localStorage.getItem("vendorId") || null);
+  const [vendorId, setVendorId] = useState(
+    typeof window !== "undefined" ? localStorage.getItem("vendorId") : null
+  );
   const [vendorPendingCount, setVendorPendingCount] = useState(0);
   const [userActiveCount, setUserActiveCount] = useState(0);
 
@@ -82,8 +74,15 @@ export default function Navbar() {
   const role = getRole(user);
   const isAdmin = !!token && role === "admin";
   const isVendor = !!token && role === "vendor";
-  // if logged in and not admin/vendor, treat as user
   const isUser = !!token && !isAdmin && !isVendor;
+
+  // --------- PROTECT: only redirect unauthed users when NOT on public paths ---------
+  useEffect(() => {
+    const isPublic = PUBLIC_PATHS.includes(location.pathname);
+    if (!token && !isPublic) {
+      navigate("/login", { replace: true });
+    }
+  }, [location.pathname, token, navigate]);
 
   // --- badge counters ---
   const fetchVendorPending = async () => {
@@ -102,7 +101,6 @@ export default function Navbar() {
   };
 
   const fetchUserActive = async () => {
-    // show badge for any logged-in non-vendor/admin (or if backend marks role as "user")
     if (!isUser) return;
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -175,13 +173,10 @@ export default function Navbar() {
     setDrawerOpen(false);
   }, [location.pathname]);
 
+  const isPublicRoute = PUBLIC_PATHS.includes(location.pathname);
   const homeLink = token
-    ? isVendor
-      ? "/vendor/dashboard"
-      : isAdmin
-      ? "/admin/dashboard"
-      : "/dashboard"
-    : "/login";
+    ? (isVendor ? "/vendor/dashboard" : isAdmin ? "/admin/dashboard" : "/dashboard")
+    : (isPublicRoute ? location.pathname : "/login"); // keep reviewers on the public page instead of forcing /login
 
   const handleLogout = () => {
     localStorage.removeItem("user");
@@ -295,9 +290,9 @@ export default function Navbar() {
                 );
               })}
 
-              {/* Notifications */ }
+              {/* Notifications */}
               <NotificationBell />
-              
+
               {/* Cart button */}
               <Tooltip title="Cart">
                 <IconButton color="inherit" onClick={openDrawer} aria-label="open cart">
