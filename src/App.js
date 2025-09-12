@@ -16,9 +16,9 @@ import EditUser from "./pages/EditUser";
 import AdminVendors from "./pages/AdminVendors";
 import AdminMenuItems from "./pages/AdminMenuItems";
 import UserOrders from "./pages/UserOrders";
-import CreateOrder from "./pages/CreateOrder"; // optional legacy
+import CreateOrder from "./pages/CreateOrder";
 import OrderSuccess from "./pages/OrderSuccess";
-import OrderForm from "./pages/OrderForm";     // optional admin form
+import OrderForm from "./pages/OrderForm";
 import OrderHistory from "./pages/OrderHistory";
 import Invoice from "./pages/Invoice";
 import VendorOrders from "./pages/VendorOrders";
@@ -37,11 +37,12 @@ import AdminRoute from "./components/AdminRoute";
 import ConnectionBar from "./components/ConnectionBar";
 import { CartProvider } from "./context/CartContext";
 import NotAuthorized from "./pages/NotAuthorized";
-import ProtectedRoute from "./components/ProtectedRoute";
 
 // NEW
 import { NotificationsProvider } from "./context/NotificationsContext";
 import TrackOrder from "./pages/TrackOrder";
+
+// Public compliance pages (must remain PUBLIC)
 import Contact from "./pages/static/Contact";
 import Terms from "./pages/static/Terms";
 import Privacy from "./pages/static/Privacy";
@@ -58,16 +59,18 @@ function App() {
             <ConnectionBar />
 
             <Routes>
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/terms" element={<Terms />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/refund" element={<Refund />} />
-              {/* Auth */}
+              {/* ---------- PUBLIC ROUTES (no auth) ---------- */}
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
 
-              {/* User Dashboard */}
+              {/* Compliance pages for Razorpay reviewers */}
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/refund" element={<Refund />} />
+
+              {/* ---------- USER ROUTES (auth required) ---------- */}
               <Route
                 path="/dashboard"
                 element={
@@ -77,101 +80,7 @@ function App() {
                 }
               />
 
-              {/* Vendor Dashboard */}
-              <Route
-                path="/vendor/dashboard"
-                element={
-                  <PrivateRoute role="vendor">
-                    <VendorDashboard />
-                  </PrivateRoute>
-                }
-              />
-
-              {/* Vendor Menu */}
-              <Route
-                path="/vendor/menu"
-                element={
-                  <PrivateRoute role="vendor">
-                    <VendorMenu />
-                  </PrivateRoute>
-                }
-              />
-
-              {/* Vendor Orders */}
-              <Route
-                path="/vendor/orders"
-                element={
-                  <PrivateRoute role="vendor">
-                    <VendorOrders />
-                  </PrivateRoute>
-                }
-              />
-
-              {/* Admin Dashboard */}
-              <Route
-                path="/admin/dashboard"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminDashboard />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-
-              {/* Admin Routes */}
-              <Route
-                path="/admin/users"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminUsers />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/users/edit/:id"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <EditUser />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/vendors"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminVendors />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/menu-items"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminMenuItems />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/orders"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminOrders />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-
-              {/* User: Orders */}
+              {/* Orders */}
               <Route
                 path="/orders"
                 element={
@@ -221,7 +130,7 @@ function App() {
                 }
               />
 
-              {/* Shopping (users) */}
+              {/* Shopping */}
               <Route
                 path="/vendors"
                 element={
@@ -246,7 +155,7 @@ function App() {
                   </PrivateRoute>
                 }
               />
-              <Route 
+              <Route
                 path="/track/:id"
                 element={
                   <PrivateRoute>
@@ -254,6 +163,98 @@ function App() {
                   </PrivateRoute>
                 }
               />
+
+              {/* ---------- VENDOR ROUTES ---------- */}
+              <Route
+                path="/vendor/dashboard"
+                element={
+                  <PrivateRoute role="vendor">
+                    <VendorDashboard />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/vendor/menu"
+                element={
+                  <PrivateRoute role="vendor">
+                    <VendorMenu />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/vendor/orders"
+                element={
+                  <PrivateRoute role="vendor">
+                    <VendorOrders />
+                  </PrivateRoute>
+                }
+              />
+
+              {/* ---------- ADMIN ROUTES ---------- */}
+              <Route
+                path="/admin/dashboard"
+                element={
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <AdminDashboard />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/admin/users"
+                element{
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <AdminUsers />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/admin/users/edit/:id"
+                element={
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <EditUser />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/admin/vendors"
+                element={
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <AdminVendors />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/admin/menu-items"
+                element={
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <AdminMenuItems />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/admin/orders"
+                element={
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <AdminOrders />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+
+              {/* Not authorized + catch-all */}
+              <Route path="/not-authorized" element={<NotAuthorized />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
 
             <ToastContainer position="top-right" autoClose={5000} />
