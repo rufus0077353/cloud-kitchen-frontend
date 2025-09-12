@@ -203,7 +203,7 @@ function App() {
               />
               <Route
                 path="/admin/users"
-                element{
+                element={
                   <PrivateRoute role="admin">
                     <AdminRoute>
                       <AdminUsers />
