@@ -231,10 +231,11 @@ export default function AdminDashboard() {
   const fetchOrders = async () => {
     setOrdersLoading(true);
     try {
+      // Build params that your /api/admin/orders supports. We send status/vendor only.
       const params = {};
       if (orderStatusFilter !== "all") params.status = orderStatusFilter;
       if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
-      // Note: we keep the From/To pickers in the UI but do not send them since the /filter route is removed.
+      // NOTE: Date pickers (From/To) remain in the UI but are not sent now that /filter is removed.
 
       const res = await axios.get(`${API}/api/admin/orders`, {
         headers,
@@ -509,7 +510,7 @@ export default function AdminDashboard() {
       });
   }, [vendors, vendorSearch, vendorStatusFilter]);
 
-  // Orders filtering: status/vendor handled server-side; text search handled client-side
+  // Orders filtering: status/vendor handled server-side; search handled client-side
   const visibleOrders = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
     const list = Array.isArray(orders) ? orders : [];
@@ -535,7 +536,7 @@ export default function AdminDashboard() {
 
   // If backend doesn't provide monthCommission, compute it locally
   const monthCommissionLocal = useMemo(() => {
-    const now = new Date();
+       const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const eligible = (orders || []).filter((o) => {
       const created = o?.createdAt ? new Date(o.createdAt).getTime() : 0;
@@ -548,7 +549,6 @@ export default function AdminDashboard() {
   /* ---------------- CSV exports ---------------- */
   const exportUsersCsv = () => {
     const headers = ["ID", "Name", "Email", "Role", "Deleted", "Created At"];
-    thead: null;
     const rows = filteredUsers.map((u) =>
       [u.id, safeCsv(u.name), safeCsv(u.email), u.role, u.isDeleted ? "Yes" : "No", u.createdAt || ""].join(",")
     );
@@ -805,16 +805,10 @@ export default function AdminDashboard() {
 
       <Grid container spacing={3}>
         {/* USERS */}
-        {/* (unchanged UI; kept from your version) */}
-        {/* ---------- Users table starts ---------- */}
-        {/* ... identical to your provided code block above ... */}
-        {/* ---------- Users table ends ---------- */}
+        {/* ... your Users section unchanged ... */}
 
         {/* VENDORS */}
-        {/* (unchanged UI; includes commission editing) */}
-        {/* ---------- Vendors table starts ---------- */}
-        {/* ... identical to your provided code block above ... */}
-        {/* ---------- Vendors table ends ---------- */}
+        {/* ... your Vendors section (with commission editing) unchanged ... */}
 
         {/* ORDERS */}
         <Grid item xs={12}>
@@ -914,12 +908,12 @@ export default function AdminDashboard() {
                         <CircularProgress size={20} />
                       </TableCell>
                     </TableRow>
-                  ) : visibleOrders.length === 0 ? (
+                  ) : !Array.isArray(pagedOrders) || pagedOrders.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={9} align="center">No orders found</TableCell>
                     </TableRow>
                   ) : (
-                    (visibleOrders.slice(orderPage * orderRowsPerPage, orderPage * orderRowsPerPage + orderRowsPerPage)).map((o, idx) => {
+                    (pagedOrders || []).map((o, idx) => {
                       const id = o?.id ?? o?._id ?? idx;
                       const total = Number(o?.totalAmount ?? 0);
                       const commission = commissionFor(o);
@@ -967,7 +961,7 @@ export default function AdminDashboard() {
 
             <TablePagination
               component="div"
-              count={visibleOrders.length}
+              count={orderTotal}
               page={orderPage}
               onPageChange={(_e, newPage) => setOrderPage(newPage)}
               rowsPerPage={orderRowsPerPage}
