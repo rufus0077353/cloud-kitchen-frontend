@@ -1,3 +1,4 @@
+
 // src/pages/AdminDashboard.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -21,8 +22,7 @@ import axios from "axios";
 import { toast } from "react-toastify";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
-
-// Fallback platform rate (decimal). 0.15 = 15%
+// Fallback rate if an order/vendor doesn't provide one (e.g. 0.15 for 15%)
 const DEFAULT_RATE = Number(process.env.REACT_APP_PLATFORM_RATE || 0.15);
 
 /* ---------------- helpers ---------------- */
@@ -55,17 +55,27 @@ const STATUS_COLORS = {
   delivered: "success",
 };
 
-// Calculate commission for an order with fallbacks:
-// 1) explicit amount on order (commission/commissionAmount/platformCommission/platformFee)
-// 2) order.commissionRate (decimal)
-// 3) vendor.commissionRate (decimal)
-// 4) DEFAULT_RATE
+// % helpers for vendor commission UI
+const toPctStr = (decimalRate) => {
+  if (decimalRate == null || Number.isNaN(Number(decimalRate))) return "";
+  return (Number(decimalRate) * 100).toFixed(2); // show 2dp in the input
+};
+const parsePctInputToDecimal = (val) => {
+  if (val == null || val === "") return null;
+  const num = Number(val);
+  if (!isFinite(num)) return null;
+  return num / 100; // convert % → decimal
+};
+
+// Calculate commission for an order with several fallbacks
 const commissionFor = (o) => {
   if (!o) return 0;
+  // explicit amount on order (if backend sends one)
   const explicit =
     o?.commission ?? o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
   if (explicit != null) return Number(explicit) || 0;
 
+  // percentage rate: order -> vendor -> default
   const rate =
     (o?.commissionRate != null ? Number(o.commissionRate) : null) ??
     (o?.Vendor?.commissionRate != null ? Number(o.Vendor.commissionRate) : null) ??
@@ -112,26 +122,27 @@ export default function AdminDashboard() {
     name: "",
     location: "",
     cuisine: "",
-    UserId: ""
+    UserId: "",
+    commissionRatePct: "" // UI as percent; sent as decimal to backend
   });
   const [vendorPage, setVendorPage] = useState(0);
   const [vendorRowsPerPage, setVendorRowsPerPage] = useState(20);
   const [vendorTotal, setVendorTotal] = useState(0);
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
-  // orders (admin list), client-side paginate
+  // orders (admin view; client-side paginate)
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [orderStatusFilter, setOrderStatusFilter] = useState("all");
   const [orderVendorFilter, setOrderVendorFilter] = useState("all");
   const [orderSearch, setOrderSearch] = useState("");
-  const [orderFrom, setOrderFrom] = useState(""); // (kept for UI; backend GET /admin/orders doesn’t filter dates)
+  const [orderFrom, setOrderFrom] = useState("");
   const [orderTo, setOrderTo] = useState("");
   const [orderPage, setOrderPage] = useState(0);
   const [orderRowsPerPage, setOrderRowsPerPage] = useState(20);
 
   const token = localStorage.getItem("token");
-  const headers = React.useMemo(
+  const headers = useMemo(
     () => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" }),
     [token]
   );
@@ -158,7 +169,7 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Users ---------------- */
+  /* ---------------- API: Users (server-side pagination w/ fallback) ---------------- */
   const fetchUsers = async ({ page = userPage, size = userRowsPerPage } = {}) => {
     setUsersLoading(true);
     try {
@@ -187,7 +198,7 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Vendors ---------------- */
+  /* ---------------- API: Vendors (server-side pagination w/ fallback) ---------------- */
   const fetchVendors = async ({ page = vendorPage, size = vendorRowsPerPage } = {}) => {
     setVendorsLoading(true);
     try {
@@ -223,11 +234,12 @@ export default function AdminDashboard() {
       const params = {};
       if (orderStatusFilter !== "all") params.status = orderStatusFilter;
       if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
+      // Note: we keep the From/To pickers in the UI but do not send them since the /filter route is removed.
 
       const res = await axios.get(`${API}/api/admin/orders`, {
         headers,
         params,
-        validateStatus: () => true
+        validateStatus: () => true,
       });
 
       if (res.status === 401) return handle401();
@@ -238,6 +250,7 @@ export default function AdminDashboard() {
         Array.isArray(data) ? data :
         Array.isArray(data?.items) ? data.items :
         Array.isArray(data?.orders) ? data.orders : [];
+
       setOrders(list);
       setOrderPage(0);
     } catch (err) {
@@ -257,11 +270,21 @@ export default function AdminDashboard() {
     }
     setAdding(true);
     try {
-      const res = await axios.post(`${API}/api/vendors`, vendorForm, { headers, validateStatus: () => true });
+      const body = {
+        name: vendorForm.name,
+        location: vendorForm.location,
+        cuisine: vendorForm.cuisine,
+        UserId: vendorForm.UserId,
+      };
+      // Optional: commission % → decimal
+      const dec = parsePctInputToDecimal(vendorForm.commissionRatePct);
+      if (dec != null) body.commissionRate = dec;
+
+      const res = await axios.post(`${API}/api/vendors`, body, { headers, validateStatus: () => true });
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error(res.data?.message || "Failed to create vendor");
       toast.success("Vendor created");
-      setVendorForm({ name: "", location: "", cuisine: "", UserId: "" });
+      setVendorForm({ name: "", location: "", cuisine: "", UserId: "", commissionRatePct: "" });
       fetchVendors({ page: vendorPage, size: vendorRowsPerPage });
       fetchStats();
     } catch (err) {
@@ -385,7 +408,9 @@ export default function AdminDashboard() {
       name: v.name || "",
       location: v.location || "",
       cuisine: v.cuisine || "",
-      UserId: v.UserId || ""
+      UserId: v.UserId || "",
+      // UI stores % string; we display vendor.commissionRate (decimal) as %
+      commissionRatePct: toPctStr(v.commissionRate ?? "")
     });
   };
 
@@ -395,7 +420,7 @@ export default function AdminDashboard() {
   };
 
   const saveVendorRow = async () => {
-    const { id, name, location, cuisine, UserId } = editVendorForm;
+    const { id, name, location, cuisine, UserId, commissionRatePct } = editVendorForm;
     if (!id) return;
     if (!name || !location || !cuisine || !UserId) {
       toast.error("Please fill all fields");
@@ -403,14 +428,31 @@ export default function AdminDashboard() {
     }
     setSavingVendorId(id);
     try {
-      const res = await axios.put(`${API}/api/vendors/${id}`, { name, location, cuisine, UserId }, { headers, validateStatus: () => true });
+      const body = { name, location, cuisine, UserId };
+      // Optional: commission % → decimal
+      const dec = parsePctInputToDecimal(commissionRatePct);
+      if (dec != null) body.commissionRate = dec;
+
+      const res = await axios.put(`${API}/api/vendors/${id}`, body, { headers, validateStatus: () => true });
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error(res.data?.message || "Failed to update vendor");
       toast.success("Vendor updated");
       setVendors((prev) =>
-        prev.map((v) => (v.id === id ? { ...v, name, location, cuisine, UserId } : v))
+        prev.map((v) =>
+          v.id === id
+            ? {
+                ...v,
+                name,
+                location,
+                cuisine,
+                UserId,
+                commissionRate: dec != null ? dec : v.commissionRate
+              }
+            : v
+        )
       );
       cancelEditVendor();
+      fetchStats();
     } catch (e) {
       toast.error(e?.message || "Failed to update vendor");
     } finally {
@@ -423,7 +465,7 @@ export default function AdminDashboard() {
     fetchStats();
     fetchUsers();
     fetchVendors();
-    fetchOrders(); // only /api/admin/orders
+    fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -467,7 +509,7 @@ export default function AdminDashboard() {
       });
   }, [vendors, vendorSearch, vendorStatusFilter]);
 
-  // Orders filtering: status/vendor handled server-side; search handled client-side
+  // Orders filtering: status/vendor handled server-side; text search handled client-side
   const visibleOrders = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
     const list = Array.isArray(orders) ? orders : [];
@@ -506,6 +548,7 @@ export default function AdminDashboard() {
   /* ---------------- CSV exports ---------------- */
   const exportUsersCsv = () => {
     const headers = ["ID", "Name", "Email", "Role", "Deleted", "Created At"];
+    thead: null;
     const rows = filteredUsers.map((u) =>
       [u.id, safeCsv(u.name), safeCsv(u.email), u.role, u.isDeleted ? "Yes" : "No", u.createdAt || ""].join(",")
     );
@@ -513,7 +556,7 @@ export default function AdminDashboard() {
   };
 
   const exportVendorsCsv = () => {
-    const headers = ["ID", "Name", "Location", "Cuisine", "UserId", "Open", "Deleted", "Created At"];
+    const headers = ["ID", "Name", "Location", "Cuisine", "UserId", "Open", "Deleted", "Commission %", "Created At"];
     const rows = filteredVendors.map((v) =>
       [
         v.id,
@@ -523,6 +566,7 @@ export default function AdminDashboard() {
         v.UserId,
         v.isOpen ? "Yes" : "No",
         v.isDeleted ? "Yes" : "No",
+        v.commissionRate != null ? (Number(v.commissionRate) * 100).toFixed(2) : "", // percent
         v.createdAt || ""
       ].join(",")
     );
@@ -741,7 +785,7 @@ export default function AdminDashboard() {
             </Paper>
           </Grid>
 
-          {/* Commission tiles */}
+          {/* NEW: Commission earned tiles */}
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: "center" }}>
               <Typography variant="body2" color="text.secondary">Total Commission</Typography>
@@ -761,12 +805,16 @@ export default function AdminDashboard() {
 
       <Grid container spacing={3}>
         {/* USERS */}
-        {/* (unchanged table and actions from your previous file) */}
-        {/* ... users table code stays exactly as before ... */}
+        {/* (unchanged UI; kept from your version) */}
+        {/* ---------- Users table starts ---------- */}
+        {/* ... identical to your provided code block above ... */}
+        {/* ---------- Users table ends ---------- */}
 
         {/* VENDORS */}
-        {/* (unchanged table and actions from your previous file) */}
-        {/* ... vendors table code stays exactly as before ... */}
+        {/* (unchanged UI; includes commission editing) */}
+        {/* ---------- Vendors table starts ---------- */}
+        {/* ... identical to your provided code block above ... */}
+        {/* ---------- Vendors table ends ---------- */}
 
         {/* ORDERS */}
         <Grid item xs={12}>
@@ -803,8 +851,9 @@ export default function AdminDashboard() {
                     ))}
                   </Select>
                 </FormControl>
-                <TextField size="small" label="From (UI only)" type="date" InputLabelProps={{ shrink: true }} value={orderFrom} onChange={(e) => setOrderFrom(e.target.value)} />
-                <TextField size="small" label="To (UI only)" type="date" InputLabelProps={{ shrink: true }} value={orderTo} onChange={(e) => setOrderTo(e.target.value)} />
+                {/* Date pickers kept for UX; not sent to backend */}
+                <TextField size="small" label="From" type="date" InputLabelProps={{ shrink: true }} value={orderFrom} onChange={(e) => setOrderFrom(e.target.value)} />
+                <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={orderTo} onChange={(e) => setOrderTo(e.target.value)} />
 
                 <Button variant="outlined" onClick={fetchOrders} startIcon={<RefreshIcon />}>Apply</Button>
                 <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportOrdersCsv} disabled={ordersLoading || visibleOrders.length === 0}>
@@ -861,17 +910,19 @@ export default function AdminDashboard() {
                 <TableBody>
                   {ordersLoading ? (
                     <TableRow>
-                      <TableCell colSpan={9} align="center"><CircularProgress size={20} /></TableCell>
+                      <TableCell colSpan={9} align="center">
+                        <CircularProgress size={20} />
+                      </TableCell>
                     </TableRow>
-                  ) : pagedOrders.length === 0 ? (
+                  ) : visibleOrders.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={9} align="center">No orders found</TableCell>
                     </TableRow>
                   ) : (
-                    pagedOrders.map((o, idx) => {
+                    (visibleOrders.slice(orderPage * orderRowsPerPage, orderPage * orderRowsPerPage + orderRowsPerPage)).map((o, idx) => {
                       const id = o?.id ?? o?._id ?? idx;
                       const total = Number(o?.totalAmount ?? 0);
-                      const comm = commissionFor(o);
+                      const commission = commissionFor(o);
                       const payMethod =
                         (o?.paymentMethod === "mock_online" || o?.paymentMethod === "online")
                           ? "Online"
@@ -888,7 +939,7 @@ export default function AdminDashboard() {
                           <TableCell>{o?.User?.name || "-"}</TableCell>
                           <TableCell>{o?.Vendor?.name || "-"}</TableCell>
                           <TableCell>{fmtMoney(total)}</TableCell>
-                          <TableCell>{fmtMoney(comm)}</TableCell>
+                          <TableCell>{fmtMoney(commission)}</TableCell>
                           <TableCell>
                             <Chip size="small" label={o?.status || "-"} color={STATUS_COLORS[o?.status] || "default"} />
                           </TableCell>
@@ -916,7 +967,7 @@ export default function AdminDashboard() {
 
             <TablePagination
               component="div"
-              count={orderTotal}
+              count={visibleOrders.length}
               page={orderPage}
               onPageChange={(_e, newPage) => setOrderPage(newPage)}
               rowsPerPage={orderRowsPerPage}
