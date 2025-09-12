@@ -1,23 +1,9 @@
-// src/components/Navbar.js
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
 import {
-  AppBar,
-  Toolbar,
-  IconButton,
-  Typography,
-  Button,
-  Box,
-  Drawer,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Badge,
-  Avatar,
-  Tooltip,
+  AppBar, Toolbar, IconButton, Typography, Button, Box, Drawer, List,
+  ListItemButton, ListItemIcon, ListItemText, Divider, Badge, Avatar, Tooltip
 } from "@mui/material";
 
 import MenuIcon from "@mui/icons-material/Menu";
@@ -28,7 +14,7 @@ import ListAltIcon from "@mui/icons-material/ListAlt";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PeopleIcon from "@mui/icons-material/People";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
-import NotificationBell from "./NotificationBell";  
+import NotificationBell from "./NotificationBell";
 
 import { useCart } from "../context/CartContext";
 import CartDrawer from "./CartDrawer";
@@ -43,7 +29,7 @@ const BRAND = {
 
 const isPathActive = (location, path) => location.pathname.startsWith(path);
 
-// normalize role from various possible shapes/cases
+// normalize role
 const getRole = (rawUser) => {
   const r =
     rawUser?.role ??
@@ -58,7 +44,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const token = localStorage.getItem("token");
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const user = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
@@ -68,11 +54,12 @@ export default function Navbar() {
   }, []);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [vendorId, setVendorId] = useState(localStorage.getItem("vendorId") || null);
+  const [vendorId, setVendorId] = useState(
+    typeof window !== "undefined" ? localStorage.getItem("vendorId") : null
+  );
   const [vendorPendingCount, setVendorPendingCount] = useState(0);
   const [userActiveCount, setUserActiveCount] = useState(0);
 
-  // 🛒 cart
   const { totalQty, isOpen, openDrawer, closeDrawer } = useCart();
 
   const headers = token
@@ -82,10 +69,9 @@ export default function Navbar() {
   const role = getRole(user);
   const isAdmin = !!token && role === "admin";
   const isVendor = !!token && role === "vendor";
-  // if logged in and not admin/vendor, treat as user
   const isUser = !!token && !isAdmin && !isVendor;
 
-  // --- badge counters ---
+  // --- counters (only if logged in) ---
   const fetchVendorPending = async () => {
     if (!isVendor) return;
     try {
@@ -102,7 +88,6 @@ export default function Navbar() {
   };
 
   const fetchUserActive = async () => {
-    // show badge for any logged-in non-vendor/admin (or if backend marks role as "user")
     if (!isUser) return;
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -119,7 +104,6 @@ export default function Navbar() {
     }
   };
 
-  // --- sockets join ---
   useEffect(() => {
     if (!token) return;
 
@@ -153,6 +137,7 @@ export default function Navbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser]);
 
+  // --- socket events ---
   useEffect(() => {
     const onNew = (order) => {
       if (isVendor && Number(order?.VendorId) === Number(vendorId)) fetchVendorPending();
@@ -175,14 +160,6 @@ export default function Navbar() {
     setDrawerOpen(false);
   }, [location.pathname]);
 
-  const homeLink = token
-    ? isVendor
-      ? "/vendor/dashboard"
-      : isAdmin
-      ? "/admin/dashboard"
-      : "/dashboard"
-    : "/login";
-
   const handleLogout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
@@ -190,6 +167,7 @@ export default function Navbar() {
     navigate("/login");
   };
 
+  // Dynamic links only if logged in
   const links = useMemo(() => {
     if (!token) return [];
     if (isAdmin) {
@@ -210,7 +188,7 @@ export default function Navbar() {
         },
       ];
     }
-    // default logged-in user
+    // default user
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {
@@ -225,7 +203,7 @@ export default function Navbar() {
   const Brand = (
     <Box
       component={RouterLink}
-      to={homeLink}
+      to={token ? (isVendor ? "/vendor/dashboard" : isAdmin ? "/admin/dashboard" : "/dashboard") : "/"}
       sx={{
         display: "flex",
         alignItems: "center",
@@ -295,10 +273,9 @@ export default function Navbar() {
                 );
               })}
 
-              {/* Notifications */ }
               <NotificationBell />
-              
-              {/* Cart button */}
+
+              {/* Cart */}
               <Tooltip title="Cart">
                 <IconButton color="inherit" onClick={openDrawer} aria-label="open cart">
                   <Badge color="secondary" badgeContent={totalQty > 99 ? "99+" : totalQty}>
@@ -320,7 +297,7 @@ export default function Navbar() {
         </Toolbar>
       </AppBar>
 
-      {/* Mobile side menu */}
+      {/* Mobile drawer */}
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box sx={{ width: 270, display: "flex", flexDirection: "column", height: "100%" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, p: 2 }}>
@@ -363,7 +340,7 @@ export default function Navbar() {
                 );
               })}
 
-              {/* Cart in the drawer */}
+              {/* Cart in drawer */}
               <ListItemButton
                 onClick={() => {
                   setDrawerOpen(false);
@@ -402,7 +379,6 @@ export default function Navbar() {
         </Box>
       </Drawer>
 
-      {/* Mount the cart drawer globally so it opens anywhere */}
       <CartDrawer open={isOpen} onClose={closeDrawer} />
     </>
   );
