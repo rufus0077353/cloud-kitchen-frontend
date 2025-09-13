@@ -1,8 +1,10 @@
 
+// src/pages/UserDashboard.js  (READY-PASTE)
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Box, Button, Container, Typography, Paper,
-  Stack, Chip, CircularProgress, List, ListItem, ListItemText
+  Stack, Chip, CircularProgress, List, ListItem, ListItemText,
+  ListItemAvatar, Avatar
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -13,6 +15,15 @@ import { subscribePush } from "../utils/push";
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
 const Money = ({ v }) => <strong>₹{Number(v || 0).toFixed(2)}</strong>;
+const isHttpUrl = (v) => {
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
 
 export default function UserDashboard() {
   const navigate = useNavigate();
@@ -30,15 +41,15 @@ export default function UserDashboard() {
 
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // ---- Fetch vendors ----
+  // Vendors
   useEffect(() => {
     fetch(`${API_BASE}/api/vendors`, { headers })
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setVendors(Array.isArray(d) ? d : []))
       .catch(() => setVendors([]));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Fetch menu when vendor changes ----
+  // Menu when vendor changes
   useEffect(() => {
     if (!vendorId) return;
     setLoadingMenu(true);
@@ -47,9 +58,9 @@ export default function UserDashboard() {
       .then((d) => setMenuItems(Array.isArray(d) ? d : (Array.isArray(d.items) ? d.items : [])))
       .catch(() => setMenuItems([]))
       .finally(() => setLoadingMenu(false));
-  }, [vendorId]);
+  }, [vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Fetch my orders ----
+  // Orders
   const fetchOrders = () => {
     setLoadingOrders(true);
     fetch(`${API_BASE}/api/orders/my`, { headers })
@@ -67,7 +78,14 @@ export default function UserDashboard() {
   }, []);
 
   const handleAdd = (it) => {
-    addItem({ id: it.id, name: it.name, price: it.price, qty: 1, vendorId });
+    addItem({
+      id: it.id,
+      name: it.name,
+      price: it.price,
+      qty: 1,
+      vendorId,
+      imageUrl: it.imageUrl || null, // 🔹 keep image in cart
+    });
     openDrawer();
     toast.success(`${it.name} added to cart`);
   };
@@ -78,10 +96,10 @@ export default function UserDashboard() {
         Welcome, {user?.name || "User"}
       </Typography>
 
-      {/* Vendor + menu */}
+      {/* Pick vendor & add items right on the dashboard */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>Select a Vendor</Typography>
-        <Stack direction="row" spacing={2} flexWrap="wrap">
+        <Stack direction="row" spacing={1} flexWrap="wrap">
           {vendors.map((v) => (
             <Chip
               key={v.id}
@@ -112,6 +130,21 @@ export default function UserDashboard() {
                       </Button>
                     }
                   >
+                    <ListItemAvatar>
+                      {isHttpUrl(it.imageUrl) ? (
+                        <Avatar
+                          variant="rounded"
+                          src={it.imageUrl}
+                          alt={it.name || "Item"}
+                          sx={{ width: 48, height: 48 }}
+                          imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                        />
+                      ) : (
+                        <Avatar variant="rounded" sx={{ width: 48, height: 48 }}>
+                          {String(it.name || "?").slice(0, 1).toUpperCase()}
+                        </Avatar>
+                      )}
+                    </ListItemAvatar>
                     <ListItemText
                       primary={`${it.name} — ₹${Number(it.price || 0).toFixed(2)}`}
                       secondary={it.description || ""}
@@ -138,6 +171,21 @@ export default function UserDashboard() {
                   disableGutters
                   secondaryAction={<Money v={Number(it.price) * Number(it.qty)} />}
                 >
+                  <ListItemAvatar sx={{ mr: 1 }}>
+                    {isHttpUrl(it.imageUrl) ? (
+                      <Avatar
+                        variant="rounded"
+                        src={it.imageUrl}
+                        alt={it.name || "Item"}
+                        sx={{ width: 36, height: 36 }}
+                        imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                      />
+                    ) : (
+                      <Avatar variant="rounded" sx={{ width: 36, height: 36 }}>
+                        {String(it.name || "?").slice(0, 1).toUpperCase()}
+                      </Avatar>
+                    )}
+                  </ListItemAvatar>
                   <ListItemText primary={`${it.name} × ${it.qty}`} />
                 </ListItem>
               ))}

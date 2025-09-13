@@ -1,9 +1,8 @@
-
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   Box, Container, Typography, Paper, List, ListItem,
-  ListItemText, Button, Stack, CircularProgress
+  ListItemText, Button, Stack, CircularProgress, Avatar
 } from "@mui/material";
 import { useCart } from "../context/CartContext";
 
@@ -45,13 +44,22 @@ export default function UserVendorMenu() {
 
   return (
     <Container sx={{ py: 3 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        sx={{ mb: 2 }}
+      >
         <Typography variant="h4">{vendor?.name || "Vendor Menu"}</Typography>
-        <Button component={Link} to="/vendors" variant="outlined">Back to Vendors</Button>
+        <Button component={Link} to="/vendors" variant="outlined">
+          Back to Vendors
+        </Button>
       </Stack>
 
       {loading ? (
-        <Box sx={{ py: 6, textAlign: "center" }}><CircularProgress /></Box>
+        <Box sx={{ py: 6, textAlign: "center" }}>
+          <CircularProgress />
+        </Box>
       ) : (
         <Paper>
           <List>
@@ -59,19 +67,36 @@ export default function UserVendorMenu() {
               <ListItem
                 key={it.id}
                 secondaryAction={
-                  <Button variant="contained" size="small" onClick={() => handleAdd(it)}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => handleAdd(it)}
+                  >
                     Add to Cart
                   </Button>
                 }
               >
+                {/* Thumbnail if imageUrl exists */}
+                {it.imageUrl && (
+                  <Avatar
+                    src={it.imageUrl}
+                    alt={it.name}
+                    variant="square"
+                    sx={{ width: 56, height: 56, mr: 2 }}
+                  />
+                )}
                 <ListItemText
-                  primary={`${it.name ?? "Item"} — ₹${Number(it.price ?? 0).toFixed(2)}`}
+                  primary={`${it.name ?? "Item"} — ₹${Number(
+                    it.price ?? 0
+                  ).toFixed(2)}`}
                   secondary={it.description || ""}
                 />
               </ListItem>
             ))}
             {(items || []).length === 0 && (
-              <ListItem><ListItemText primary="No items found." /></ListItem>
+              <ListItem>
+                <ListItemText primary="No items found." />
+              </ListItem>
             )}
           </List>
         </Paper>

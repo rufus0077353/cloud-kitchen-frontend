@@ -1,11 +1,11 @@
 
-// src/pages/VendorDashboard.js
+// src/pages/VendorDashboard.js  (READY-PASTE)
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   IconButton, Stack, Chip, Grid, Box, Divider, Tooltip,
-  FormControlLabel, Switch, MenuItem, LinearProgress, Skeleton, Alert
+  FormControlLabel, Switch, MenuItem, LinearProgress, Skeleton, Alert, Avatar
 } from "@mui/material";
 import { Delete, Edit, Refresh, Add } from "@mui/icons-material";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -75,6 +75,17 @@ const StatusChips = ({ byStatus = {}, loading = false }) => (
   </Paper>
 );
 
+// --- simple URL check for preview ---
+const isHttpUrl = (v) => {
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 // ---------- main ----------
 const VendorDashboard = () => {
   // menu form ref (for “Create item” quick action)
@@ -83,7 +94,7 @@ const VendorDashboard = () => {
   // ----- menu state -----
   const [menuItems, setMenuItems] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
-  const [form, setForm] = useState({ name: "", price: "", description: "" });
+  const [form, setForm] = useState({ name: "", price: "", description: "", imageUrl: "" });
 
   // ----- summary / vendor state -----
   const [summary, setSummary] = useState(null);
@@ -345,6 +356,7 @@ const VendorDashboard = () => {
       name: form.name,
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
+      imageUrl: form.imageUrl || null, // 🔹 include image URL
       // VendorId is derived on backend from token
     };
 
@@ -362,7 +374,7 @@ const VendorDashboard = () => {
       }
 
       toast.success(editingItem ? "Item updated" : "Item added");
-      setForm({ name: "", price: "", description: "" });
+      setForm({ name: "", price: "", description: "", imageUrl: "" });
       setEditingItem(null);
       fetchMenu();
       fetchSummary();
@@ -379,6 +391,7 @@ const VendorDashboard = () => {
       name: item.name ?? "",
       price: item.price ?? "",
       description: item.description ?? "",
+      imageUrl: item.imageUrl ?? "",
     });
     setEditingItem(item);
     // smooth scroll to form
@@ -478,7 +491,6 @@ const VendorDashboard = () => {
 
   const acceptanceRate = (accepted + rejected) > 0 ? (accepted / (accepted + rejected)) * 100 : null;
   const completionRate = accepted > 0 ? (delivered / accepted) * 100 : null;
-  // avg prep time requires timestamps not available; leaving as "—" placeholder
   const avgPrepTime = "—";
 
   // best-seller badges in menu (Top 3 by revenue)
@@ -537,7 +549,7 @@ const VendorDashboard = () => {
       </AppBar>
 
       <Container sx={{ mt: 4 }}>
-        {/* ---- QUICK ACTIONS BAR (NEW) ---- */}
+        {/* ---- QUICK ACTIONS BAR ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap", gap: 1 }}>
             <Button startIcon={<Add />} variant="contained" onClick={scrollToForm}>
@@ -566,11 +578,9 @@ const VendorDashboard = () => {
         {/* ---- SUMMARY + TREND ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box sx={{ mb: 3 }}>
-            {/* existing chart component */}
             <VendorSalesTrend />
           </Box>
 
-          {/* Daily Trend Controls + CSV */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
             <Typography variant="subtitle1">Daily Trend Controls</Typography>
             <Stack direction="row" gap={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
@@ -599,7 +609,6 @@ const VendorDashboard = () => {
             </Stack>
           </Stack>
 
-          {/* helper when no orders in range */}
           {(daily || []).length === 0 && !loadingDaily && (
             <Alert severity="info" sx={{ mt: 1 }}>
               No orders in this range yet. Try a wider range or check back later.
@@ -608,7 +617,6 @@ const VendorDashboard = () => {
 
           <Divider sx={{ my: 2 }} />
 
-          {/* Revenue Summary */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
             <Typography variant="h6">Summary</Typography>
             <Tooltip title="Refresh summary">
@@ -793,18 +801,39 @@ const VendorDashboard = () => {
               fullWidth
               sx={{ mb: 2 }}
             />
+            <TextField
+              label="Image URL (optional)"
+              name="imageUrl"
+              value={form.imageUrl}
+              onChange={handleChange}
+              placeholder="https://…"
+              fullWidth
+              sx={{ mb: 1.5 }}
+            />
+            {isHttpUrl(form.imageUrl) && (
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+                <Avatar
+                  variant="rounded"
+                  src={form.imageUrl}
+                  alt="preview"
+                  sx={{ width: 56, height: 56 }}
+                />
+                <Typography variant="caption" color="text.secondary">Preview</Typography>
+              </Stack>
+            )}
             <Button type="submit" variant="contained" color="primary">
               {editingItem ? "Update" : "Add"}
             </Button>
           </form>
         </Paper>
 
-        {/* ---- MENU TABLE with Best-seller badges ---- */}
+        {/* ---- MENU TABLE with thumbnail + Best-seller badges ---- */}
         <Typography variant="h6" sx={{ mb: 2 }}>Your Menu</Typography>
         <TableContainer component={Paper}>
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell width={64}>Image</TableCell>
                 <TableCell style={{ minWidth: 160 }}>Name</TableCell>
                 <TableCell>Price</TableCell>
                 <TableCell>Description</TableCell>
@@ -814,8 +843,22 @@ const VendorDashboard = () => {
             <TableBody>
               {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
                 const isTop = topNames.has((item.name || "").toLowerCase());
+                const hasImg = isHttpUrl(item.imageUrl);
                 return (
                   <TableRow key={item.id} hover>
+                    <TableCell>
+                      {hasImg ? (
+                        <Avatar
+                          variant="rounded"
+                          src={item.imageUrl}
+                          alt={item.name || "Item"}
+                          sx={{ width: 48, height: 48 }}
+                          imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                        />
+                      ) : (
+                        <Chip size="small" label="No image" variant="outlined" />
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: "wrap" }}>
                         <span>{item.name}</span>
@@ -850,7 +893,7 @@ const VendorDashboard = () => {
               })}
               {(Array.isArray(menuItems) ? menuItems : []).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} align="center">
+                  <TableCell colSpan={5} align="center">
                     <Typography variant="body2" color="text.secondary" sx={{ py: 3 }}>
                       No items yet. Click <strong>Create item</strong> to add your first dish.
                     </Typography>
