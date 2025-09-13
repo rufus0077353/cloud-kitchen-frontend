@@ -53,7 +53,7 @@ export default function Checkout() {
       note,
       paymentMethod: method, // backend can use this to set initial status
     };
-    const res = await axios.post(`${API}/orders`, payload, { headers });
+    const res = await axios.post(`${API}/api/orders`, payload, { headers });
     return res.data; // assume { id, totalAmount, ... }
   };
 
