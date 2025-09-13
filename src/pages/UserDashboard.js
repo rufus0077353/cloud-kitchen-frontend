@@ -1,5 +1,4 @@
-
-// src/pages/UserDashboard.js  
+// src/pages/UserDashboard.js
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Box, Button, Container, Typography, Paper,
@@ -48,7 +47,8 @@ export default function UserDashboard() {
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setVendors(Array.isArray(d) ? d : []))
       .catch(() => setVendors([]));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Menu when vendor changes
   useEffect(() => {
@@ -56,10 +56,13 @@ export default function UserDashboard() {
     setLoadingMenu(true);
     fetch(`${API_BASE}/api/vendors/${vendorId}/menu`, { headers })
       .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setMenuItems(Array.isArray(d) ? d : (Array.isArray(d.items) ? d.items : [])))
+      .then((d) =>
+        setMenuItems(Array.isArray(d) ? d : (Array.isArray(d.items) ? d.items : []))
+      )
       .catch(() => setMenuItems([]))
       .finally(() => setLoadingMenu(false));
-  }, [vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
 
   // Orders
   const fetchOrders = () => {
