@@ -1,5 +1,5 @@
 
-// src/pages/UserDashboard.js  (READY-PASTE)
+// src/pages/UserDashboard.js  
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Box, Button, Container, Typography, Paper,
@@ -13,6 +13,7 @@ import { socket } from "../utils/socket";
 import { subscribePush } from "../utils/push";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+const PLACEHOLDER_IMG = "/images/placeholder-food.png";
 
 const Money = ({ v }) => <strong>₹{Number(v || 0).toFixed(2)}</strong>;
 const isHttpUrl = (v) => {
@@ -84,7 +85,7 @@ export default function UserDashboard() {
       price: it.price,
       qty: 1,
       vendorId,
-      imageUrl: it.imageUrl || null, // 🔹 keep image in cart
+      imageUrl: isHttpUrl(it.imageUrl) ? it.imageUrl : null, // keep image in cart if valid
     });
     openDrawer();
     toast.success(`${it.name} added to cart`);
@@ -121,36 +122,33 @@ export default function UserDashboard() {
               <Typography>No items found for this vendor.</Typography>
             ) : (
               <List>
-                {menuItems.map((it) => (
-                  <ListItem
-                    key={it.id}
-                    secondaryAction={
-                      <Button variant="contained" size="small" onClick={() => handleAdd(it)}>
-                        Add to Cart
-                      </Button>
-                    }
-                  >
-                    <ListItemAvatar>
-                      {isHttpUrl(it.imageUrl) ? (
+                {menuItems.map((it) => {
+                  const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
+                  return (
+                    <ListItem
+                      key={it.id}
+                      secondaryAction={
+                        <Button variant="contained" size="small" onClick={() => handleAdd(it)}>
+                          Add to Cart
+                        </Button>
+                      }
+                    >
+                      <ListItemAvatar>
                         <Avatar
                           variant="rounded"
-                          src={it.imageUrl}
+                          src={thumb}
                           alt={it.name || "Item"}
                           sx={{ width: 48, height: 48 }}
                           imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
                         />
-                      ) : (
-                        <Avatar variant="rounded" sx={{ width: 48, height: 48 }}>
-                          {String(it.name || "?").slice(0, 1).toUpperCase()}
-                        </Avatar>
-                      )}
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={`${it.name} — ₹${Number(it.price || 0).toFixed(2)}`}
-                      secondary={it.description || ""}
-                    />
-                  </ListItem>
-                ))}
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={`${it.name} — ₹${Number(it.price || 0).toFixed(2)}`}
+                        secondary={it.description || ""}
+                      />
+                    </ListItem>
+                  );
+                })}
               </List>
             )}
           </Box>
@@ -165,30 +163,27 @@ export default function UserDashboard() {
         ) : (
           <>
             <List dense>
-              {items.map((it) => (
-                <ListItem
-                  key={it.id}
-                  disableGutters
-                  secondaryAction={<Money v={Number(it.price) * Number(it.qty)} />}
-                >
-                  <ListItemAvatar sx={{ mr: 1 }}>
-                    {isHttpUrl(it.imageUrl) ? (
+              {items.map((it) => {
+                const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
+                return (
+                  <ListItem
+                    key={it.id}
+                    disableGutters
+                    secondaryAction={<Money v={Number(it.price) * Number(it.qty)} />}
+                  >
+                    <ListItemAvatar sx={{ mr: 1 }}>
                       <Avatar
                         variant="rounded"
-                        src={it.imageUrl}
+                        src={thumb}
                         alt={it.name || "Item"}
                         sx={{ width: 36, height: 36 }}
                         imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
                       />
-                    ) : (
-                      <Avatar variant="rounded" sx={{ width: 36, height: 36 }}>
-                        {String(it.name || "?").slice(0, 1).toUpperCase()}
-                      </Avatar>
-                    )}
-                  </ListItemAvatar>
-                  <ListItemText primary={`${it.name} × ${it.qty}`} />
-                </ListItem>
-              ))}
+                    </ListItemAvatar>
+                    <ListItemText primary={`${it.name} × ${it.qty}`} />
+                  </ListItem>
+                );
+              })}
             </List>
             <Box display="flex" justifyContent="space-between" mt={1}>
               <Typography variant="subtitle1">Subtotal</Typography>

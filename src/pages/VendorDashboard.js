@@ -1,5 +1,4 @@
 
-// src/pages/VendorDashboard.js  (READY-PASTE)
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
@@ -16,6 +15,7 @@ import { socket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+const PLACEHOLDER_IMG = "/images/placeholder-food.png";
 
 // --------- helpers ----------
 const STATUS_COLORS = {
@@ -126,56 +126,57 @@ const VendorDashboard = () => {
   useEffect(() => { localStorage.setItem("vd_orders_goal", String(ordersGoal)); }, [ordersGoal]);
   useEffect(() => { localStorage.setItem("vd_is_open", String(isOpen)); }, [isOpen]);
 
-// ---------- MENU LOAD ----------
-const fetchMenu = async () => {
-  const authHeaders = { Authorization: `Bearer ${token}` };
+  // ---------- MENU LOAD ----------
+  const fetchMenu = async () => {
+    const authHeaders = { Authorization: `Bearer ${token}` };
 
-  const tryMine = async () => {
-    const res = await fetch(`${API_BASE}/api/menu-items/mine`, { headers: authHeaders });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const msg = data?.message || `Failed (${res.status})`;
-      throw new Error(msg);
-    }
-    return Array.isArray(data) ? data : [];
-  };
+    const tryMine = async () => {
+      const res = await fetch(`${API_BASE}/api/menu-items/mine`, { headers: authHeaders });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.message || `Failed (${res.status})`;
+        throw new Error(msg);
+      }
+      return Array.isArray(data) ? data : [];
+    };
 
-  const tryVendorMenu = async () => {
-    // get my vendorId (cached if we already have it)
-    let vId = vendorId;
-    if (!vId) {
-      const r = await fetch(`${API_BASE}/api/vendors/me`, { headers: authHeaders });
-      const me = await r.json().catch(() => ({}));
-      if (me?.vendorId) vId = me.vendorId;
-    }
-    if (!vId) throw new Error("No vendor profile attached to this account.");
+    const tryVendorMenu = async () => {
+      // get my vendorId (cached if we already have it)
+      let vId = vendorId;
+      if (!vId) {
+        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers: authHeaders });
+        const me = await r.json().catch(() => ({}));
+        if (me?.vendorId) vId = me.vendorId;
+      }
+      if (!vId) throw new Error("No vendor profile attached to this account.");
 
-    const r2 = await fetch(`${API_BASE}/api/vendors/${vId}/menu`, { headers: authHeaders });
-    const d2 = await r2.json().catch(() => ({}));
-    if (!r2.ok) {
-      const msg = d2?.message || `Failed (${r2.status})`;
-      throw new Error(msg);
-    }
-    // this endpoint sometimes returns {items: []}
-    return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
-  };
+      const r2 = await fetch(`${API_BASE}/api/vendors/${vId}/menu`, { headers: authHeaders });
+      const d2 = await r2.json().catch(() => ({}));
+      if (!r2.ok) {
+        const msg = d2?.message || `Failed (${r2.status})`;
+        throw new Error(msg);
+      }
+      // this endpoint sometimes returns {items: []}
+      return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
+    };
 
-  try {
-    // 1) primary: private “mine”
-    const list = await tryMine();
-    setMenuItems(list);
-  } catch (e1) {
-    // 2) fallback: public vendor menu
     try {
-      const list = await tryVendorMenu();
+      // 1) primary: private “mine”
+      const list = await tryMine();
       setMenuItems(list);
-      toast.warn(`Loaded via fallback: ${e1?.message || "mine failed"}`);
-    } catch (e2) {
-      setMenuItems([]);
-      toast.error(`Failed to load menu: ${e2?.message || e1?.message || "Unknown error"}`);
+    } catch (e1) {
+      // 2) fallback: public vendor menu
+      try {
+        const list = await tryVendorMenu();
+        setMenuItems(list);
+        toast.warn(`Loaded via fallback: ${e1?.message || "mine failed"}`);
+      } catch (e2) {
+        setMenuItems([]);
+        toast.error(`Failed to load menu: ${e2?.message || e1?.message || "Unknown error"}`);
+      }
     }
-  }
-};
+  };
+
   // ---------- SUMMARY LOAD ----------
   const fetchSummary = async () => {
     setSummaryLoading(true);
@@ -385,7 +386,7 @@ const fetchMenu = async () => {
       name: form.name,
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
-      imageUrl: form.imageUrl || null, // 🔹 include image URL
+      imageUrl: form.imageUrl || null, // include image URL
       // VendorId is derived on backend from token
     };
 
@@ -498,8 +499,8 @@ const fetchMenu = async () => {
   const monthRevenue = Number(summary?.month?.revenue || 0);
   const lifeRevenue  = Number(summary?.totals?.revenue || 0);
 
-  const revProgress    = revGoal > 0 ? Math.min(100, (monthRevenue / revGoal) * 100) : 0;
-  const ordersProgress = ordersGoal > 0 ? Math.min(100, (monthOrders / ordersGoal) * 100) : 0;
+  const revProgress     = revGoal > 0 ? Math.min(100, (monthRevenue / revGoal) * 100) : 0;
+  const ordersProgress  = ordersGoal > 0 ? Math.min(100, (monthOrders / ordersGoal) * 100) : 0;
 
   const revRemaining    = Math.max(0, revGoal - monthRevenue);
   const ordersRemaining = Math.max(0, ordersGoal - monthOrders);
@@ -514,8 +515,8 @@ const fetchMenu = async () => {
   }, [revRemaining, ordersRemaining, revGoal, ordersGoal]);
 
   // tiny analytics nudges
-  const accepted = Number(byStatus.accepted || 0);
-  const rejected = Number(byStatus.rejected || 0);
+  const accepted  = Number(byStatus.accepted || 0);
+  const rejected  = Number(byStatus.rejected || 0);
   const delivered = Number(byStatus.delivered || 0);
 
   const acceptanceRate = (accepted + rejected) > 0 ? (accepted / (accepted + rejected)) * 100 : null;
@@ -846,6 +847,7 @@ const fetchMenu = async () => {
                   src={form.imageUrl}
                   alt="preview"
                   sx={{ width: 56, height: 56 }}
+                  imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
                 />
                 <Typography variant="caption" color="text.secondary">Preview</Typography>
               </Stack>
@@ -872,21 +874,17 @@ const fetchMenu = async () => {
             <TableBody>
               {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
                 const isTop = topNames.has((item.name || "").toLowerCase());
-                const hasImg = isHttpUrl(item.imageUrl);
+                const thumbSrc = isHttpUrl(item.imageUrl) ? item.imageUrl : PLACEHOLDER_IMG;
                 return (
                   <TableRow key={item.id} hover>
                     <TableCell>
-                      {hasImg ? (
-                        <Avatar
-                          variant="rounded"
-                          src={item.imageUrl}
-                          alt={item.name || "Item"}
-                          sx={{ width: 48, height: 48 }}
-                          imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
-                        />
-                      ) : (
-                        <Chip size="small" label="No image" variant="outlined" />
-                      )}
+                      <Avatar
+                        variant="rounded"
+                        src={thumbSrc}
+                        alt={item.name || "Item"}
+                        sx={{ width: 48, height: 48 }}
+                        imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                      />
                     </TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: "wrap" }}>

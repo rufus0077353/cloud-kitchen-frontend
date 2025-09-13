@@ -1,12 +1,26 @@
+
+// src/pages/UserVendorMenu.js  (READY-PASTE)
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   Box, Container, Typography, Paper, List, ListItem,
-  ListItemText, Button, Stack, CircularProgress, Avatar
+  ListItemText, Button, Stack, CircularProgress,
+  Avatar, ListItemAvatar
 } from "@mui/material";
 import { useCart } from "../context/CartContext";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
+const PLACEHOLDER_IMG = "/images/placeholder-food.png";
+
+const isHttpUrl = (v) => {
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
 
 export default function UserVendorMenu() {
   const { vendorId } = useParams();
@@ -38,7 +52,14 @@ export default function UserVendorMenu() {
   }, [vendorId]);
 
   const handleAdd = (it) => {
-    addItem({ id: it.id, name: it.name, price: it.price, qty: 1, vendorId });
+    addItem({
+      id: it.id,
+      name: it.name,
+      price: it.price,
+      qty: 1,
+      vendorId,
+      imageUrl: isHttpUrl(it.imageUrl) ? it.imageUrl : null, // keep image in cart if valid
+    });
     openDrawer(); // show cart immediately
   };
 
@@ -63,36 +84,38 @@ export default function UserVendorMenu() {
       ) : (
         <Paper>
           <List>
-            {(items || []).map((it) => (
-              <ListItem
-                key={it.id}
-                secondaryAction={
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={() => handleAdd(it)}
-                  >
-                    Add to Cart
-                  </Button>
-                }
-              >
-                {/* Thumbnail if imageUrl exists */}
-                {it.imageUrl && (
-                  <Avatar
-                    src={it.imageUrl}
-                    alt={it.name}
-                    variant="square"
-                    sx={{ width: 56, height: 56, mr: 2 }}
+            {(items || []).map((it) => {
+              const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
+              return (
+                <ListItem
+                  key={it.id}
+                  secondaryAction={
+                    <Button
+                      variant="contained"
+                      size="small"
+                      onClick={() => handleAdd(it)}
+                    >
+                      Add to Cart
+                    </Button>
+                  }
+                >
+                  <ListItemAvatar>
+                    <Avatar
+                      src={thumb}
+                      alt={it.name || "Item"}
+                      variant="rounded"
+                      sx={{ width: 56, height: 56 }}
+                      imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                    />
+                  </ListItemAvatar>
+
+                  <ListItemText
+                    primary={`${it.name ?? "Item"} — ₹${Number(it.price ?? 0).toFixed(2)}`}
+                    secondary={it.description || ""}
                   />
-                )}
-                <ListItemText
-                  primary={`${it.name ?? "Item"} — ₹${Number(
-                    it.price ?? 0
-                  ).toFixed(2)}`}
-                  secondary={it.description || ""}
-                />
-              </ListItem>
-            ))}
+                </ListItem>
+              );
+            })}
             {(items || []).length === 0 && (
               <ListItem>
                 <ListItemText primary="No items found." />
