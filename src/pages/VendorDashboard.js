@@ -823,44 +823,59 @@ const VendorDashboard = () => {
             {editingItem ? "Edit Menu Item" : "Add New Menu Item"}
           </Typography>
           <form onSubmit={handleSubmit}>
+            <TextField label="Name" name="name" value={form.name} onChange={handleChange} required fullWidth sx={{ mb: 2 }} />
+            <TextField label="Price" name="price" type="number" value={form.price} onChange={handleChange} required fullWidth sx={{ mb: 2 }} />
+            <TextField label="Description" name="description" value={form.description} onChange={handleChange} fullWidth sx={{ mb: 2 }} />
+
+            {/* URL input */}
             <TextField
-              label="Name"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Price"
-              name="price"
-              type="number"
-              value={form.price}
-              onChange={handleChange}
-              required
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Description"
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Image URL (JPEG recommended)"
+              label="Image URL (JPEG/PNG)"
               name="imageUrl"
               value={form.imageUrl}
               onChange={handleChange}
-              placeholder="https://…/something.jpg  or  /uploads/file.jpeg"
+              placeholder="https://…/photo.jpg  or  /uploads/file.png"
               fullWidth
-              helperText="Use .jpg or .jpeg for best results."
+              helperText="Use .jpg, .jpeg or .png"
               sx={{ mb: 1.5 }}
             />
-            {(isJpegHttpUrl(form.imageUrl) || isLocalJpegPath(form.imageUrl)) && (
+
+            {/* Choose File uploader */}
+            <Box sx={{ mb: 2 }}>
+              <Button variant="outlined" component="label">
+                Choose File
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const data = new FormData();
+                    data.append("image", file);
+                    try {
+                      const res = await fetch(`${API_BASE}/api/uploads`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` },
+                        body: data,
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        toast.error(err.message || "Upload failed");
+                        return;
+                      }
+                      const out = await res.json(); // expects { url: "/uploads/xyz.jpg" }
+                      setForm((p) => ({ ...p, imageUrl: out.url }));
+                      toast.success("Image uploaded");
+                    } catch (err) {
+                      console.error("Upload error", err);
+                      toast.error("Server error while uploading image");
+                    }
+                  }}
+                />
+              </Button>
+            </Box>
+
+            {(isAllowedHttpUrl(form.imageUrl) || isLocalUploadPath(form.imageUrl)) && (
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
                 <Avatar
                   variant="rounded"
@@ -872,6 +887,7 @@ const VendorDashboard = () => {
                 <Typography variant="caption" color="text.secondary">Preview</Typography>
               </Stack>
             )}
+
             <Button type="submit" variant="contained" color="primary">
               {editingItem ? "Update" : "Add"}
             </Button>
