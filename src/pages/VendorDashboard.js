@@ -1,4 +1,3 @@
-
 // src/pages/VendorDashboard.js  (READY-PASTE)
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
@@ -76,29 +75,35 @@ const StatusChips = ({ byStatus = {}, loading = false }) => (
   </Paper>
 );
 
-/** JPEG helpers **/
+/** Image helpers (JPG/PNG) **/
 const isHttpUrl = (v) => {
   if (!v) return false;
   try { const u = new URL(v); return u.protocol === "http:" || u.protocol === "https:"; }
   catch { return false; }
 };
 
-// true if URL is http(s) AND looks like a JPEG (ends with .jpg/.jpeg OR has format=jpg/jpeg)
-const isJpegHttpUrl = (v) => {
+// http(s) and looks like .jpg/.jpeg/.png (or ?format=jpg/jpeg/png)
+const isImageHttpUrl = (v) => {
   if (!isHttpUrl(v)) return false;
   try {
     const u = new URL(v);
     const p = u.pathname.toLowerCase();
     const format = (u.searchParams.get("format") || "").toLowerCase();
-    return p.endsWith(".jpg") || p.endsWith(".jpeg") || format === "jpg" || format === "jpeg";
+    return (
+      p.endsWith(".jpg") || p.endsWith(".jpeg") || p.endsWith(".png") ||
+      format === "jpg" || format === "jpeg" || format === "png"
+    );
   } catch { return false; }
 };
 
-// true if local upload like /uploads/xxx.jpg or /uploads/xxx.jpeg
-const isLocalJpegPath = (v) => typeof v === "string" && v.startsWith("/uploads/") && v.toLowerCase().match(/\.(jpg|jpeg)$/);
+// local upload path like /uploads/xxx.jpg|jpeg|png
+const isLocalImagePath = (v) =>
+  typeof v === "string" &&
+  v.startsWith("/uploads/") &&
+  /\.(jpg|jpeg|png)$/i.test(v);
 
-// final chooser
-const jpegOrPlaceholder = (v) => (isJpegHttpUrl(v) || isLocalJpegPath(v)) ? v : PLACEHOLDER_IMG;
+// pick thumbnail or placeholder
+const pickThumb = (v) => (isImageHttpUrl(v) || isLocalImagePath(v)) ? v : PLACEHOLDER_IMG;
 
 // ---------- main ----------
 const VendorDashboard = () => {
@@ -396,16 +401,15 @@ const VendorDashboard = () => {
       ? `${API_BASE}/api/menu-items/${editingItem.id}`
       : `${API_BASE}/api/menu-items`;
 
-    // only persist imageUrl if it's jpeg-ish (http(s) .jpg/.jpeg or /uploads/*.jpg|*.jpeg)
+    // allow only http(s) jpg/jpeg/png or /uploads/...jpg|jpeg|png
     const rawUrl = (form.imageUrl || "").trim();
-    const imageUrl =
-      (isJpegHttpUrl(rawUrl) || isLocalJpegPath(rawUrl)) ? rawUrl : null;
+    const imageUrl = (isImageHttpUrl(rawUrl) || isLocalImagePath(rawUrl)) ? rawUrl : null;
 
     const body = {
       name: form.name,
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
-      imageUrl, // JPEG only
+      imageUrl, // JPG/PNG only
       // VendorId is derived on backend from token
     };
 
@@ -875,11 +879,12 @@ const VendorDashboard = () => {
               </Button>
             </Box>
 
-            {(isAllowedHttpUrl(form.imageUrl) || isLocalUploadPath(form.imageUrl)) && (
+            {/* Preview (uses pickThumb to validate jpg/png or local upload path) */}
+            {form.imageUrl && (
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
                 <Avatar
                   variant="rounded"
-                  src={form.imageUrl}
+                  src={pickThumb(form.imageUrl)}
                   alt="preview"
                   sx={{ width: 56, height: 56 }}
                   imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
@@ -910,7 +915,7 @@ const VendorDashboard = () => {
             <TableBody>
               {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
                 const isTop = topNames.has((item.name || "").toLowerCase());
-                const thumbSrc = jpegOrPlaceholder(item.imageUrl);
+                const thumbSrc = pickThumb(item.imageUrl);
                 return (
                   <TableRow key={item.id} hover>
                     <TableCell>
