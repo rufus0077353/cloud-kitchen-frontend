@@ -126,27 +126,56 @@ const VendorDashboard = () => {
   useEffect(() => { localStorage.setItem("vd_orders_goal", String(ordersGoal)); }, [ordersGoal]);
   useEffect(() => { localStorage.setItem("vd_is_open", String(isOpen)); }, [isOpen]);
 
-  // ---------- MENU LOAD ----------
-  const fetchMenu = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/menu-items/mine`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const msg = (await res.json().catch(() => ({}))).message || `Failed (${res.status})`;
-        toast.error(`Failed to load menu: ${msg}`);
-        setMenuItems([]);
-        return;
-      }
-      const data = await res.json();
-      setMenuItems(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Fetch menu failed:", err);
-      toast.error("Failed to load menu");
-      setMenuItems([]);
+// ---------- MENU LOAD ----------
+const fetchMenu = async () => {
+  const authHeaders = { Authorization: `Bearer ${token}` };
+
+  const tryMine = async () => {
+    const res = await fetch(`${API_BASE}/api/menu-items/mine`, { headers: authHeaders });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data?.message || `Failed (${res.status})`;
+      throw new Error(msg);
     }
+    return Array.isArray(data) ? data : [];
   };
 
+  const tryVendorMenu = async () => {
+    // get my vendorId (cached if we already have it)
+    let vId = vendorId;
+    if (!vId) {
+      const r = await fetch(`${API_BASE}/api/vendors/me`, { headers: authHeaders });
+      const me = await r.json().catch(() => ({}));
+      if (me?.vendorId) vId = me.vendorId;
+    }
+    if (!vId) throw new Error("No vendor profile attached to this account.");
+
+    const r2 = await fetch(`${API_BASE}/api/vendors/${vId}/menu`, { headers: authHeaders });
+    const d2 = await r2.json().catch(() => ({}));
+    if (!r2.ok) {
+      const msg = d2?.message || `Failed (${r2.status})`;
+      throw new Error(msg);
+    }
+    // this endpoint sometimes returns {items: []}
+    return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
+  };
+
+  try {
+    // 1) primary: private “mine”
+    const list = await tryMine();
+    setMenuItems(list);
+  } catch (e1) {
+    // 2) fallback: public vendor menu
+    try {
+      const list = await tryVendorMenu();
+      setMenuItems(list);
+      toast.warn(`Loaded via fallback: ${e1?.message || "mine failed"}`);
+    } catch (e2) {
+      setMenuItems([]);
+      toast.error(`Failed to load menu: ${e2?.message || e1?.message || "Unknown error"}`);
+    }
+  }
+};
   // ---------- SUMMARY LOAD ----------
   const fetchSummary = async () => {
     setSummaryLoading(true);
