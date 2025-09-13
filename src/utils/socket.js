@@ -1,7 +1,7 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
 
-function normalizeBase(u) {
+function normalize(u) {
   if (!u) return "";
   return u.endsWith("/") ? u.slice(0, -1) : u;
 }
@@ -11,7 +11,7 @@ const RAW_BASE =
   process.env.REACT_APP_API_BASE_URL ||
   "";
 
-const BASE = normalizeBase(RAW_BASE);
+const BASE = normalize(RAW_BASE);
 
 if (!BASE) {
   console.warn("[socket] No REACT_APP_SOCKET_URL / REACT_APP_API_BASE_URL set");
@@ -19,13 +19,22 @@ if (!BASE) {
 
 // capture token once; you can refresh later via refreshSocketAuth()
 const initialToken = (() => {
-  try { return localStorage.getItem("token") || null; } catch { return null; }
+  try {
+    return localStorage.getItem("token") || null;
+  } catch {
+    return null;
+  }
 })();
 
+/**
+ * IMPORTANT:
+ *  - Force real websocket (skips long-polling which often 503s behind proxies)
+ *  - Path must match backend
+ *  - withCredentials so Render CORS accepts it
+ */
 export const socket = io(BASE, {
   path: "/socket.io",
-  // IMPORTANT: start with polling, then upgrade to websocket
-  transports: ["polling", "websocket"],
+  transports: ["websocket"],       // 🔸 force WS only
   withCredentials: true,
   reconnection: true,
   reconnectionAttempts: 10,
@@ -49,6 +58,7 @@ export function refreshSocketAuth(token) {
   }
 }
 
+// helpful logs
 socket.on("connect", () => console.log("[socket] connected", socket.id));
 socket.on("disconnect", (r) => console.log("[socket] disconnected:", r));
 socket.on("reconnect",  (n) => console.log("[socket] reconnected:", n));
