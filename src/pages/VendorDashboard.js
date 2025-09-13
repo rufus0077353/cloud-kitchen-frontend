@@ -1,4 +1,4 @@
-// src/pages/VendorDashboard.js  (READY-PASTE, relaxed image checks)
+// src/pages/VendorDashboard.js  (READY-PASTE)
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
@@ -75,21 +75,39 @@ const StatusChips = ({ byStatus = {}, loading = false }) => (
   </Paper>
 );
 
-/** Image helpers — RELAXED so images won’t get rejected **/
+/** Image helpers (JPG/PNG) **/
 const isHttpUrl = (v) => {
   if (!v) return false;
   try { const u = new URL(v); return u.protocol === "http:" || u.protocol === "https:"; }
   catch { return false; }
 };
-const isNonEmpty = (v) => typeof v === "string" && v.trim() !== "";
-const isLocalUploadPath = (v) => typeof v === "string" && v.startsWith("/uploads/");
-/** Allow ANY http(s) image URL (S3, CDN, no extension) or /uploads/*.
- *  Only blank/invalid falls back to placeholder. */
-const isAllowedImageUrl = (v) => isNonEmpty(v) && (isHttpUrl(v) || isLocalUploadPath(v));
-const pickThumb = (v) => (isAllowedImageUrl(v) ? v : PLACEHOLDER_IMG);
+
+// http(s) and looks like .jpg/.jpeg/.png (or ?format=jpg/jpeg/png)
+const isImageHttpUrl = (v) => {
+  if (!isHttpUrl(v)) return false;
+  try {
+    const u = new URL(v);
+    const p = u.pathname.toLowerCase();
+    const format = (u.searchParams.get("format") || "").toLowerCase();
+    return (
+      p.endsWith(".jpg") || p.endsWith(".jpeg") || p.endsWith(".png") ||
+      format === "jpg" || format === "jpeg" || format === "png"
+    );
+  } catch { return false; }
+};
+
+// local upload path like /uploads/xxx.jpg|jpeg|png
+const isLocalImagePath = (v) =>
+  typeof v === "string" &&
+  v.startsWith("/uploads/") &&
+  /\.(jpg|jpeg|png)$/i.test(v);
+
+// pick thumbnail or placeholder
+const pickThumb = (v) => (isImageHttpUrl(v) || isLocalImagePath(v)) ? v : PLACEHOLDER_IMG;
 
 // ---------- main ----------
 const VendorDashboard = () => {
+  // menu form ref (for “Create item” quick action)
   const formRef = useRef(null);
 
   // ----- menu state -----
@@ -101,7 +119,7 @@ const VendorDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [vendorId, setVendorId] = useState(null);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(true); // vendor open/closed
   const [isOpenSaving, setIsOpenSaving] = useState(false);
 
   // ----- daily trend controls -----
@@ -113,7 +131,7 @@ const VendorDashboard = () => {
   const [revGoal, setRevGoal] = useState(() => Number(localStorage.getItem("vd_rev_goal") || 50000));
   const [ordersGoal, setOrdersGoal] = useState(() => Number(localStorage.getItem("vd_orders_goal") || 200));
 
-  // ----- top items -----
+  // ----- top items (client-side aggregation) -----
   const [topItems, setTopItems] = useState([]);
   const [loadingTop, setLoadingTop] = useState(false);
 
@@ -121,6 +139,7 @@ const VendorDashboard = () => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
+  // persist settings
   useEffect(() => { localStorage.setItem("vd_days", String(days)); }, [days]);
   useEffect(() => { localStorage.setItem("vd_rev_goal", String(revGoal)); }, [revGoal]);
   useEffect(() => { localStorage.setItem("vd_orders_goal", String(ordersGoal)); }, [ordersGoal]);
@@ -141,6 +160,7 @@ const VendorDashboard = () => {
     };
 
     const tryVendorMenu = async () => {
+      // get my vendorId (cached if we already have it)
       let vId = vendorId;
       if (!vId) {
         const r = await fetch(`${API_BASE}/api/vendors/me`, { headers: authHeaders });
@@ -155,13 +175,16 @@ const VendorDashboard = () => {
         const msg = d2?.message || `Failed (${r2.status})`;
         throw new Error(msg);
       }
+      // this endpoint sometimes returns {items: []}
       return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
     };
 
     try {
+      // 1) primary: private “mine”
       const list = await tryMine();
       setMenuItems(list);
     } catch (e1) {
+      // 2) fallback: public vendor menu
       try {
         const list = await tryVendorMenu();
         setMenuItems(list);
@@ -227,10 +250,11 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---------- TOP ITEMS ----------
+  // ---------- TOP ITEMS (client-side) ----------
   const fetchTopItems = async () => {
     setLoadingTop(true);
     try {
+      // use paginated vendor orders (recent 200)
       const res = await fetch(`${API_BASE}/api/orders/vendor?page=1&pageSize=200`, { headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -272,7 +296,7 @@ const VendorDashboard = () => {
         }
       }
       const items = [...agg.values()].sort((a, b) => b.revenue - a.revenue);
-      setTopItems(items.slice(0, 8));
+      setTopItems(items.slice(0, 8)); // top 8
     } catch (e) {
       console.error("fetchTopItems error:", e);
       setTopItems([]);
@@ -318,6 +342,7 @@ const VendorDashboard = () => {
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
+          // prefer backend isOpen, fallback to persisted toggled value
           const persisted = localStorage.getItem("vd_is_open");
           setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
           socket.emit("vendor:join", me.vendorId);
@@ -329,11 +354,16 @@ const VendorDashboard = () => {
 
     getMeAndJoin();
 
-    const onReconnect = () => { if (vendorId) socket.emit("vendor:join", vendorId); };
+    const onReconnect = () => {
+      if (vendorId) socket.emit("vendor:join", vendorId);
+    };
+
     const onNewOrder = (order) => {
       if (Number(order?.VendorId) === Number(vendorId)) {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
-        fetchSummary(); fetchDaily(days); fetchTopItems();
+        fetchSummary();
+        fetchDaily(days);
+        fetchTopItems();
       }
     };
 
@@ -371,15 +401,16 @@ const VendorDashboard = () => {
       ? `${API_BASE}/api/menu-items/${editingItem.id}`
       : `${API_BASE}/api/menu-items`;
 
-    // RELAXED: keep any http(s) URL or /uploads/*, else null
+    // allow only http(s) jpg/jpeg/png or /uploads/...jpg|jpeg|png
     const rawUrl = (form.imageUrl || "").trim();
-    const imageUrl = isAllowedImageUrl(rawUrl) ? rawUrl : null;
+    const imageUrl = (isImageHttpUrl(rawUrl) || isLocalImagePath(rawUrl)) ? rawUrl : null;
 
     const body = {
       name: form.name,
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
-      imageUrl,
+      imageUrl, // JPG/PNG only
+      // VendorId is derived on backend from token
     };
 
     try {
@@ -398,7 +429,10 @@ const VendorDashboard = () => {
       toast.success(editingItem ? "Item updated" : "Item added");
       setForm({ name: "", price: "", description: "", imageUrl: "" });
       setEditingItem(null);
-      fetchMenu(); fetchSummary(); fetchDaily(days); fetchTopItems();
+      fetchMenu();
+      fetchSummary();
+      fetchDaily(days);
+      fetchTopItems();
     } catch (err) {
       console.error("Menu item save error:", err);
       toast.error("Server error occurred");
@@ -413,6 +447,7 @@ const VendorDashboard = () => {
       imageUrl: item.imageUrl ?? "",
     });
     setEditingItem(item);
+    // smooth scroll to form
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
@@ -424,7 +459,10 @@ const VendorDashboard = () => {
       });
       if (res.ok) {
         toast.success("Item deleted!");
-        fetchMenu(); fetchSummary(); fetchDaily(days); fetchTopItems();
+        fetchMenu();
+        fetchSummary();
+        fetchDaily(days);
+        fetchTopItems();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.message || "Failed to delete");
@@ -435,7 +473,7 @@ const VendorDashboard = () => {
     }
   };
 
-  // Toggle vendor open/closed
+  // Toggle vendor open/closed (persist + optimistic)
   const toggleOpen = async (checked) => {
     const prev = isOpen;
     setIsOpen(checked);
@@ -449,13 +487,13 @@ const VendorDashboard = () => {
       });
       if (!res.ok) {
         const msg = (await res.json().catch(() => ({}))).message || "Failed to update status";
-        setIsOpen(prev);
+        setIsOpen(prev); // rollback
         toast.error(msg);
         return;
       }
       toast.success(`Vendor is now ${checked ? "Open" : "Closed"}`);
     } catch {
-      setIsOpen(prev);
+      setIsOpen(prev); // rollback
       toast.error("Network error while updating status");
     } finally {
       setIsOpenSaving(false);
@@ -463,13 +501,17 @@ const VendorDashboard = () => {
   };
 
   useEffect(() => {
-    fetchMenu(); fetchSummary(); fetchDaily(days); fetchTopItems();
+    fetchMenu();
+    fetchSummary();
+    fetchDaily(days);
+    fetchTopItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
 
+  // ------ computed helpers for goals / AOV ------
   const todayOrders  = Number(summary?.today?.orders || 0);
   const weekOrders   = Number(summary?.week?.orders || 0);
   const monthOrders  = Number(summary?.month?.orders || 0);
@@ -495,6 +537,7 @@ const VendorDashboard = () => {
     return `You’re close: ${parts.join(" · ")}`;
   }, [revRemaining, ordersRemaining, revGoal, ordersGoal]);
 
+  // tiny analytics nudges
   const accepted  = Number(byStatus.accepted || 0);
   const rejected  = Number(byStatus.rejected || 0);
   const delivered = Number(byStatus.delivered || 0);
@@ -503,6 +546,7 @@ const VendorDashboard = () => {
   const completionRate = accepted > 0 ? (delivered / accepted) * 100 : null;
   const avgPrepTime = "—";
 
+  // best-seller badges in menu (Top 3 by revenue)
   const topNames = useMemo(
     () => new Set((topItems || []).slice(0, 3).map(i => (i.name || "").toLowerCase())),
     [topItems]
@@ -510,6 +554,7 @@ const VendorDashboard = () => {
 
   const totalTopRevenue = (topItems || []).reduce((s, i) => s + Number(i.revenue || 0), 0) || 0;
 
+  // quick actions
   const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
@@ -530,6 +575,7 @@ const VendorDashboard = () => {
           </Typography>
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+            {/* Open/Closed switch */}
             <FormControlLabel
               control={
                 <Switch
@@ -542,7 +588,12 @@ const VendorDashboard = () => {
               sx={{ mr: 1 }}
             />
 
-            <Button color="inherit" component={Link} to="/vendor/orders" sx={{ textTransform: "none" }}>
+            <Button
+              color="inherit"
+              component={Link}
+              to="/vendor/orders"
+              sx={{ textTransform: "none" }}
+            >
               View Orders
             </Button>
             <Button color="inherit" onClick={handleLogout}>Logout</Button>
@@ -567,6 +618,7 @@ const VendorDashboard = () => {
               Export top items CSV
             </Button>
             <Box sx={{ ml: "auto" }}>
+              {/* tiny analytics nudges */}
               <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
                 <Chip size="small" label={`Acceptance: ${acceptanceRate == null ? "—" : `${acceptanceRate.toFixed(0)}%`}`} />
                 <Chip size="small" label={`Completion: ${completionRate == null ? "—" : `${completionRate.toFixed(0)}%`}`} />
@@ -585,9 +637,14 @@ const VendorDashboard = () => {
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
             <Typography variant="subtitle1">Daily Trend Controls</Typography>
             <Stack direction="row" gap={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-              <TextField select size="small" label="Range" value={days}
+              <TextField
+                select
+                size="small"
+                label="Range"
+                value={days}
                 onChange={(e) => { const v = Number(e.target.value); setDays(v); fetchDaily(v); }}
-                sx={{ minWidth: 140 }}>
+                sx={{ minWidth: 140 }}
+              >
                 <MenuItem value={7}>Last 7 days</MenuItem>
                 <MenuItem value={14}>Last 14 days</MenuItem>
                 <MenuItem value={30}>Last 30 days</MenuItem>
@@ -623,9 +680,15 @@ const VendorDashboard = () => {
           <Grid container spacing={2}>
             <Grid item xs={12} md={8}>
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={4}><SummaryCard title="Today" value={summary?.today?.revenue} sub={`${summary?.today?.orders || 0} orders`} loading={summaryLoading} /></Grid>
-                <Grid item xs={12} sm={4}><SummaryCard title="This Week" value={summary?.week?.revenue} sub={`${summary?.week?.orders || 0} orders`} loading={summaryLoading} /></Grid>
-                <Grid item xs={12} sm={4}><SummaryCard title="This Month" value={summary?.month?.revenue} sub={`${summary?.month?.orders || 0} orders`} loading={summaryLoading} /></Grid>
+                <Grid item xs={12} sm={4}>
+                  <SummaryCard title="Today" value={summary?.today?.revenue} sub={`${summary?.today?.orders || 0} orders`} loading={summaryLoading} />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <SummaryCard title="This Week" value={summary?.week?.revenue} sub={`${summary?.week?.orders || 0} orders`} loading={summaryLoading} />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <SummaryCard title="This Month" value={summary?.month?.revenue} sub={`${summary?.month?.orders || 0} orders`} loading={summaryLoading} />
+                </Grid>
               </Grid>
             </Grid>
             <Grid item xs={12} md={4}>
@@ -655,7 +718,11 @@ const VendorDashboard = () => {
                 <Paper sx={{ p: 2 }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                     <Typography variant="body2" color="text.secondary">Revenue Goal</Typography>
-                    <TextField size="small" label="₹ goal" type="number" value={revGoal}
+                    <TextField
+                      size="small"
+                      label="₹ goal"
+                      type="number"
+                      value={revGoal}
                       onChange={(e) => setRevGoal(Math.max(0, Number(e.target.value) || 0))}
                       sx={{ width: 160 }}
                     />
@@ -672,7 +739,11 @@ const VendorDashboard = () => {
                 <Paper sx={{ p: 2 }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                     <Typography variant="body2" color="text.secondary">Orders Goal</Typography>
-                    <TextField size="small" label="Orders goal" type="number" value={ordersGoal}
+                    <TextField
+                      size="small"
+                      label="Orders goal"
+                      type="number"
+                      value={ordersGoal}
                       onChange={(e) => setOrdersGoal(Math.max(0, Number(e.target.value) || 0))}
                       sx={{ width: 160 }}
                     />
@@ -808,8 +879,8 @@ const VendorDashboard = () => {
               </Button>
             </Box>
 
-            {/* Preview (relaxed) */}
-            {isAllowedImageUrl(form.imageUrl) && (
+            {/* Preview (uses pickThumb to validate jpg/png or local upload path) */}
+            {form.imageUrl && (
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
                 <Avatar
                   variant="rounded"
@@ -828,7 +899,7 @@ const VendorDashboard = () => {
           </form>
         </Paper>
 
-        {/* ---- MENU TABLE ---- */}
+        {/* ---- MENU TABLE with thumbnail + Best-seller badges ---- */}
         <Typography variant="h6" sx={{ mb: 2 }}>Your Menu</Typography>
         <TableContainer component={Paper}>
           <Table>
@@ -871,13 +942,19 @@ const VendorDashboard = () => {
                         )}
                       </Stack>
                     </TableCell>
-                    <TableCell>{item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}</TableCell>
+                    <TableCell>
+                      {item.price !== null && item.price !== undefined ? `₹${item.price}` : "-"}
+                    </TableCell>
                     <TableCell sx={{ maxWidth: 360, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {item.description}
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton onClick={() => handleEdit(item)} color="primary" title="Edit"><Edit /></IconButton>
-                      <IconButton onClick={() => handleDelete(item.id)} color="error" title="Delete"><Delete /></IconButton>
+                      <IconButton onClick={() => handleEdit(item)} color="primary" title="Edit">
+                        <Edit />
+                      </IconButton>
+                      <IconButton onClick={() => handleDelete(item.id)} color="error" title="Delete">
+                        <Delete />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
                 );
