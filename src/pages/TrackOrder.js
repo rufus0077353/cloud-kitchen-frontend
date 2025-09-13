@@ -1,4 +1,3 @@
-
 // src/pages/TrackOrder.js
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -10,10 +9,11 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
+import api from "../utils/api";
 
-const API = process.env.REACT_APP_API_BASE_URL || "";
+const STAGES = ["pending", "accepted", "ready", "delivered"]; // "rejected" handled separately
 
-const STAGES = ["pending", "accepted", "ready", "delivered"]; // rejected handled separately
+// MUI Chip accepts: default | primary | secondary | error | info | success | warning
 const COLORS = {
   pending: "default",
   accepted: "info",
@@ -22,68 +22,60 @@ const COLORS = {
   rejected: "error",
 };
 
+const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
+
 export default function TrackOrder() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
+
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   const fetchOrder = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/orders/${id}`, { headers });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        navigate("/login");
-        return;
-      }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data?.message || "Failed to fetch order");
-        return;
-      }
+      // api base already includes /api → just call /orders/:id
+      const { data } = await api.get(`/orders/${id}`);
       setOrder(data);
-    } catch {
-      toast.error("Network error");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || "Failed to fetch order");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchOrder(); /* eslint-disable-next-line */ }, [id]);
-
-  // live updates
   useEffect(() => {
-    const onStatus = (p) => {
-      if (Number(p?.id) === Number(id)) {
-        setOrder((prev) => (prev ? { ...prev, status: p.status } : prev));
-        toast.info(`Order #${id} is now ${p.status}`);
+    if (id) fetchOrder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // live updates from server
+  useEffect(() => {
+    const onStatus = (payload) => {
+      if (Number(payload?.id) === Number(id)) {
+        setOrder((prev) => (prev ? { ...prev, ...payload } : payload));
+        const s = String(payload?.status || "").toUpperCase();
+        toast.info(`Order #${id} updated: ${s}`);
       }
     };
     socket.on("order:status", onStatus);
     return () => socket.off("order:status", onStatus);
   }, [id]);
 
-  const stageIndex = useMemo(() => {
-    if (!order?.status) return 0;
-    const s = String(order.status);
-    const idx = STAGES.indexOf(s);
-    return idx >= 0 ? idx : 0;
-  }, [order?.status]);
+  const statusLc = String(order?.status || "pending").toLowerCase();
+  const isRejected = statusLc === "rejected";
 
-  const isRejected = order?.status === "rejected";
+  const stageIndex = useMemo(() => {
+    const idx = STAGES.indexOf(statusLc);
+    return idx >= 0 ? idx : 0;
+  }, [statusLc]);
 
   const percent = useMemo(() => {
     if (isRejected) return 100;
-    const total = STAGES.length - 1;
-    return Math.min(100, Math.max(0, (stageIndex / total) * 100));
+    const totalSteps = STAGES.length - 1; // 3
+    return Math.min(100, Math.max(0, (stageIndex / totalSteps) * 100));
   }, [stageIndex, isRejected]);
-
-  const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
   return (
     <Box sx={{ py: 3 }}>
@@ -108,13 +100,13 @@ export default function TrackOrder() {
               </Typography>
               <Chip
                 size="small"
-                label={order.status}
-                color={COLORS[order.status] || "default"}
+                label={statusLc.toUpperCase()}
+                color={COLORS[statusLc] || "default"}
               />
               <Chip
                 size="small"
                 variant="outlined"
-                label={(order.paymentMethod === "mock_online" ? "Online" : "COD") + " · " + (order.paymentStatus || "unpaid")}
+                label={`${(order.paymentMethod === "online" || order.paymentMethod === "mock_online") ? "Online" : "COD"} · ${(order.paymentStatus || "unpaid").toUpperCase()}`}
               />
               <Typography variant="subtitle2" sx={{ ml: "auto" }}>
                 Total: {rupee(order.totalAmount)}
@@ -153,20 +145,24 @@ export default function TrackOrder() {
             {/* Items */}
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>Items</Typography>
-              {Array.isArray(order.MenuItems) && order.MenuItems.length > 0 ? (
+              {Array.isArray(order?.MenuItems) && order.MenuItems.length > 0 ? (
                 <Stack spacing={0.5}>
                   {order.MenuItems.map((mi) => (
                     <Stack key={mi.id} direction="row" justifyContent="space-between">
-                      <Typography variant="body2">{mi.name} × {mi?.OrderItem?.quantity ?? 1}</Typography>
+                      <Typography variant="body2">
+                        {mi.name} × {mi?.OrderItem?.quantity ?? 1}
+                      </Typography>
                       <Typography variant="body2">{rupee(mi.price)}</Typography>
                     </Stack>
                   ))}
                 </Stack>
-              ) : Array.isArray(order.OrderItems) ? (
+              ) : Array.isArray(order?.OrderItems) ? (
                 <Stack spacing={0.5}>
                   {order.OrderItems.map((oi) => (
                     <Stack key={oi.id} direction="row" justifyContent="space-between">
-                      <Typography variant="body2">{oi.MenuItem?.name || "Item"} × {oi.quantity ?? 1}</Typography>
+                      <Typography variant="body2">
+                        {oi.MenuItem?.name || "Item"} × {oi.quantity ?? 1}
+                      </Typography>
                       <Typography variant="body2">{rupee(oi.MenuItem?.price ?? 0)}</Typography>
                     </Stack>
                   ))}
