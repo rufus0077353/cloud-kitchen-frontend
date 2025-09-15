@@ -32,13 +32,20 @@ export default function AdminOrders() {
   const [err, setErr] = useState('');
 
   const commissionFor = (o) => {
-    const explicit = o?.commissionAmount ?? o?.platformCommission ?? o?.platformFee;
-    if (explicit != null) return Number(explicit) || 0;
-    const rate =
+  // ✅ if backend already sent commission amount, trust it
+  if (o?.commissionAmount != null) return Number(o.commissionAmount) || 0;
+
+  // ✅ use vendor commissionRate if available
+  const rate =
+    (o?.Vendor?.commissionRate != null
+      ? Number(o.Vendor.commissionRate)
+      : null) ??
       (o?.commissionRate != null ? Number(o.commissionRate) : null) ??
-      (o?.Vendor?.commissionRate != null ? Number(o.Vendor.commissionRate) : null) ??
-      DEFAULT_RATE;
+       DEFAULT_RATE;
+
     const total = Number(o?.totalAmount || 0);
+
+    // ✅ calculate using vendor-specific rate, fallback only if missing
     return Math.max(0, total * (isFinite(rate) ? rate : DEFAULT_RATE));
   };
 
