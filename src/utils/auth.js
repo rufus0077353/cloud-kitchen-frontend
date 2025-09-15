@@ -28,3 +28,14 @@ export function hasRole(required) {
   const needed = Array.isArray(required) ? required : [required];
   return needed.map((r) => String(r).toLowerCase()).includes(role);
 }
+
+export function logoutClient() {
+  try {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    sessionStorage.clear();
+  } catch (_) {}
+   // Hard replace avoids back button issues
+  window.location.replace("/login");
+}
+  
