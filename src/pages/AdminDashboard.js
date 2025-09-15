@@ -129,7 +129,7 @@ export default function AdminDashboard() {
   const [vendorTotal, setVendorTotal] = useState(0);
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
-  // orders (admin view via /api/orders/filter, client-side paginate)
+  // orders (admin view via /api/admin/orders, client-side paginate)
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [orderStatusFilter, setOrderStatusFilter] = useState("all");
@@ -226,10 +226,11 @@ export default function AdminDashboard() {
     }
   };
 
-  /* ---------------- API: Orders (robust fetch with fallback) ---------------- */
+  /* ---------------- API: Orders (GET only; removed /api/orders/filter to avoid 404) ---------------- */
   const fetchOrders = async () => {
     setOrdersLoading(true);
 
+    // we’ll still pass optional params; backend can ignore unsupported ones safely
     const params = {};
     if (orderStatusFilter !== "all") params.status = orderStatusFilter;
     if (orderVendorFilter !== "all") params.VendorId = String(orderVendorFilter);
@@ -242,37 +243,21 @@ export default function AdminDashboard() {
       Array.isArray(data?.orders) ? data.orders : [];
 
     try {
-      // Try new endpoint first
-      const res = await axios.post(`${API}/api/orders/filter`, params, {
+      const res = await axios.get(`${API}/api/admin/orders`, {
         headers,
+        params,
         validateStatus: () => true,
       });
-      if (res.status === 404) throw Object.assign(new Error("filter endpoint not found"), { code: "NO_FILTER_ROUTE" });
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
       const list = parseList(res.data);
       setOrders(list);
       setOrderPage(0);
-    } catch (err) {
-      // Fallback to admin route
-      try {
-        const res2 = await axios.get(`${API}/api/admin/orders`, {
-          headers,
-          params,
-          validateStatus: () => true,
-        });
-        if (res2.status === 401) return handle401();
-        if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
-
-        const list2 = parseList(res2.data);
-        setOrders(list2);
-        setOrderPage(0);
-      } catch (e2) {
-        console.error("Orders fetch failed (both routes):", err, e2);
-        toast.error(e2?.message || err?.message || "Failed to load orders");
-        setOrders([]);
-      }
+    } catch (e) {
+      console.error("Orders fetch failed:", e);
+      toast.error(e?.message || "Failed to load orders");
+      setOrders([]);
     } finally {
       setOrdersLoading(false);
     }
@@ -1028,7 +1013,7 @@ export default function AdminDashboard() {
                       </option>
                     ))}
                 </TextField>
-                {/* NEW: Commission % */}
+                {/* Commission % */}
                 <TextField
                   size="small"
                   label="Commission %"
@@ -1076,7 +1061,7 @@ export default function AdminDashboard() {
                     <TableCell>UserId</TableCell>
                     <TableCell>Open</TableCell>
                     <TableCell>Status</TableCell>
-                    {/* NEW: Commission column */}
+                    {/* Commission column */}
                     <TableCell>Commission %</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
