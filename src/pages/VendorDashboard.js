@@ -1,4 +1,5 @@
-// src/pages/VendorDashboard.js  (READY-PASTE)
+
+// src/pages/VendorDashboard.js
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
@@ -9,6 +10,7 @@ import {
 import { Delete, Edit, Refresh, Add } from "@mui/icons-material";
 import DownloadIcon from "@mui/icons-material/Download";
 import StarIcon from "@mui/icons-material/Star";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
@@ -122,6 +124,12 @@ const VendorDashboard = () => {
   const [isOpen, setIsOpen] = useState(true); // vendor open/closed
   const [isOpenSaving, setIsOpenSaving] = useState(false);
 
+  // NEW: vendor profile (for real vendors)
+  const [vendorProfile, setVendorProfile] = useState({
+    name: "", cuisine: "", location: "", phone: "", logoUrl: ""
+  });
+  const [savingVendorProfile, setSavingVendorProfile] = useState(false);
+
   // ----- daily trend controls -----
   const [days, setDays] = useState(() => Number(localStorage.getItem("vd_days") || 14));
   const [daily, setDaily] = useState([]);
@@ -135,6 +143,9 @@ const VendorDashboard = () => {
   const [topItems, setTopItems] = useState([]);
   const [loadingTop, setLoadingTop] = useState(false);
 
+  // notifications (browser)
+  const [notifReady, setNotifReady] = useState(Notification?.permission === "granted");
+
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -144,6 +155,73 @@ const VendorDashboard = () => {
   useEffect(() => { localStorage.setItem("vd_rev_goal", String(revGoal)); }, [revGoal]);
   useEffect(() => { localStorage.setItem("vd_orders_goal", String(ordersGoal)); }, [ordersGoal]);
   useEffect(() => { localStorage.setItem("vd_is_open", String(isOpen)); }, [isOpen]);
+
+  // ---------- PROFILE LOAD ----------
+  const fetchVendorMe = async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+      const me = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(me?.message || `Failed (${r.status})`);
+
+      if (me?.vendorId) setVendorId(me.vendorId);
+      if (typeof me?.isOpen === "boolean") setIsOpen(me.isOpen);
+      setVendorProfile({
+        name: me?.name ?? "",
+        cuisine: me?.cuisine ?? "",
+        location: me?.location ?? "",
+        phone: me?.phone ?? "",
+        logoUrl: me?.logoUrl ?? "",
+      });
+    } catch (e) {
+      // fallback: if we already know vendorId (from menu load), try /vendors/:id
+      if (!vendorId) return;
+      try {
+        const r2 = await fetch(`${API_BASE}/api/vendors/${vendorId}`, { headers });
+        const v = await r2.json().catch(() => ({}));
+        if (!r2.ok) throw new Error(v?.message || `Failed (${r2.status})`);
+        if (typeof v?.isOpen === "boolean") setIsOpen(v.isOpen);
+        setVendorProfile({
+          name: v?.name ?? "",
+          cuisine: v?.cuisine ?? "",
+          location: v?.location ?? "",
+          phone: v?.phone ?? "",
+          logoUrl: v?.logoUrl ?? "",
+        });
+      } catch {
+        // ignore; profile section will stay empty
+      }
+    }
+  };
+
+  const saveVendorProfile = async () => {
+    if (!vendorId) {
+      toast.error("No vendor profile attached to this account.");
+      return;
+    }
+    setSavingVendorProfile(true);
+    try {
+      const body = {
+        name: vendorProfile.name,
+        cuisine: vendorProfile.cuisine,
+        location: vendorProfile.location,
+        phone: vendorProfile.phone || null,
+        logoUrl: vendorProfile.logoUrl || null,
+      };
+      const res = await fetch(`${API_BASE}/api/vendors/${vendorId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Failed to save profile");
+      toast.success("Vendor profile updated");
+      await fetchVendorMe();
+    } catch (e) {
+      toast.error(e?.message || "Failed to save vendor profile");
+    } finally {
+      setSavingVendorProfile(false);
+    }
+  };
 
   // ---------- MENU LOAD ----------
   const fetchMenu = async () => {
@@ -188,7 +266,7 @@ const VendorDashboard = () => {
       try {
         const list = await tryVendorMenu();
         setMenuItems(list);
-        toast.warn(`Loaded via fallback: ${e1?.message || "mine failed"}`);
+        toast.warn(`Loaded menu via fallback: ${e1?.message || "mine failed"}`);
       } catch (e2) {
         setMenuItems([]);
         toast.error(`Failed to load menu: ${e2?.message || e1?.message || "Unknown error"}`);
@@ -342,7 +420,6 @@ const VendorDashboard = () => {
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
-          // prefer backend isOpen, fallback to persisted toggled value
           const persisted = localStorage.getItem("vd_is_open");
           setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
           socket.emit("vendor:join", me.vendorId);
@@ -361,6 +438,12 @@ const VendorDashboard = () => {
     const onNewOrder = (order) => {
       if (Number(order?.VendorId) === Number(vendorId)) {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
+        if (notifReady && "Notification" in window) {
+          try {
+            // lightweight browser notification (optional)
+            new Notification(`New order #${order?.id ?? ""}`, { body: "Open your orders to view details." });
+          } catch (_) {}
+        }
         fetchSummary();
         fetchDaily(days);
         fetchTopItems();
@@ -377,7 +460,7 @@ const VendorDashboard = () => {
       socket.off("order:status", () => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId, token, days]);
+  }, [vendorId, token, days, notifReady]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -410,7 +493,6 @@ const VendorDashboard = () => {
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
       imageUrl, // JPG/PNG only
-      // VendorId is derived on backend from token
     };
 
     try {
@@ -447,7 +529,6 @@ const VendorDashboard = () => {
       imageUrl: item.imageUrl ?? "",
     });
     setEditingItem(item);
-    // smooth scroll to form
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
@@ -500,11 +581,30 @@ const VendorDashboard = () => {
     }
   };
 
+  const requestBrowserNotif = async () => {
+    if (!("Notification" in window)) {
+      toast.error("Browser notifications not supported");
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") {
+        setNotifReady(true);
+        new Notification("Notifications enabled", { body: "You’ll get alerts for new orders." });
+      } else {
+        toast.info("Notifications permission was not granted");
+      }
+    } catch {
+      toast.error("Could not enable notifications");
+    }
+  };
+
   useEffect(() => {
     fetchMenu();
     fetchSummary();
     fetchDaily(days);
     fetchTopItems();
+    fetchVendorMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -596,6 +696,20 @@ const VendorDashboard = () => {
             >
               View Orders
             </Button>
+
+            <Tooltip title="Enable browser notifications">
+              <span>
+                <Button
+                  color="inherit"
+                  startIcon={<NotificationsActiveIcon />}
+                  onClick={requestBrowserNotif}
+                  disabled={notifReady}
+                >
+                  {notifReady ? "Notifications On" : "Enable Alerts"}
+                </Button>
+              </span>
+            </Tooltip>
+
             <Button color="inherit" onClick={handleLogout}>Logout</Button>
           </Stack>
         </Toolbar>
@@ -608,7 +722,7 @@ const VendorDashboard = () => {
             <Button startIcon={<Add />} variant="contained" onClick={scrollToForm}>
               Create item
             </Button>
-            <Button variant="outlined" onClick={() => { fetchSummary(); fetchDaily(days); fetchTopItems(); }}>
+            <Button variant="outlined" onClick={() => { fetchSummary(); fetchDaily(days); fetchTopItems(); fetchMenu(); }}>
               Refresh all
             </Button>
             <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportDailyCsv} disabled={loadingDaily || (daily || []).length === 0}>
@@ -821,6 +935,87 @@ const VendorDashboard = () => {
           </Box>
         </Paper>
 
+        {/* ---- MY VENDOR PROFILE (Editable) ---- */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6">My Vendor Profile</Typography>
+            <Tooltip title="Reload vendor profile">
+              <IconButton onClick={fetchVendorMe}><Refresh /></IconButton>
+            </Tooltip>
+          </Stack>
+
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} sm={8}>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Name"
+                    value={vendorProfile.name}
+                    onChange={(e) => setVendorProfile((p) => ({ ...p, name: e.target.value }))}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Cuisine"
+                    value={vendorProfile.cuisine}
+                    onChange={(e) => setVendorProfile((p) => ({ ...p, cuisine: e.target.value }))}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Location"
+                    value={vendorProfile.location}
+                    onChange={(e) => setVendorProfile((p) => ({ ...p, location: e.target.value }))}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Phone"
+                    value={vendorProfile.phone}
+                    onChange={(e) => setVendorProfile((p) => ({ ...p, phone: e.target.value }))}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    label="Logo URL (JPEG/PNG or /uploads/...)"
+                    value={vendorProfile.logoUrl}
+                    onChange={(e) => setVendorProfile((p) => ({ ...p, logoUrl: e.target.value }))}
+                    helperText="Tip: upload via the same /api/uploads endpoint or paste an https .jpg/.png"
+                    fullWidth
+                  />
+                </Grid>
+              </Grid>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Stack alignItems="center" spacing={1}>
+                <Avatar
+                  variant="rounded"
+                  src={pickThumb(vendorProfile.logoUrl)}
+                  alt="Logo preview"
+                  sx={{ width: 96, height: 96 }}
+                  imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                />
+                <Typography variant="caption" color="text.secondary">Logo preview</Typography>
+              </Stack>
+            </Grid>
+          </Grid>
+
+          <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+            <Button
+              variant="contained"
+              onClick={saveVendorProfile}
+              disabled={savingVendorProfile || !vendorId}
+            >
+              {savingVendorProfile ? "Saving…" : "Save Profile"}
+            </Button>
+            <Button variant="outlined" onClick={fetchVendorMe}>Reset</Button>
+          </Stack>
+        </Paper>
+
         {/* ---- MENU FORM ---- */}
         <Paper sx={{ p: 3, mb: 3 }} ref={formRef}>
           <Typography variant="h6">
@@ -882,14 +1077,14 @@ const VendorDashboard = () => {
             {/* Preview (uses pickThumb to validate jpg/png or local upload path) */}
             {form.imageUrl && (
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-                <Avatar
-                  variant="rounded"
-                  src={pickThumb(form.imageUrl)}
-                  alt="preview"
-                  sx={{ width: 56, height: 56 }}
-                  imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
-                />
-                <Typography variant="caption" color="text.secondary">Preview</Typography>
+                  <Avatar
+                    variant="rounded"
+                    src={pickThumb(form.imageUrl)}
+                    alt="preview"
+                    sx={{ width: 56, height: 56 }}
+                    imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                  />
+                  <Typography variant="caption" color="text.secondary">Preview</Typography>
               </Stack>
             )}
 
