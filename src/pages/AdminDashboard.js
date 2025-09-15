@@ -420,7 +420,7 @@ export default function AdminDashboard() {
     } finally {
       setSavingUserId(null);
    }
- };
+};
 
   // Inline vendor edit
   const startEditVendor = (v) => {
