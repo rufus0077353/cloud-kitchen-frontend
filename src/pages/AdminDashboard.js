@@ -392,29 +392,35 @@ export default function AdminDashboard() {
   };
 
   const saveUserRole = async (user) => {
-    const nextRole = pendingRoleByUser[user.id] ?? user.role;
-    if (!nextRole || nextRole === user.role) {
-      toast.info("No role change to save");
-      return;
-    }
-    setSavingUserId(user.id);
-    try {
-      const res = await axios.patch(`${API}/api/admin/users/${user.id}`, { role: nextRole }, { headers, validateStatus: () => true });
-      if (res.status === 401) return handle401();
-      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update role");
-      toast.success(`Role updated to ${nextRole}`);
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: nextRole } : u)));
-      setPendingRoleByUser((prev) => {
-        const copy = { ...prev };
-        delete copy[user.id];
-        return copy;
+   const nextRole = pendingRoleByUser[user.id] ?? user.role;
+   if (!nextRole || nextRole === user.role) {
+     toast.info("No role change to save");
+     return;
+   }
+   setSavingUserId(user.id);
+   try {
+    // ✅ match backend route you actually have
+    const res = await axios.put(
+      `${API}/api/admin/users/${user.id}/role`,
+      { role: nextRole },
+      { headers, validateStatus: () => true }
+     );
+     if (res.status === 401) return handle401();
+     if (res.status >= 400) throw new Error(res.data?.message || "Failed to update role");
+
+     toast.success(`Role updated to ${nextRole}`);
+     setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: nextRole } : u)));
+     setPendingRoleByUser((prev) => {
+      const copy = { ...prev };
+      delete copy[user.id];
+      return copy;
       });
     } catch (e) {
       toast.error(e?.message || "Failed to update role");
     } finally {
       setSavingUserId(null);
-    }
-  };
+   }
+ };
 
   // Inline vendor edit
   const startEditVendor = (v) => {
