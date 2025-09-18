@@ -2,13 +2,12 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
 
-/* ---------- base URL resolution ---------- */
+/* ---------- base URL ---------- */
 function normalize(u) {
   if (!u) return "";
   return u.endsWith("/") ? u.slice(0, -1) : u;
 }
 
-// Support Vite (VITE_*) and CRA (REACT_APP_*)
 const RAW_BASE =
   (typeof import.meta !== "undefined" && import.meta?.env?.VITE_SOCKET_URL) ||
   (typeof import.meta !== "undefined" && import.meta?.env?.VITE_API_BASE) ||
@@ -16,37 +15,28 @@ const RAW_BASE =
   process.env.REACT_APP_API_BASE_URL ||
   "";
 
-// If not provided, try same-origin (useful in local dev with proxy)
+// Fallback to same-origin (useful when frontend is served by the API or local proxy)
 const FALLBACK_BASE =
   typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
 
 const BASE = normalize(RAW_BASE || FALLBACK_BASE);
+if (!BASE) console.warn("[socket] No SOCKET URL set. Using same-origin if available.");
 
-if (!BASE) {
-  console.warn("[socket] No SOCKET URL set (VITE_SOCKET_URL / REACT_APP_SOCKET_URL / API_BASE).");
-}
-
-/* ---------- auth ---------- */
-const initialToken = (() => {
-  try {
-    return localStorage.getItem("token") || null;
-  } catch {
-    return null;
-  }
-})();
+// IMPORTANT: clear any previous rememberUpgrade cache that may force WS only
+try { localStorage.removeItem("io"); } catch {}
 
 /* ---------- socket ---------- */
 /**
- * Key choices:
- * - transports: allow 'polling' on first connect so proxies can upgrade to WS cleanly
- * - rememberUpgrade: after 1st WS success, skip polling on subsequent connects
- * - path MUST match server (index.js uses '/socket.io')
- * - withCredentials to satisfy CORS
+ * - Allow 'polling' so proxies can establish the connection, then upgrade to WS.
+ * - DO NOT force websocket-only.
+ * - Disable rememberUpgrade for now to avoid getting stuck trying WS on a flaky edge.
+ * - Keep path exactly '/socket.io' to match the server.
  */
 export const socket = io(BASE, {
   path: "/socket.io",
-  transports: ["websocket", "polling"],
-  rememberUpgrade: true,
+  transports: ["polling", "websocket"], // start with polling then upgrade
+  upgrade: true,
+  rememberUpgrade: false,               // <- critical
   withCredentials: true,
   reconnection: true,
   reconnectionAttempts: Infinity,
@@ -54,32 +44,22 @@ export const socket = io(BASE, {
   reconnectionDelayMax: 6000,
   timeout: 20000,
   autoConnect: true,
-  auth: { token: initialToken },
+  auth: {
+    token: (() => {
+      try { return localStorage.getItem("token") || null; } catch { return null; }
+    })(),
+  },
 });
 
+/* ---------- helpers ---------- */
 export function refreshSocketAuth(token) {
   try {
     socket.auth = { token: token || null };
-    if (socket.connected) {
-      socket.emit("auth:refresh", { token: token || null });
-    } else {
-      socket.connect();
-    }
+    if (socket.connected) socket.emit("auth:refresh", { token: token || null });
+    else socket.connect();
   } catch (e) {
     console.warn("[socket] refreshSocketAuth failed:", e?.message);
   }
-}
-
-/* ---------- helpers for rooms (optional but handy) ---------- */
-export function joinVendorRoom(vendorId) {
-  if (!vendorId) return;
-  if (socket.connected) socket.emit("vendor:join", vendorId);
-  else socket.once("connect", () => socket.emit("vendor:join", vendorId));
-}
-export function joinUserRoom(userId) {
-  if (!userId) return;
-  if (socket.connected) socket.emit("user:join", userId);
-  else socket.once("connect", () => socket.emit("user:join", userId));
 }
 
 /* ---------- diagnostics ---------- */

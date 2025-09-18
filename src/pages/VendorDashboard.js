@@ -19,13 +19,22 @@ import VendorSalesTrend from "../components/VendorSalesTrend";
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 const PLACEHOLDER_IMG = "/images/placeholder-food.png";
 
-// --------- helpers ----------
+/* ------------ helpers ------------ */
 const STATUS_COLORS = {
   pending:   "default",
   accepted:  "primary",
   ready:     "warning",
   delivered: "success",
   rejected:  "error",
+};
+
+// payout status → chip color
+const PAYOUT_COLORS = {
+  pending:  "warning",
+  queued:   "info",
+  processing: "info",
+  paid:     "success",
+  failed:   "error",
 };
 
 const Money = ({ value }) => (
@@ -107,7 +116,7 @@ const isLocalImagePath = (v) =>
 // pick thumbnail or placeholder
 const pickThumb = (v) => (isImageHttpUrl(v) || isLocalImagePath(v)) ? v : PLACEHOLDER_IMG;
 
-// ---------- main ----------
+/* ------------ main ------------ */
 const VendorDashboard = () => {
   // menu form ref (for “Create item” quick action)
   const formRef = useRef(null);
@@ -160,7 +169,7 @@ const VendorDashboard = () => {
   useEffect(() => { localStorage.setItem("vd_orders_goal", String(ordersGoal)); }, [ordersGoal]);
   useEffect(() => { localStorage.setItem("vd_is_open", String(isOpen)); }, [isOpen]);
 
-  // ---------- PROFILE LOAD ----------
+  /* ---------- PROFILE LOAD ---------- */
   const fetchVendorMe = async () => {
     try {
       const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
@@ -227,7 +236,7 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---------- MENU LOAD ----------
+  /* ---------- MENU LOAD ---------- */
   const fetchMenu = async () => {
     const authHeaders = { Authorization: `Bearer ${token}` };
 
@@ -278,7 +287,7 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---------- SUMMARY LOAD ----------
+  /* ---------- SUMMARY LOAD ---------- */
   const fetchSummary = async () => {
     setSummaryLoading(true);
     try {
@@ -305,7 +314,7 @@ const VendorDashboard = () => {
     }
   };
 
-  // ---------- DAILY TREND LOAD ----------
+  /* ---------- DAILY TREND LOAD ---------- */
   const fetchDaily = async (range = days) => {
     setLoadingDaily(true);
     try {
@@ -332,22 +341,27 @@ const VendorDashboard = () => {
     }
   };
 
+  /* ---------- PAYOUTS LOAD ---------- */
   const fetchPayouts = async () => {
+    if (!vendorId) return;
     setPayoutsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/vendors/${vendorId}/payouts`, { headers });
-      if (!res.ok ) throw new Error ("Failed to fetch payouts");
-      const data = await res.json();
-      setPayouts(Array.isArray(data) ? data : []);
-    } catch {
-      console.error("Failed to fetch payouts");
+      const data = await res.json().catch(() => ([]));
+      if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
+      const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+      // newest first
+      list.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      setPayouts(list);
+    } catch (e) {
+      console.error("Failed to fetch payouts:", e?.message);
       setPayouts([]);
     } finally {
       setPayoutsLoading(false);
-    } 
+    }
   };
 
-  // ---------- TOP ITEMS (client-side) ----------
+  /* ---------- TOP ITEMS (client-side) ---------- */
   const fetchTopItems = async () => {
     setLoadingTop(true);
     try {
@@ -430,7 +444,7 @@ const VendorDashboard = () => {
     URL.revokeObjectURL(url);
   };
 
-  // ---- socket: join vendor room + notify on new orders ----
+  /* ---- socket: join vendor room + live updates ---- */
   useEffect(() => {
     const getMeAndJoin = async () => {
       try {
@@ -458,10 +472,7 @@ const VendorDashboard = () => {
       if (Number(order?.VendorId) === Number(vendorId)) {
         toast.info(`🆕 New order #${order?.id ?? ""} received`);
         if (notifReady && "Notification" in window) {
-          try {
-            // lightweight browser notification (optional)
-            new Notification(`New order #${order?.id ?? ""}`, { body: "Open your orders to view details." });
-          } catch (_) {}
+          try { new Notification(`New order #${order?.id ?? ""}`, { body: "Open your orders to view details." }); } catch (_) {}
         }
         fetchSummary();
         fetchDaily(days);
@@ -469,18 +480,31 @@ const VendorDashboard = () => {
       }
     };
 
+    const onOrderStatus = () => { fetchSummary(); fetchDaily(days); fetchTopItems(); fetchPayouts(); };
+    const onPayoutUpdate = () => { fetchPayouts(); };
+    const onPayoutStatus = () => { fetchPayouts(); };
+
     socket.on("connect", onReconnect);
     socket.on("order:new", onNewOrder);
-    socket.on("order:status", () => { fetchSummary(); fetchDaily(days); fetchTopItems(); fetchPayouts(); });
-    socket.on("payout:status", () => { fetchPayouts(); });
+    socket.on("order:status", onOrderStatus);
+    socket.on("payout:update", onPayoutUpdate);
+    socket.on("payout:status", onPayoutStatus);
 
     return () => {
       socket.off("connect", onReconnect);
       socket.off("order:new", onNewOrder);
-      socket.off("order:status", () => {});
+      socket.off("order:status", onOrderStatus);
+      socket.off("payout:update", onPayoutUpdate);
+      socket.off("payout:status", onPayoutStatus);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, token, days, notifReady]);
+
+  // fetch payouts once vendorId is known
+  useEffect(() => {
+    if (vendorId) fetchPayouts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -742,7 +766,7 @@ const VendorDashboard = () => {
             <Button startIcon={<Add />} variant="contained" onClick={scrollToForm}>
               Create item
             </Button>
-            <Button variant="outlined" onClick={() => { fetchSummary(); fetchDaily(days); fetchTopItems(); fetchMenu(); }}>
+            <Button variant="outlined" onClick={() => { fetchSummary(); fetchDaily(days); fetchTopItems(); fetchMenu(); fetchPayouts(); }}>
               Refresh all
             </Button>
             <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportDailyCsv} disabled={loadingDaily || (daily || []).length === 0}>
@@ -1186,6 +1210,65 @@ const VendorDashboard = () => {
             </TableBody>
           </Table>
         </TableContainer>
+
+        {/* ---- PAYOUTS ---- */}
+        <Paper sx={{ p: 3, mt: 3, mb: 6 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 1, flexWrap: "wrap" }}>
+            <Typography variant="h6">Payouts</Typography>
+            <Stack direction="row" spacing={1}>
+              <Tooltip title="Refresh payouts">
+                <IconButton onClick={fetchPayouts}><Refresh /></IconButton>
+              </Tooltip>
+            </Stack>
+          </Stack>
+
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Payout #</TableCell>
+                  <TableCell>Order #</TableCell>
+                  <TableCell align="right">Order Total</TableCell>
+                  <TableCell align="right">Commission</TableCell>
+                  <TableCell align="right">Vendor Payout</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Updated</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {payoutsLoading ? (
+                  <TableRow><TableCell colSpan={7} align="center"><Skeleton height={26} /></TableCell></TableRow>
+                ) : (payouts || []).length === 0 ? (
+                  <TableRow><TableCell colSpan={7} align="center">
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                      No payouts yet.
+                    </Typography>
+                  </TableCell></TableRow>
+                ) : (
+                  (payouts || []).map((p) => {
+                    const st = String(p.status || "pending").toLowerCase();
+                    return (
+                      <TableRow key={p.id}>
+                        <TableCell>{p.id}</TableCell>
+                        <TableCell>{p.orderId ?? p.OrderId ?? "-"}</TableCell>
+                        <TableCell align="right">₹{Number(p.totalAmount ?? p.orderTotal ?? 0).toFixed(2)}</TableCell>
+                        <TableCell align="right">₹{Number(p.platformCommission ?? p.commission ?? 0).toFixed(2)}</TableCell>
+                        <TableCell align="right">₹{Number(p.payoutAmount ?? p.amount ?? 0).toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Chip size="small" label={st} color={PAYOUT_COLORS[st] || "default"} />
+                        </TableCell>
+                        <TableCell>
+                          {p.updatedAt ? new Date(p.updatedAt).toLocaleString() :
+                           p.createdAt ? new Date(p.createdAt).toLocaleString() : "-"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
       </Container>
     </>
   );
