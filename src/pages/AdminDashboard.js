@@ -19,6 +19,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import axios from "axios";
 import { toast } from "react-toastify";
+import { socket } from "../utils/socket";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 // Fallback rate if an order/vendor doesn't provide one (e.g. 0.15 for 15%)
@@ -491,6 +492,54 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  
+// 🔔 Live updates for Admin: orders + payouts
+ useEffect(() => {
+  // new order (support both event names your backend might emit)
+   const onOrderNew = (o) => {
+    try { toast.info(`🆕 New order #${o?.id ?? ""}`); } catch {}
+    fetchOrders();
+    fetchStats();
+   };
+
+  // order status changed
+  const onOrderStatus = (p) => {
+    try { toast.success(`📦 Order #${p?.id ?? ""} → ${p?.status ?? ""}`); } catch {}
+    fetchOrders();
+    fetchStats();
+  };
+
+  // payout created/updated (emitted when vendor delivers + paid, or admin updates status)
+  const onPayoutUpdate = (p) => {
+    const amt = p?.payoutAmount != null ? Number(p.payoutAmount).toFixed(2) : "";
+    try { toast.success(`💰 Payout ${p?.status ?? "updated"} — Order #${p?.orderId ?? ""}${amt ? ` · ₹${amt}` : ""}`); } catch {}
+    // commissions affect tiles → refresh
+    fetchStats();
+    // If you later add an Admin payouts table, call fetchPayouts() here too.
+  };
+
+  // hook up listeners
+  socket.on("order:new", onOrderNew);
+  socket.on("order:created", onOrderNew);
+  socket.on("order:status", onOrderStatus);
+  socket.on("payout:update", onPayoutUpdate);
+
+  // optional: on reconnect, do a light refresh
+  const onReconnect = () => {
+    fetchStats();
+  };
+  socket.on("connect", onReconnect);
+
+  // cleanup
+  return () => {
+    socket.off("order:new", onOrderNew);
+    socket.off("order:created", onOrderNew);
+    socket.off("order:status", onOrderStatus);
+    socket.off("payout:update", onPayoutUpdate);
+    socket.off("connect", onReconnect);
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /* ---------------- derived lists (client-side filter/search) ---------------- */
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();

@@ -412,53 +412,76 @@ const VendorDashboard = () => {
   };
 
   // ---- socket: join vendor room + notify on new orders ----
-  useEffect(() => {
-    const getMeAndJoin = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
-        if (!r.ok) return;
-        const me = await r.json();
-        if (me?.vendorId) {
-          setVendorId(me.vendorId);
-          const persisted = localStorage.getItem("vd_is_open");
-          setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
-          socket.emit("vendor:join", me.vendorId);
-        }
-      } catch {
-        // ignore
+  
+ useEffect(() => {
+  const getMeAndJoin = async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+      if (!r.ok) return;
+      const me = await r.json();
+      if (me?.vendorId) {
+        setVendorId(me.vendorId);
+        const persisted = localStorage.getItem("vd_is_open");
+        setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
+        socket.emit("vendor:join", me.vendorId);
       }
-    };
+    } catch {
+      // ignore
+    }
+  };
 
-    getMeAndJoin();
+  getMeAndJoin();
 
-    const onReconnect = () => {
-      if (vendorId) socket.emit("vendor:join", vendorId);
-    };
+  const onReconnect = () => {
+    if (vendorId) socket.emit("vendor:join", vendorId);
+  };
 
-    const onNewOrder = (order) => {
-      if (Number(order?.VendorId) === Number(vendorId)) {
-        toast.info(`🆕 New order #${order?.id ?? ""} received`);
-        if (notifReady && "Notification" in window) {
-          try {
-            // lightweight browser notification (optional)
-            new Notification(`New order #${order?.id ?? ""}`, { body: "Open your orders to view details." });
-          } catch (_) {}
-        }
-        fetchSummary();
-        fetchDaily(days);
-        fetchTopItems();
+  const onNewOrder = (order) => {
+    if (Number(order?.VendorId) === Number(vendorId)) {
+      toast.info(`🆕 New order #${order?.id ?? ""} received`);
+      if (notifReady && "Notification" in window) {
+        try {
+          new Notification(`New order #${order?.id ?? ""}`, {
+            body: "Open your orders to view details.",
+          });
+        } catch (_) {}
       }
-    };
+      fetchSummary();
+      fetchDaily(days);
+      fetchTopItems();
+    }
+  };
 
-    socket.on("connect", onReconnect);
-    socket.on("order:new", onNewOrder);
-    socket.on("order:status", () => { fetchSummary(); fetchDaily(days); fetchTopItems(); });
+  const onOrderStatus = () => {
+    fetchSummary();
+    fetchDaily(days);
+    fetchTopItems();
+  };
 
-    return () => {
-      socket.off("connect", onReconnect);
-      socket.off("order:new", onNewOrder);
-      socket.off("order:status", () => {});
-    };
+  // ✅ new payout listener
+  const onPayout = (payload) => {
+    if (Number(payload?.VendorId) === Number(vendorId)) {
+      toast.success(
+        `💰 Payout updated: Order #${payload.orderId} — ₹${payload.payoutAmount}`
+      );
+      // optional: trigger a fetch if you have a payout summary/table
+      if (typeof fetchPayouts === "function") {
+        fetchPayouts();
+      }
+    }
+  };
+
+  socket.on("connect", onReconnect);
+  socket.on("order:new", onNewOrder);
+  socket.on("order:status", onOrderStatus);
+  socket.on("payout:update", onPayout);
+
+  return () => {
+    socket.off("connect", onReconnect);
+    socket.off("order:new", onNewOrder);
+    socket.off("order:status", onOrderStatus);
+    socket.off("payout:update", onPayout);
+  };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, token, days, notifReady]);
 
