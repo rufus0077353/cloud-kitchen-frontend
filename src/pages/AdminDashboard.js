@@ -19,7 +19,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import axios from "axios";
 import { toast } from "react-toastify";
-import { socket } from "../utils/socket";
+import { socket, connectSocket} from "../utils/socket";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 // Fallback rate if an order/vendor doesn't provide one (e.g. 0.15 for 15%)
@@ -495,6 +495,7 @@ export default function AdminDashboard() {
   
 // 🔔 Live updates for Admin: orders + payouts
  useEffect(() => {
+  connectSocket(); // ensure socket is connected
   // new order (support both event names your backend might emit)
   const onOrderNew = (o) => {
     try { toast.info(`🆕 New order #${o?.id ?? ""}`); } catch {}

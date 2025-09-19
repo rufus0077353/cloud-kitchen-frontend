@@ -13,7 +13,7 @@ import StarIcon from "@mui/icons-material/Star";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
-import { socket } from "../utils/socket";
+import { socket, connectSocket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
@@ -446,6 +446,7 @@ const VendorDashboard = () => {
 
   /* ---- socket: join vendor room + live updates ---- */
 useEffect(() => {
+  connectSocket(); // ensure socket is connected
   const getMeAndJoin = async () => {
     try {
       const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
@@ -467,6 +468,14 @@ useEffect(() => {
   const onReconnect = () => {
     if (vendorId) socket.emit("vendor:join", vendorId);
   };
+
+    // refresh auth from localStorage, then connect if not connected
+  try {
+    const { refreshSocketAuth, socket } = require("../utils/socket");
+    refreshSocketAuth();
+    if (!socket.connected) socket.connect();
+  } catch {}
+  // no deps: run once
 
   const onNewOrder = (order) => {
     if (Number(order?.VendorId) === Number(vendorId)) {

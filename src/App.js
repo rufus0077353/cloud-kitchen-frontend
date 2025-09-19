@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { CssBaseline, Container } from "@mui/material";
+import { connectSocket } from "./utils/socket";
 
 // Pages
 import Login from "./pages/Login";
@@ -249,6 +250,16 @@ function App() {
                   <PrivateRoute role="admin">
                     <AdminRoute>
                       <AdminOrders />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/admin/payouts "
+                element={
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <AdminPayouts />
                     </AdminRoute>
                   </PrivateRoute>
                 }
