@@ -496,11 +496,11 @@ export default function AdminDashboard() {
 // 🔔 Live updates for Admin: orders + payouts
  useEffect(() => {
   // new order (support both event names your backend might emit)
-   const onOrderNew = (o) => {
+  const onOrderNew = (o) => {
     try { toast.info(`🆕 New order #${o?.id ?? ""}`); } catch {}
     fetchOrders();
     fetchStats();
-   };
+  };
 
   // order status changed
   const onOrderStatus = (p) => {
@@ -509,13 +509,25 @@ export default function AdminDashboard() {
     fetchStats();
   };
 
-  // payout created/updated (emitted when vendor delivers + paid, or admin updates status)
+  // payout created/updated
   const onPayoutUpdate = (p) => {
     const amt = p?.payoutAmount != null ? Number(p.payoutAmount).toFixed(2) : "";
-    try { toast.success(`💰 Payout ${p?.status ?? "updated"} — Order #${p?.orderId ?? ""}${amt ? ` · ₹${amt}` : ""}`); } catch {}
-    // commissions affect tiles → refresh
+    try {
+      toast.success(`💰 Payout ${p?.status ?? "updated"} — Order #${p?.orderId ?? ""}${amt ? ` · ₹${amt}` : ""}`);
+    } catch {}
+    // commissions/tiles depend on payouts
     fetchStats();
-    // If you later add an Admin payouts table, call fetchPayouts() here too.
+    // if you later add an Admin payouts table, call its fetch() here too
+  };
+
+  // ✅ also handle explicit status events and generic refresh pings
+  const onPayoutStatus = (p) => {
+    try { toast.info(`💸 Payout status → ${p?.status ?? ""} (Order #${p?.orderId ?? ""})`); } catch {}
+    fetchStats();
+  };
+  const onPaymentsRefresh = () => {
+    fetchStats();
+    fetchOrders();
   };
 
   // hook up listeners
@@ -523,11 +535,11 @@ export default function AdminDashboard() {
   socket.on("order:created", onOrderNew);
   socket.on("order:status", onOrderStatus);
   socket.on("payout:update", onPayoutUpdate);
+  socket.on("payout:status", onPayoutStatus);
+  socket.on("payments:refresh", onPaymentsRefresh);
 
   // optional: on reconnect, do a light refresh
-  const onReconnect = () => {
-    fetchStats();
-  };
+  const onReconnect = () => { fetchStats(); };
   socket.on("connect", onReconnect);
 
   // cleanup
@@ -536,10 +548,12 @@ export default function AdminDashboard() {
     socket.off("order:created", onOrderNew);
     socket.off("order:status", onOrderStatus);
     socket.off("payout:update", onPayoutUpdate);
+    socket.off("payout:status", onPayoutStatus);
+    socket.off("payments:refresh", onPaymentsRefresh);
     socket.off("connect", onReconnect);
   };
-// eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, []);
   /* ---------------- derived lists (client-side filter/search) ---------------- */
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
