@@ -509,6 +509,14 @@ export default function AdminDashboard() {
     fetchStats();
   };
 
+    // refresh auth from localStorage, then connect if not connected
+  try {
+    const { refreshSocketAuth, socket } = require("../utils/socket");
+    refreshSocketAuth();
+    if (!socket.connected) socket.connect();
+  } catch {}
+  // no deps: run once
+
   // payout created/updated
   const onPayoutUpdate = (p) => {
     const amt = p?.payoutAmount != null ? Number(p.payoutAmount).toFixed(2) : "";
