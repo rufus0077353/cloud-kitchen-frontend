@@ -314,7 +314,7 @@ const VendorDashboard = () => {
     }
   };
 
-  /* ---------- DAILY TREND LOAD ---------- */
+    /* ---------- DAILY TREND LOAD ---------- */
   const fetchDaily = async (range = days) => {
     setLoadingDaily(true);
     try {
@@ -332,7 +332,18 @@ const VendorDashboard = () => {
         setDaily([]);
         return;
       }
-      setDaily(Array.isArray(data) ? data : []);
+
+      // ✅ Accept both an array or { items: [...] }
+      let list = [];
+      if (Array.isArray(data)) {
+        list = data;
+      } else if (Array.isArray(data.items)) {
+        list = data.items;
+      } else {
+        list = [];
+      }
+
+      setDaily(list);
     } catch (e) {
       toast.error("Network error while loading trend");
       setDaily([]);
