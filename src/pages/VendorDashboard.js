@@ -1,4 +1,3 @@
-
 // src/pages/VendorDashboard.js
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
@@ -28,13 +27,12 @@ const STATUS_COLORS = {
   rejected:  "error",
 };
 
-// payout status → chip color
 const PAYOUT_COLORS = {
-  pending:  "warning",
-  queued:   "info",
-  processing: "info",
-  paid:     "success",
-  failed:   "error",
+  pending:   "warning",
+  queued:    "info",
+  processing:"info",
+  paid:      "success",
+  failed:    "error",
 };
 
 const Money = ({ value }) => (
@@ -53,7 +51,6 @@ const SummaryCard = ({ title, value, sub, loading = false }) => (
   </Paper>
 );
 
-// AOV card
 const AovCard = ({ title, revenue = 0, orders = 0, loading = false }) => {
   const aov = orders > 0 ? Number(revenue) / Number(orders) : 0;
   return (
@@ -92,8 +89,6 @@ const isHttpUrl = (v) => {
   try { const u = new URL(v); return u.protocol === "http:" || u.protocol === "https:"; }
   catch { return false; }
 };
-
-// http(s) and looks like .jpg/.jpeg/.png (or ?format=jpg/jpeg/png)
 const isImageHttpUrl = (v) => {
   if (!isHttpUrl(v)) return false;
   try {
@@ -106,19 +101,14 @@ const isImageHttpUrl = (v) => {
     );
   } catch { return false; }
 };
-
-// local upload path like /uploads/xxx.jpg|jpeg|png
 const isLocalImagePath = (v) =>
   typeof v === "string" &&
   v.startsWith("/uploads/") &&
   /\.(jpg|jpeg|png)$/i.test(v);
-
-// pick thumbnail or placeholder
 const pickThumb = (v) => (isImageHttpUrl(v) || isLocalImagePath(v)) ? v : PLACEHOLDER_IMG;
 
 /* ------------ main ------------ */
 const VendorDashboard = () => {
-  // menu form ref (for “Create item” quick action)
   const formRef = useRef(null);
 
   // ----- menu state -----
@@ -130,10 +120,10 @@ const VendorDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [vendorId, setVendorId] = useState(null);
-  const [isOpen, setIsOpen] = useState(true); // vendor open/closed
+  const [isOpen, setIsOpen] = useState(true);
   const [isOpenSaving, setIsOpenSaving] = useState(false);
 
-  // NEW: vendor profile (for real vendors)
+  // vendor profile
   const [vendorProfile, setVendorProfile] = useState({
     name: "", cuisine: "", location: "", phone: "", logoUrl: ""
   });
@@ -144,22 +134,22 @@ const VendorDashboard = () => {
   const [daily, setDaily] = useState([]);
   const [loadingDaily, setLoadingDaily] = useState(false);
 
-  // ----- lifetime / goals (persisted) -----
+  // ----- lifetime / goals -----
   const [revGoal, setRevGoal] = useState(() => Number(localStorage.getItem("vd_rev_goal") || 50000));
   const [ordersGoal, setOrdersGoal] = useState(() => Number(localStorage.getItem("vd_orders_goal") || 200));
 
-  // ----- top items (client-side aggregation) -----
+  // ----- top items -----
   const [topItems, setTopItems] = useState([]);
   const [loadingTop, setLoadingTop] = useState(false);
 
   // notifications (browser)
-  const [notifReady, setNotifReady] = useState(Notification?.permission === "granted");
+  const [notifReady, setNotifReady] = useState(typeof Notification !== "undefined" && Notification.permission === "granted");
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  // API: payouts
+  // payouts
   const [payouts, setPayouts] = useState([]);
   const [payoutsLoading, setPayoutsLoading] = useState(true);
 
@@ -185,8 +175,7 @@ const VendorDashboard = () => {
         phone: me?.phone ?? "",
         logoUrl: me?.logoUrl ?? "",
       });
-    } catch (e) {
-      // fallback: if we already know vendorId (from menu load), try /vendors/:id
+    } catch {
       if (!vendorId) return;
       try {
         const r2 = await fetch(`${API_BASE}/api/vendors/${vendorId}`, { headers });
@@ -200,9 +189,7 @@ const VendorDashboard = () => {
           phone: v?.phone ?? "",
           logoUrl: v?.logoUrl ?? "",
         });
-      } catch {
-        // ignore; profile section will stay empty
-      }
+      } catch { /* ignore */ }
     }
   };
 
@@ -251,7 +238,6 @@ const VendorDashboard = () => {
     };
 
     const tryVendorMenu = async () => {
-      // get my vendorId (cached if we already have it)
       let vId = vendorId;
       if (!vId) {
         const r = await fetch(`${API_BASE}/api/vendors/me`, { headers: authHeaders });
@@ -259,23 +245,19 @@ const VendorDashboard = () => {
         if (me?.vendorId) vId = me.vendorId;
       }
       if (!vId) throw new Error("No vendor profile attached to this account.");
-
       const r2 = await fetch(`${API_BASE}/api/vendors/${vId}/menu`, { headers: authHeaders });
       const d2 = await r2.json().catch(() => ({}));
       if (!r2.ok) {
         const msg = d2?.message || `Failed (${r2.status})`;
         throw new Error(msg);
       }
-      // this endpoint sometimes returns {items: []}
       return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
     };
 
     try {
-      // 1) primary: private “mine”
       const list = await tryMine();
       setMenuItems(list);
     } catch (e1) {
-      // 2) fallback: public vendor menu
       try {
         const list = await tryVendorMenu();
         setMenuItems(list);
@@ -314,7 +296,7 @@ const VendorDashboard = () => {
     }
   };
 
-    /* ---------- DAILY TREND LOAD ---------- */
+  /* ---------- DAILY TREND LOAD ---------- */
   const fetchDaily = async (range = days) => {
     setLoadingDaily(true);
     try {
@@ -332,19 +314,11 @@ const VendorDashboard = () => {
         setDaily([]);
         return;
       }
-
-      // ✅ Accept both an array or { items: [...] }
       let list = [];
-      if (Array.isArray(data)) {
-        list = data;
-      } else if (Array.isArray(data.items)) {
-        list = data.items;
-      } else {
-        list = [];
-      }
-
+      if (Array.isArray(data)) list = data;
+      else if (Array.isArray(data.items)) list = data.items;
       setDaily(list);
-    } catch (e) {
+    } catch {
       toast.error("Network error while loading trend");
       setDaily([]);
     } finally {
@@ -361,7 +335,6 @@ const VendorDashboard = () => {
       const data = await res.json().catch(() => ([]));
       if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
       const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
-      // newest first
       list.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
       setPayouts(list);
     } catch (e) {
@@ -376,7 +349,6 @@ const VendorDashboard = () => {
   const fetchTopItems = async () => {
     setLoadingTop(true);
     try {
-      // use paginated vendor orders (recent 200)
       const res = await fetch(`${API_BASE}/api/orders/vendor?page=1&pageSize=200`, { headers });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
@@ -418,7 +390,7 @@ const VendorDashboard = () => {
         }
       }
       const items = [...agg.values()].sort((a, b) => b.revenue - a.revenue);
-      setTopItems(items.slice(0, 8)); // top 8
+      setTopItems(items.slice(0, 8));
     } catch (e) {
       console.error("fetchTopItems error:", e);
       setTopItems([]);
@@ -456,101 +428,85 @@ const VendorDashboard = () => {
   };
 
   /* ---- socket: join vendor room + live updates ---- */
-useEffect(() => {
-  connectSocket(); // ensure socket is connected
-  const getMeAndJoin = async () => {
+  useEffect(() => {
+    connectSocket();
+    const getMeAndJoin = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        if (!r.ok) return;
+        const me = await r.json();
+        if (me?.vendorId) {
+          setVendorId(me.vendorId);
+          const persisted = localStorage.getItem("vd_is_open");
+          setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
+          socket.emit("vendor:join", me.vendorId);
+        }
+      } catch { /* ignore */ }
+    };
+    getMeAndJoin();
+
+    const onReconnect = () => { if (vendorId) socket.emit("vendor:join", vendorId); };
+
     try {
-      const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
-      if (!r.ok) return;
-      const me = await r.json();
-      if (me?.vendorId) {
-        setVendorId(me.vendorId);
-        const persisted = localStorage.getItem("vd_is_open");
-        setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
-        socket.emit("vendor:join", me.vendorId);
+      const { refreshSocketAuth, socket: s } = require("../utils/socket");
+      refreshSocketAuth();
+      if (!s.connected) s.connect();
+    } catch {}
+
+    const onNewOrder = (order) => {
+      if (Number(order?.VendorId) === Number(vendorId)) {
+        toast.info(`🆕 New order #${order?.id ?? ""} received`);
+        if (notifReady && "Notification" in window) {
+          try { new Notification(`New order #${order?.id ?? ""}`, { body: "Open your orders to view details." }); } catch {}
+        }
+        fetchSummary();
+        fetchDaily(days);
+        fetchTopItems();
       }
-    } catch {
-      // ignore
-    }
-  };
+    };
 
-  getMeAndJoin();
-
-  const onReconnect = () => {
-    if (vendorId) socket.emit("vendor:join", vendorId);
-  };
-
-    // refresh auth from localStorage, then connect if not connected
-  try {
-    const { refreshSocketAuth, socket } = require("../utils/socket");
-    refreshSocketAuth();
-    if (!socket.connected) socket.connect();
-  } catch {}
-  // no deps: run once
-
-  const onNewOrder = (order) => {
-    if (Number(order?.VendorId) === Number(vendorId)) {
-      toast.info(`🆕 New order #${order?.id ?? ""} received`);
-      if (notifReady && "Notification" in window) {
-        try {
-          new Notification(`New order #${order?.id ?? ""}`, { body: "Open your orders to view details." });
-        } catch (_) {}
-      }
+    const onOrderStatus = () => {
       fetchSummary();
       fetchDaily(days);
       fetchTopItems();
-    }
-  };
+      fetchPayouts();
+    };
 
-  const onOrderStatus = () => {
-    fetchSummary();
-    fetchDaily(days);
-    fetchTopItems();
-    fetchPayouts();
-  };
+    const onPayoutUpdate = (payload) => {
+      setPayouts((prev) => {
+        const exists = prev.find((p) => p.id === payload.id);
+        if (exists) return prev.map((p) => (p.id === payload.id ? { ...p, ...payload } : p));
+        return [payload, ...prev];
+      });
+      fetchPayouts();
+    };
 
-  // 🔑 FIX: update payouts immediately when backend emits
-  const onPayoutUpdate = (payload) => {
-    setPayouts((prev) => {
-      const exists = prev.find((p) => p.id === payload.id);
-      if (exists) {
-        return prev.map((p) => (p.id === payload.id ? { ...p, ...payload } : p));
-      }
-      return [payload, ...prev];
-    });
-    fetchPayouts(); // re-sync with server
-  };
+    const onPayoutStatus = (payload) => {
+      setPayouts((prev) =>
+        prev.map((p) =>
+          p.id === payload.id ? { ...p, status: payload.status, updatedAt: new Date().toISOString() } : p
+        )
+      );
+      fetchPayouts();
+    };
 
-  const onPayoutStatus = (payload) => {
-    setPayouts((prev) =>
-      prev.map((p) =>
-        p.id === payload.id ? { ...p, status: payload.status, updatedAt: new Date().toISOString() } : p
-      )
-    );
-    fetchPayouts();
-  };
+    socket.on("connect", onReconnect);
+    socket.on("order:new", onNewOrder);
+    socket.on("order:status", onOrderStatus);
+    socket.on("payout:update", onPayoutUpdate);
+    socket.on("payout:status", onPayoutStatus);
 
-  socket.on("connect", onReconnect);
-  socket.on("order:new", onNewOrder);
-  socket.on("order:status", onOrderStatus);
-  socket.on("payout:update", onPayoutUpdate);
-  socket.on("payout:status", onPayoutStatus);
-
-  return () => {
-    socket.off("connect", onReconnect);
-    socket.off("order:new", onNewOrder);
-    socket.off("order:status", onOrderStatus);
-    socket.off("payout:update", onPayoutUpdate);
-    socket.off("payout:status", onPayoutStatus);
-  };
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [vendorId, token, days, notifReady]);
-
-  // fetch payouts once vendorId is known
-  useEffect(() => {
-    if (vendorId) fetchPayouts();
+    return () => {
+      socket.off("connect", onReconnect);
+      socket.off("order:new", onNewOrder);
+      socket.off("order:status", onOrderStatus);
+      socket.off("payout:update", onPayoutUpdate);
+      socket.off("payout:status", onPayoutStatus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId]);
+  }, [vendorId, token, days, notifReady]);
+
+  useEffect(() => { if (vendorId) fetchPayouts(); }, [vendorId]); // eslint-disable-line
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -563,18 +519,15 @@ useEffect(() => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (!user || user.role !== "vendor") {
       toast.error("Vendors only");
       return;
     }
-
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
       ? `${API_BASE}/api/menu-items/${editingItem.id}`
       : `${API_BASE}/api/menu-items`;
 
-    // allow only http(s) jpg/jpeg/png or /uploads/...jpg|jpeg|png
     const rawUrl = (form.imageUrl || "").trim();
     const imageUrl = (isImageHttpUrl(rawUrl) || isLocalImagePath(rawUrl)) ? rawUrl : null;
 
@@ -582,7 +535,7 @@ useEffect(() => {
       name: form.name,
       price: form.price === "" ? null : parseFloat(form.price),
       description: form.description,
-      imageUrl, // JPG/PNG only
+      imageUrl,
     };
 
     try {
@@ -644,7 +597,6 @@ useEffect(() => {
     }
   };
 
-  // Toggle vendor open/closed (persist + optimistic)
   const toggleOpen = async (checked) => {
     const prev = isOpen;
     setIsOpen(checked);
@@ -658,13 +610,13 @@ useEffect(() => {
       });
       if (!res.ok) {
         const msg = (await res.json().catch(() => ({}))).message || "Failed to update status";
-        setIsOpen(prev); // rollback
+        setIsOpen(prev);
         toast.error(msg);
         return;
       }
       toast.success(`Vendor is now ${checked ? "Open" : "Closed"}`);
     } catch {
-      setIsOpen(prev); // rollback
+      setIsOpen(prev);
       toast.error("Network error while updating status");
     } finally {
       setIsOpenSaving(false);
@@ -701,7 +653,6 @@ useEffect(() => {
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
 
-  // ------ computed helpers for goals / AOV ------
   const todayOrders  = Number(summary?.today?.orders || 0);
   const weekOrders   = Number(summary?.week?.orders || 0);
   const monthOrders  = Number(summary?.month?.orders || 0);
@@ -712,8 +663,8 @@ useEffect(() => {
   const monthRevenue = Number(summary?.month?.revenue || 0);
   const lifeRevenue  = Number(summary?.totals?.revenue || 0);
 
-  const revProgress     = revGoal > 0 ? Math.min(100, (monthRevenue / revGoal) * 100) : 0;
-  const ordersProgress  = ordersGoal > 0 ? Math.min(100, (monthOrders / ordersGoal) * 100) : 0;
+  const revProgress    = revGoal > 0 ? Math.min(100, (monthRevenue / revGoal) * 100) : 0;
+  const ordersProgress = ordersGoal > 0 ? Math.min(100, (monthOrders / ordersGoal) * 100) : 0;
 
   const revRemaining    = Math.max(0, revGoal - monthRevenue);
   const ordersRemaining = Math.max(0, ordersGoal - monthOrders);
@@ -727,7 +678,6 @@ useEffect(() => {
     return `You’re close: ${parts.join(" · ")}`;
   }, [revRemaining, ordersRemaining, revGoal, ordersGoal]);
 
-  // tiny analytics nudges
   const accepted  = Number(byStatus.accepted || 0);
   const rejected  = Number(byStatus.rejected || 0);
   const delivered = Number(byStatus.delivered || 0);
@@ -736,7 +686,6 @@ useEffect(() => {
   const completionRate = accepted > 0 ? (delivered / accepted) * 100 : null;
   const avgPrepTime = "—";
 
-  // best-seller badges in menu (Top 3 by revenue)
   const topNames = useMemo(
     () => new Set((topItems || []).slice(0, 3).map(i => (i.name || "").toLowerCase())),
     [topItems]
@@ -744,7 +693,6 @@ useEffect(() => {
 
   const totalTopRevenue = (topItems || []).reduce((s, i) => s + Number(i.revenue || 0), 0) || 0;
 
-  // quick actions
   const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
@@ -765,7 +713,6 @@ useEffect(() => {
           </Typography>
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-            {/* Open/Closed switch */}
             <FormControlLabel
               control={
                 <Switch
@@ -822,7 +769,6 @@ useEffect(() => {
               Export top items CSV
             </Button>
             <Box sx={{ ml: "auto" }}>
-              {/* tiny analytics nudges */}
               <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
                 <Chip size="small" label={`Acceptance: ${acceptanceRate == null ? "—" : `${acceptanceRate.toFixed(0)}%`}`} />
                 <Chip size="small" label={`Completion: ${completionRate == null ? "—" : `${completionRate.toFixed(0)}%`}`} />
@@ -835,7 +781,8 @@ useEffect(() => {
         {/* ---- SUMMARY + TREND ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box sx={{ mb: 3 }}>
-            <VendorSalesTrend />
+            {/* 👇 Sales Trend graph lives here */}
+            <VendorSalesTrend days={days} />
           </Box>
 
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 2, flexWrap: "wrap" }}>
@@ -1164,7 +1111,7 @@ useEffect(() => {
               </Button>
             </Box>
 
-            {/* Preview (uses pickThumb to validate jpg/png or local upload path) */}
+            {/* Preview */}
             {form.imageUrl && (
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
                   <Avatar
@@ -1184,7 +1131,7 @@ useEffect(() => {
           </form>
         </Paper>
 
-        {/* ---- MENU TABLE with thumbnail + Best-seller badges ---- */}
+        {/* ---- MENU TABLE ---- */}
         <Typography variant="h6" sx={{ mb: 2 }}>Your Menu</Typography>
         <TableContainer component={Paper}>
           <Table>
