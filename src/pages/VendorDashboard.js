@@ -1,4 +1,4 @@
-// src/pages/VendorDashboard.js
+
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
@@ -25,14 +25,6 @@ const STATUS_COLORS = {
   ready:     "warning",
   delivered: "success",
   rejected:  "error",
-};
-
-const PAYOUT_COLORS = {
-  pending:   "warning",
-  queued:    "info",
-  processing:"info",
-  paid:      "success",
-  failed:    "error",
 };
 
 const Money = ({ value }) => (
@@ -149,8 +141,8 @@ const VendorDashboard = () => {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  // payouts
-  const [payouts, setPayouts] = useState([]);
+  // payouts (summary)
+  const [payoutSummary, setPayoutSummary] = useState(null);
   const [payoutsLoading, setPayoutsLoading] = useState(true);
 
   // persist settings
@@ -205,6 +197,7 @@ const VendorDashboard = () => {
         cuisine: vendorProfile.cuisine,
         location: vendorProfile.location,
         phone: vendorProfile.phone || null,
+        // logoUrl is harmless if backend ignores it
         logoUrl: vendorProfile.logoUrl || null,
       };
       const res = await fetch(`${API_BASE}/api/vendors/${vendorId}`, {
@@ -326,20 +319,19 @@ const VendorDashboard = () => {
     }
   };
 
-  /* ---------- PAYOUTS LOAD ---------- */
+  /* ---------- PAYOUTS (SUMMARY) ---------- */
   const fetchPayouts = async () => {
     if (!vendorId) return;
     setPayoutsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/vendors/${vendorId}/payouts`, { headers });
-      const data = await res.json().catch(() => ([]));
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
-      const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
-      list.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-      setPayouts(list);
+      // backend returns: { vendorId, paidOrders, grossPaid, commission, netOwed }
+      setPayoutSummary(data && typeof data === "object" ? data : null);
     } catch (e) {
       console.error("Failed to fetch payouts:", e?.message);
-      setPayouts([]);
+      setPayoutSummary(null);
     } finally {
       setPayoutsLoading(false);
     }
@@ -472,23 +464,8 @@ const VendorDashboard = () => {
       fetchPayouts();
     };
 
-    const onPayoutUpdate = (payload) => {
-      setPayouts((prev) => {
-        const exists = prev.find((p) => p.id === payload.id);
-        if (exists) return prev.map((p) => (p.id === payload.id ? { ...p, ...payload } : p));
-        return [payload, ...prev];
-      });
-      fetchPayouts();
-    };
-
-    const onPayoutStatus = (payload) => {
-      setPayouts((prev) =>
-        prev.map((p) =>
-          p.id === payload.id ? { ...p, status: payload.status, updatedAt: new Date().toISOString() } : p
-        )
-      );
-      fetchPayouts();
-    };
+    const onPayoutUpdate = () => { fetchPayouts(); };
+    const onPayoutStatus = () => { fetchPayouts(); };
 
     socket.on("connect", onReconnect);
     socket.on("order:new", onNewOrder);
@@ -569,7 +546,7 @@ const VendorDashboard = () => {
       name: item.name ?? "",
       price: item.price ?? "",
       description: item.description ?? "",
-      imageUrl: item.imageUrl ?? "",
+      imageUrl: item.imageUrl ?? item.imageURL ?? "", // tolerate legacy key
     });
     setEditingItem(item);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
@@ -1147,7 +1124,8 @@ const VendorDashboard = () => {
             <TableBody>
               {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
                 const isTop = topNames.has((item.name || "").toLowerCase());
-                const thumbSrc = pickThumb(item.imageUrl);
+                const img = item.imageUrl ?? item.imageURL ?? ""; // tolerate legacy
+                const thumbSrc = pickThumb(img);
                 return (
                   <TableRow key={item.id} hover>
                     <TableCell>
@@ -1204,63 +1182,47 @@ const VendorDashboard = () => {
           </Table>
         </TableContainer>
 
-        {/* ---- PAYOUTS ---- */}
+        {/* ---- PAYOUTS (SUMMARY VIEW) ---- */}
         <Paper sx={{ p: 3, mt: 3, mb: 6 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5, gap: 1, flexWrap: "wrap" }}>
             <Typography variant="h6">Payouts</Typography>
-            <Stack direction="row" spacing={1}>
-              <Tooltip title="Refresh payouts">
-                <IconButton onClick={fetchPayouts}><Refresh /></IconButton>
-              </Tooltip>
-            </Stack>
+            <Tooltip title="Refresh payouts">
+              <IconButton onClick={fetchPayouts}><Refresh /></IconButton>
+            </Tooltip>
           </Stack>
 
-          <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Payout #</TableCell>
-                  <TableCell>Order #</TableCell>
-                  <TableCell align="right">Order Total</TableCell>
-                  <TableCell align="right">Commission</TableCell>
-                  <TableCell align="right">Vendor Payout</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Updated</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {payoutsLoading ? (
-                  <TableRow><TableCell colSpan={7} align="center"><Skeleton height={26} /></TableCell></TableRow>
-                ) : (payouts || []).length === 0 ? (
-                  <TableRow><TableCell colSpan={7} align="center">
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                      No payouts yet.
-                    </Typography>
-                  </TableCell></TableRow>
-                ) : (
-                  (payouts || []).map((p) => {
-                    const st = String(p.status || "pending").toLowerCase();
-                    return (
-                      <TableRow key={p.id}>
-                        <TableCell>{p.id}</TableCell>
-                        <TableCell>{p.orderId ?? p.OrderId ?? "-"}</TableCell>
-                        <TableCell align="right">₹{Number(p.totalAmount ?? p.orderTotal ?? 0).toFixed(2)}</TableCell>
-                        <TableCell align="right">₹{Number(p.platformCommission ?? p.commission ?? 0).toFixed(2)}</TableCell>
-                        <TableCell align="right">₹{Number(p.payoutAmount ?? p.amount ?? 0).toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Chip size="small" label={st} color={PAYOUT_COLORS[st] || "default"} />
-                        </TableCell>
-                        <TableCell>
-                          {p.updatedAt ? new Date(p.updatedAt).toLocaleString() :
-                           p.createdAt ? new Date(p.createdAt).toLocaleString() : "-"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          {payoutsLoading ? (
+            <Skeleton variant="rectangular" height={68} />
+          ) : !payoutSummary ? (
+            <Typography variant="body2" color="text.secondary">No payouts yet.</Typography>
+          ) : (
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={3}>
+                <Paper sx={{ p: 2 }}>
+                  <Typography variant="body2" color="text.secondary">Paid Orders</Typography>
+                  <Typography variant="h5" fontWeight={700}>{payoutSummary.paidOrders || 0}</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={3}>
+                <Paper sx={{ p: 2 }}>
+                  <Typography variant="body2" color="text.secondary">Gross Paid</Typography>
+                  <Money value={payoutSummary.grossPaid || 0} />
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={3}>
+                <Paper sx={{ p: 2 }}>
+                  <Typography variant="body2" color="text.secondary">Commission</Typography>
+                  <Money value={payoutSummary.commission || 0} />
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={3}>
+                <Paper sx={{ p: 2 }}>
+                  <Typography variant="body2" color="text.secondary">Net Owed to You</Typography>
+                  <Money value={payoutSummary.netOwed || 0} />
+                </Paper>
+              </Grid>
+            </Grid>
+          )}
         </Paper>
       </Container>
     </>
