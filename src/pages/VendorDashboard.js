@@ -15,7 +15,8 @@ import { toast } from "react-toastify";
 import { socket, connectSocket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+const ROOT = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
+const apiUrl = (p) => `${ROOT}${p}`;
 const PLACEHOLDER_IMG = "/images/placeholder-food.png";
 
 /* ------------ helpers ------------ */
@@ -139,7 +140,7 @@ const VendorDashboard = () => {
 
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const authHeaders = { Authorization: `Bearer ${token}` };
 
   // payouts (summary)
   const [payoutSummary, setPayoutSummary] = useState(null);
@@ -152,10 +153,14 @@ const VendorDashboard = () => {
   useEffect(() => { localStorage.setItem("vd_is_open", String(isOpen)); }, [isOpen]);
 
   /* ---------- PROFILE LOAD ---------- */
+  const parseJsonSafe = async (res) => {
+    try { return await res.json(); } catch { return {}; }
+  };
+
   const fetchVendorMe = async () => {
     try {
-      const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
-      const me = await r.json().catch(() => ({}));
+      const r = await fetch(apiUrl("/api/vendors/me"), { headers: authHeaders });
+      const me = await parseJsonSafe(r);
       if (!r.ok) throw new Error(me?.message || `Failed (${r.status})`);
 
       if (me?.vendorId) setVendorId(me.vendorId);
@@ -170,8 +175,8 @@ const VendorDashboard = () => {
     } catch {
       if (!vendorId) return;
       try {
-        const r2 = await fetch(`${API_BASE}/api/vendors/${vendorId}`, { headers });
-        const v = await r2.json().catch(() => ({}));
+        const r2 = await fetch(apiUrl(`/api/vendors/${vendorId}`), { headers: authHeaders });
+        const v = await parseJsonSafe(r2);
         if (!r2.ok) throw new Error(v?.message || `Failed (${r2.status})`);
         if (typeof v?.isOpen === "boolean") setIsOpen(v.isOpen);
         setVendorProfile({
@@ -197,15 +202,14 @@ const VendorDashboard = () => {
         cuisine: vendorProfile.cuisine,
         location: vendorProfile.location,
         phone: vendorProfile.phone || null,
-        // logoUrl is harmless if backend ignores it
         logoUrl: vendorProfile.logoUrl || null,
       };
-      const res = await fetch(`${API_BASE}/api/vendors/${vendorId}`, {
+      const res = await fetch(apiUrl(`/api/vendors/${vendorId}`), {
         method: "PUT",
-        headers,
+        headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await parseJsonSafe(res);
       if (!res.ok) throw new Error(data?.message || "Failed to save profile");
       toast.success("Vendor profile updated");
       await fetchVendorMe();
@@ -218,32 +222,24 @@ const VendorDashboard = () => {
 
   /* ---------- MENU LOAD ---------- */
   const fetchMenu = async () => {
-    const authHeaders = { Authorization: `Bearer ${token}` };
-
     const tryMine = async () => {
-      const res = await fetch(`${API_BASE}/api/menu-items/mine`, { headers: authHeaders });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = data?.message || `Failed (${res.status})`;
-        throw new Error(msg);
-      }
+      const res = await fetch(apiUrl("/api/menu-items/mine"), { headers: authHeaders });
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data?.message || `Failed (${res.status})`);
       return Array.isArray(data) ? data : [];
     };
 
     const tryVendorMenu = async () => {
       let vId = vendorId;
       if (!vId) {
-        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers: authHeaders });
-        const me = await r.json().catch(() => ({}));
+        const r = await fetch(apiUrl("/api/vendors/me"), { headers: authHeaders });
+        const me = await parseJsonSafe(r);
         if (me?.vendorId) vId = me.vendorId;
       }
       if (!vId) throw new Error("No vendor profile attached to this account.");
-      const r2 = await fetch(`${API_BASE}/api/vendors/${vId}/menu`, { headers: authHeaders });
-      const d2 = await r2.json().catch(() => ({}));
-      if (!r2.ok) {
-        const msg = d2?.message || `Failed (${r2.status})`;
-        throw new Error(msg);
-      }
+      const r2 = await fetch(apiUrl(`/api/vendors/${vId}/menu`), { headers: authHeaders });
+      const d2 = await parseJsonSafe(r2);
+      if (!r2.ok) throw new Error(d2?.message || `Failed (${r2.status})`);
       return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
     };
 
@@ -266,7 +262,7 @@ const VendorDashboard = () => {
   const fetchSummary = async () => {
     setSummaryLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/orders/vendor/summary`, { headers });
+      const res = await fetch(apiUrl("/api/orders/vendor/summary"), { headers: authHeaders });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -274,7 +270,7 @@ const VendorDashboard = () => {
         return;
       }
       if (!res.ok) {
-        const msg = (await res.json().catch(() => ({}))).message || `Summary failed (${res.status})`;
+        const msg = (await parseJsonSafe(res)).message || `Summary failed (${res.status})`;
         toast.error(msg);
         setSummary(null);
         return;
@@ -293,14 +289,14 @@ const VendorDashboard = () => {
   const fetchDaily = async (range = days) => {
     setLoadingDaily(true);
     try {
-      const res = await fetch(`${API_BASE}/api/orders/vendor/daily?days=${range}`, { headers });
+      const res = await fetch(apiUrl(`/api/orders/vendor/daily?days=${range}`), { headers: authHeaders });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
         window.location.href = "/login";
         return;
       }
-      const data = await res.json().catch(() => []);
+      const data = await parseJsonSafe(res);
       if (!res.ok) {
         const msg = data?.message || `Trend failed (${res.status})`;
         toast.error(msg);
@@ -324,10 +320,9 @@ const VendorDashboard = () => {
     if (!vendorId) return;
     setPayoutsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/vendors/${vendorId}/payouts`, { headers });
-      const data = await res.json().catch(() => ({}));
+      const res = await fetch(apiUrl(`/api/vendors/${vendorId}/payouts`), { headers: authHeaders });
+      const data = await parseJsonSafe(res);
       if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
-      // backend returns: { vendorId, paidOrders, grossPaid, commission, netOwed }
       setPayoutSummary(data && typeof data === "object" ? data : null);
     } catch (e) {
       console.error("Failed to fetch payouts:", e?.message);
@@ -341,14 +336,14 @@ const VendorDashboard = () => {
   const fetchTopItems = async () => {
     setLoadingTop(true);
     try {
-      const res = await fetch(`${API_BASE}/api/orders/vendor?page=1&pageSize=200`, { headers });
+      const res = await fetch(apiUrl("/api/orders/vendor?page=1&pageSize=200"), { headers: authHeaders });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
         window.location.href = "/login";
         return;
       }
-      const data = await res.json().catch(() => ({}));
+      const data = await parseJsonSafe(res);
       if (!res.ok) {
         const msg = data?.message || `Top items failed (${res.status})`;
         toast.error(msg);
@@ -424,7 +419,7 @@ const VendorDashboard = () => {
     connectSocket();
     const getMeAndJoin = async () => {
       try {
-        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        const r = await fetch(apiUrl("/api/vendors/me"), { headers: authHeaders });
         if (!r.ok) return;
         const me = await r.json();
         if (me?.vendorId) {
@@ -502,8 +497,8 @@ const VendorDashboard = () => {
     }
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
-      ? `${API_BASE}/api/menu-items/${editingItem.id}`
-      : `${API_BASE}/api/menu-items`;
+      ? apiUrl(`/api/menu-items/${editingItem.id}`)
+      : apiUrl(`/api/menu-items`);
 
     const rawUrl = (form.imageUrl || "").trim();
     const imageUrl = (isImageHttpUrl(rawUrl) || isLocalImagePath(rawUrl)) ? rawUrl : null;
@@ -518,12 +513,12 @@ const VendorDashboard = () => {
     try {
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await parseJsonSafe(res);
         toast.error(data.message || "Failed to save item");
         return;
       }
@@ -546,7 +541,7 @@ const VendorDashboard = () => {
       name: item.name ?? "",
       price: item.price ?? "",
       description: item.description ?? "",
-      imageUrl: item.imageUrl ?? item.imageURL ?? "", // tolerate legacy key
+      imageUrl: item.imageUrl ?? item.imageURL ?? "",
     });
     setEditingItem(item);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
@@ -554,9 +549,9 @@ const VendorDashboard = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/api/menu-items/${id}`, {
+      const res = await fetch(apiUrl(`/api/menu-items/${id}`), {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
       });
       if (res.ok) {
         toast.success("Item deleted!");
@@ -565,7 +560,7 @@ const VendorDashboard = () => {
         fetchDaily(days);
         fetchTopItems();
       } else {
-        const data = await res.json().catch(() => ({}));
+        const data = await parseJsonSafe(res);
         toast.error(data.message || "Failed to delete");
       }
     } catch (err) {
@@ -574,19 +569,20 @@ const VendorDashboard = () => {
     }
   };
 
+  // ✅ Use vendor-safe toggle endpoint to avoid PUT coupling and reduce payload
   const toggleOpen = async (checked) => {
     const prev = isOpen;
     setIsOpen(checked);
     setIsOpenSaving(true);
     try {
-      if (!vendorId) return;
-      const res = await fetch(`${API_BASE}/api/vendors/${vendorId}`, {
-        method: "PUT",
-        headers,
+      const res = await fetch(apiUrl(`/api/vendors/me/open`), {
+        method: "PATCH",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ isOpen: checked }),
       });
+      const out = await parseJsonSafe(res);
       if (!res.ok) {
-        const msg = (await res.json().catch(() => ({}))).message || "Failed to update status";
+        const msg = out?.message || "Failed to update status";
         setIsOpen(prev);
         toast.error(msg);
         return;
@@ -1066,13 +1062,13 @@ const VendorDashboard = () => {
                     const data = new FormData();
                     data.append("image", file);
                     try {
-                      const res = await fetch(`${API_BASE}/api/uploads`, {
+                      const res = await fetch(apiUrl(`/api/uploads`), {
                         method: "POST",
-                        headers: { Authorization: `Bearer ${token}` },
+                        headers: authHeaders, // FormData: do NOT set Content-Type manually
                         body: data,
                       });
                       if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
+                        const err = await parseJsonSafe(res);
                         toast.error(err.message || "Upload failed");
                         return;
                       }
@@ -1124,7 +1120,7 @@ const VendorDashboard = () => {
             <TableBody>
               {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
                 const isTop = topNames.has((item.name || "").toLowerCase());
-                const img = item.imageUrl ?? item.imageURL ?? ""; // tolerate legacy
+                const img = item.imageUrl ?? item.imageURL ?? "";
                 const thumbSrc = pickThumb(img);
                 return (
                   <TableRow key={item.id} hover>
