@@ -615,14 +615,20 @@ const VendorDashboard = () => {
   };
 
   useEffect(() => {
-    fetchMenu();
-    fetchSummary();
-    fetchDaily(days);
-    fetchTopItems();
-    fetchVendorMe();
+    (async () => {
+      await fetchVendorMe();
+      await Promise.all([
+        fetchMenu(),
+        fetchSummary(),
+        fetchDaily(days),
+        fetchTopItems(),
+      ]);
+      // if vendorId is known, fetch payouts
+      if (vendorId) await fetchPayouts();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
+  
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
 
