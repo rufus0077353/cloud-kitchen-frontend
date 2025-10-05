@@ -66,8 +66,8 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/admin/payouts" element={<AdminPayouts />} />
-              <Route path="/admin/payouts" element={<PayoutsDashboard role="admin" token={token} />} />
-              <Route path="/vendor/payouts" element={<PayoutsDashboard role="vendor" token={token} />} />
+              <Route path="/admin/payouts" element={<PayoutsDashboard role="admin" token={localStorage.getItem("token")} />} />
+              <Route path="/vendor/payouts" element={<PayoutsDashboard role="vendor" token={localStorage.getItem("token")} />} />
 
               {/* Compliance pages for Razorpay reviewers */}
               <Route path="/contact" element={<Contact />} />
