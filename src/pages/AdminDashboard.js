@@ -1,5 +1,5 @@
 // src/pages/AdminDashboard.js
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   Box, Typography, Grid, Paper, TextField, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -19,7 +19,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import axios from "axios";
 import { toast } from "react-toastify";
-import { socket, connectSocket} from "../utils/socket";
+import { socket, connectSocket } from "../utils/socket";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 // Fallback rate if an order/vendor doesn't provide one (e.g. 0.15 for 15%)
@@ -92,6 +92,9 @@ const isRevenueOrder = (o) =>
 /* ------------------------------------------------------------- */
 
 export default function AdminDashboard() {
+  // mounted ref for safe setState
+  const mounted = useRef(false);
+
   // top stats
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -160,12 +163,14 @@ export default function AdminDashboard() {
       const res = await axios.get(`${API}/api/admin/overview`, { headers, validateStatus: () => true });
       if (res.status === 401) return handle401();
       if (res.status >= 400) throw new Error();
+      if (!mounted.current) return;
       setStats(res.data || {});
     } catch {
+      if (!mounted.current) return;
       toast.error("Failed to load overview");
       setStats(null);
     } finally {
-      setStatsLoading(false);
+      if (mounted.current) setStatsLoading(false);
     }
   };
 
@@ -180,6 +185,7 @@ export default function AdminDashboard() {
       });
       if (res.status === 401) return handle401();
       const data = res.data;
+      if (!mounted.current) return;
       if (Array.isArray(data)) {
         setUsers(data);
         setUserTotal(data.length);
@@ -189,12 +195,13 @@ export default function AdminDashboard() {
       }
       setSelectedUserIds([]);
     } catch {
+      if (!mounted.current) return;
       toast.error("Failed to load users");
       setUsers([]);
       setUserTotal(0);
       setSelectedUserIds([]);
     } finally {
-      setUsersLoading(false);
+      if (mounted.current) setUsersLoading(false);
     }
   };
 
@@ -209,6 +216,7 @@ export default function AdminDashboard() {
       });
       if (res.status === 401) return handle401();
       const data = res.data;
+      if (!mounted.current) return;
       if (Array.isArray(data)) {
         setVendors(data);
         setVendorTotal(data.length);
@@ -218,12 +226,13 @@ export default function AdminDashboard() {
       }
       setSelectedVendorIds([]);
     } catch {
+      if (!mounted.current) return;
       toast.error("Failed to load vendors");
       setVendors([]);
       setVendorTotal(0);
       setSelectedVendorIds([]);
     } finally {
-      setVendorsLoading(false);
+      if (mounted.current) setVendorsLoading(false);
     }
   };
 
@@ -253,6 +262,7 @@ export default function AdminDashboard() {
       if (res.status >= 400) throw new Error(res.data?.message || `Failed (${res.status})`);
 
       const list = parseList(res.data);
+      if (!mounted.current) return;
       setOrders(list);
       setOrderPage(0);
     } catch (err) {
@@ -267,15 +277,18 @@ export default function AdminDashboard() {
         if (res2.status >= 400) throw new Error(res2.data?.message || `Failed (${res2.status})`);
 
         const list2 = parseList(res2.data);
+        if (!mounted.current) return;
         setOrders(list2);
         setOrderPage(0);
       } catch (e2) {
         console.error("Orders fetch failed (both routes):", err, e2);
-        toast.error(e2?.message || err?.message || "Failed to load orders");
-        setOrders([]);
+        if (mounted.current) {
+          toast.error(e2?.message || err?.message || "Failed to load orders");
+          setOrders([]);
+        }
       }
     } finally {
-      setOrdersLoading(false);
+      if (mounted.current) setOrdersLoading(false);
     }
   };
 
@@ -393,35 +406,35 @@ export default function AdminDashboard() {
   };
 
   const saveUserRole = async (user) => {
-   const nextRole = pendingRoleByUser[user.id] ?? user.role;
-   if (!nextRole || nextRole === user.role) {
-     toast.info("No role change to save");
-     return;
-   }
-   setSavingUserId(user.id);
-   try {
-    // ✅ match backend route you actually have
-    const res = await axios.put(
-      `${API}/api/admin/users/${user.id}/role`,
-      { role: nextRole },
-      { headers, validateStatus: () => true }
-     );
-     if (res.status === 401) return handle401();
-     if (res.status >= 400) throw new Error(res.data?.message || "Failed to update role");
+    const nextRole = pendingRoleByUser[user.id] ?? user.role;
+    if (!nextRole || nextRole === user.role) {
+      toast.info("No role change to save");
+      return;
+    }
+    setSavingUserId(user.id);
+    try {
+      // ✅ match backend route you actually have
+      const res = await axios.put(
+        `${API}/api/admin/users/${user.id}/role`,
+        { role: nextRole },
+        { headers, validateStatus: () => true }
+      );
+      if (res.status === 401) return handle401();
+      if (res.status >= 400) throw new Error(res.data?.message || "Failed to update role");
 
-     toast.success(`Role updated to ${nextRole}`);
-     setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: nextRole } : u)));
-     setPendingRoleByUser((prev) => {
-      const copy = { ...prev };
-      delete copy[user.id];
-      return copy;
+      toast.success(`Role updated to ${nextRole}`);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: nextRole } : u)));
+      setPendingRoleByUser((prev) => {
+        const copy = { ...prev };
+        delete copy[user.id];
+        return copy;
       });
     } catch (e) {
       toast.error(e?.message || "Failed to update role");
     } finally {
       setSavingUserId(null);
-   }
-};
+    }
+  };
 
   // Inline vendor edit
   const startEditVendor = (v) => {
@@ -485,84 +498,72 @@ export default function AdminDashboard() {
 
   /* ---------------- initial load ---------------- */
   useEffect(() => {
+    mounted.current = true;
     fetchStats();
     fetchUsers();
     fetchVendors();
     fetchOrders();
+    return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  
-// 🔔 Live updates for Admin: orders + payouts
- useEffect(() => {
-  connectSocket(); // ensure socket is connected
-  // new order (support both event names your backend might emit)
-  const onOrderNew = (o) => {
-    try { toast.info(`🆕 New order #${o?.id ?? ""}`); } catch {}
-    fetchOrders();
-    fetchStats();
-  };
+  // 🔔 Live updates for Admin: orders + payouts
+  useEffect(() => {
+    connectSocket(); // ensure socket is connected
 
-  // order status changed
-  const onOrderStatus = (p) => {
-    try { toast.success(`📦 Order #${p?.id ?? ""} → ${p?.status ?? ""}`); } catch {}
-    fetchOrders();
-    fetchStats();
-  };
+    // new order (support both event names your backend might emit)
+    const onOrderNew = (o) => {
+      try { toast.info(`🆕 New order #${o?.id ?? ""}`); } catch {}
+      fetchOrders();
+      fetchStats();
+    };
 
-    // refresh auth from localStorage, then connect if not connected
-  try {
-    const { refreshSocketAuth, socket } = require("../utils/socket");
-    refreshSocketAuth();
-    if (!socket.connected) socket.connect();
-  } catch {}
-  // no deps: run once
+    // order status changed
+    const onOrderStatus = (p) => {
+      try { toast.success(`📦 Order #${p?.id ?? ""} → ${p?.status ?? ""}`); } catch {}
+      fetchOrders();
+      fetchStats();
+    };
 
-  // payout created/updated
-  const onPayoutUpdate = (p) => {
-    const amt = p?.payoutAmount != null ? Number(p.payoutAmount).toFixed(2) : "";
-    try {
-      toast.success(`💰 Payout ${p?.status ?? "updated"} — Order #${p?.orderId ?? ""}${amt ? ` · ₹${amt}` : ""}`);
-    } catch {}
-    // commissions/tiles depend on payouts
-    fetchStats();
-    // if you later add an Admin payouts table, call its fetch() here too
-  };
+    // payout created/updated
+    const onPayoutUpdate = (p) => {
+      const amt = p?.payoutAmount != null ? Number(p.payoutAmount).toFixed(2) : "";
+      try {
+        toast.success(`💰 Payout ${p?.status ?? "updated"} — Order #${p?.orderId ?? ""}${amt ? ` · ₹${amt}` : ""}`);
+      } catch {}
+      fetchStats();
+    };
 
-  // ✅ also handle explicit status events and generic refresh pings
-  const onPayoutStatus = (p) => {
-    try { toast.info(`💸 Payout status → ${p?.status ?? ""} (Order #${p?.orderId ?? ""})`); } catch {}
-    fetchStats();
-  };
-  const onPaymentsRefresh = () => {
-    fetchStats();
-    fetchOrders();
-  };
+    const onPayoutStatus = (p) => {
+      try { toast.info(`💸 Payout status → ${p?.status ?? ""} (Order #${p?.orderId ?? ""})`); } catch {}
+      fetchStats();
+    };
+    const onPaymentsRefresh = () => {
+      fetchStats();
+      fetchOrders();
+    };
+    const onReconnect = () => { fetchStats(); };
 
-  // hook up listeners
-  socket.on("order:new", onOrderNew);
-  socket.on("order:created", onOrderNew);
-  socket.on("order:status", onOrderStatus);
-  socket.on("payout:update", onPayoutUpdate);
-  socket.on("payout:status", onPayoutStatus);
-  socket.on("payments:refresh", onPaymentsRefresh);
+    socket.on("order:new", onOrderNew);
+    socket.on("order:created", onOrderNew);
+    socket.on("order:status", onOrderStatus);
+    socket.on("payout:update", onPayoutUpdate);
+    socket.on("payout:status", onPayoutStatus);
+    socket.on("payments:refresh", onPaymentsRefresh);
+    socket.on("connect", onReconnect);
 
-  // optional: on reconnect, do a light refresh
-  const onReconnect = () => { fetchStats(); };
-  socket.on("connect", onReconnect);
+    return () => {
+      socket.off("order:new", onOrderNew);
+      socket.off("order:created", onOrderNew);
+      socket.off("order:status", onOrderStatus);
+      socket.off("payout:update", onPayoutUpdate);
+      socket.off("payout:status", onPayoutStatus);
+      socket.off("payments:refresh", onPaymentsRefresh);
+      socket.off("connect", onReconnect);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // cleanup
-  return () => {
-    socket.off("order:new", onOrderNew);
-    socket.off("order:created", onOrderNew);
-    socket.off("order:status", onOrderStatus);
-    socket.off("payout:update", onPayoutUpdate);
-    socket.off("payout:status", onPayoutStatus);
-    socket.off("payments:refresh", onPaymentsRefresh);
-    socket.off("connect", onReconnect);
-  };
- // eslint-disable-next-line react-hooks/exhaustive-deps
- }, []);
   /* ---------------- derived lists (client-side filter/search) ---------------- */
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
@@ -829,6 +830,16 @@ export default function AdminDashboard() {
     }
   };
 
+  const clearOrderFilters = () => {
+    setOrderStatusFilter("all");
+    setOrderVendorFilter("all");
+    setOrderSearch("");
+    setOrderFrom("");
+    setOrderTo("");
+    setOrderPage(0);
+    fetchOrders();
+  };
+
   return (
     <Box p={3}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
@@ -878,7 +889,7 @@ export default function AdminDashboard() {
             </Paper>
           </Grid>
 
-          {/* NEW: Commission earned tiles */}
+          {/* Commission earned tiles */}
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: "center" }}>
               <Typography variant="body2" color="text.secondary">Total Commission</Typography>
@@ -1106,7 +1117,7 @@ export default function AdminDashboard() {
                       </option>
                     ))}
                 </TextField>
-                {/* NEW: Commission % */}
+                {/* Commission % */}
                 <TextField
                   size="small"
                   label="Commission %"
@@ -1154,7 +1165,6 @@ export default function AdminDashboard() {
                     <TableCell>UserId</TableCell>
                     <TableCell>Open</TableCell>
                     <TableCell>Status</TableCell>
-                    {/* NEW: Commission column */}
                     <TableCell>Commission %</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
@@ -1377,6 +1387,7 @@ export default function AdminDashboard() {
                 <TextField size="small" label="To" type="date" InputLabelProps={{ shrink: true }} value={orderTo} onChange={(e) => setOrderTo(e.target.value)} />
 
                 <Button variant="outlined" onClick={fetchOrders} startIcon={<RefreshIcon />}>Apply</Button>
+                <Button variant="text" onClick={clearOrderFilters}>Clear</Button>
                 <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportOrdersCsv} disabled={ordersLoading || visibleOrders.length === 0}>
                   Export CSV
                 </Button>

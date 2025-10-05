@@ -317,18 +317,23 @@ const VendorDashboard = () => {
 
   /* ---------- PAYOUTS (SUMMARY) ---------- */
   const fetchPayouts = async () => {
-    if (!vendorId) return;
-    setPayoutsLoading(true);
+   setPayoutsLoading(true);
     try {
-      const res = await fetch(apiUrl(`/api/vendors/${vendorId}/payouts`), { headers: authHeaders });
-      const data = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
-      setPayoutSummary(data && typeof data === "object" ? data : null);
+     const res = await fetch(apiUrl(`/api/orders/payouts/summary`), { headers: authHeaders });
+     const data = await parseJsonSafe(res);
+     if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
+     // normalize to the shape your UI expects
+     setPayoutSummary({
+      paidOrders: data.paidOrders || 0,
+      grossPaid: data.grossPaid || 0,
+      commission: data.commission || 0,
+      netOwed: data.netOwed || 0,
+     });
     } catch (e) {
-      console.error("Failed to fetch payouts:", e?.message);
-      setPayoutSummary(null);
-    } finally {
-      setPayoutsLoading(false);
+     console.error("Failed to fetch payouts:", e?.message);
+     setPayoutSummary(null);
+    }  finally {
+     setPayoutsLoading(false);
     }
   };
 
