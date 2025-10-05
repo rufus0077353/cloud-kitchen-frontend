@@ -4,7 +4,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { CssBaseline, Container } from "@mui/material";
-import { connectSocket } from "./utils/socket";
 
 // Pages
 import Login from "./pages/Login";
@@ -27,6 +26,7 @@ import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
 import AdminPayouts from "./pages/AdminPayouts";
+import PayoutsDashboard from "./pages/PayoutsDashboard";
 
 // Shopping pages
 import BrowseVendors from "./pages/BrowseVendors";
@@ -66,6 +66,8 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/admin/payouts" element={<AdminPayouts />} />
+              <Route path="/admin/payouts" element={<PayoutsDashboard role="admin" token={token} />} />
+              <Route path="/vendor/payouts" element={<PayoutsDashboard role="vendor" token={token} />} />
 
               {/* Compliance pages for Razorpay reviewers */}
               <Route path="/contact" element={<Contact />} />
