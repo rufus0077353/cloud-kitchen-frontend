@@ -12,16 +12,13 @@ import { connectSocket, socket } from "../utils/socket";
 import { toast } from "react-toastify";
 
 /* ---------------- API base normalizer ----------------
-   Put EITHER https://your-backend or https://your-backend/api
+   Put EITHER https://your-backend OR https://your-backend/api
    in REACT_APP_API_BASE_URL — this will normalize to .../api */
 function resolveApiBase() {
-    const raw = process.env.REACT_APP_API_BASE_URL || "";
-    if (!raw) return "http://localhost:3001/api"; // default
-
-    const trimmed = raw.replace(/\/+$/,""); // trim trailing slashes
-    //if caller already included /api, keep it; else append it
-    if (/\/api$/i.test(trimmed)) return trimmed;
-    return `${trimmed}/api`;    
+  const raw = process.env.REACT_APP_API_BASE_URL || "";
+  if (!raw) return "http://localhost:5000/api"; // sensible default
+  const trimmed = raw.replace(/\/+$/, "");
+  return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
 }
 const API_BASE = resolveApiBase();
 
@@ -33,6 +30,15 @@ const safeCsv = (v) => {
   if (v == null) return "";
   const s = String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+// Accepts "yyyy-mm-dd" or "dd-mm-yyyy" and returns valid "yyyy-mm-dd" or ""
+const toISODate = (s = "") => {
+  if (!s) return "";
+  const t = s.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;               // already ISO
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);              // dd-mm-yyyy
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return ""; // anything else -> ignore
 };
 
 export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) {
@@ -50,14 +56,16 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
 
   const qsFromDateRange = useMemo(() => {
     const qs = [];
-    if (dateRange.from) qs.push(`from=${dateRange.from}`);
-    if (dateRange.to) qs.push(`to=${dateRange.to}`);
+    const fromISO = toISODate(dateRange.from);
+    const toISO = toISODate(dateRange.to);
+    if (fromISO) qs.push(`from=${fromISO}`);
+    if (toISO) qs.push(`to=${toISO}`);
     return qs.length ? `?${qs.join("&")}` : "";
   }, [dateRange]);
 
   /** Fetch payouts with:
    *  - admin:  /orders/payouts/summary/all
-   *  - vendor: /orders/payouts/summary, fallback -> /orders/vendor/summary on 404
+   *  - vendor: /orders/payouts/summary   (fallback -> /orders/vendor/summary on 404)
    */
   const fetchData = async () => {
     setLoading(true);
@@ -66,8 +74,6 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
         ? `${API_BASE}/orders/payouts/summary/all`
         : `${API_BASE}/orders/payouts/summary`;
 
-      console.debug("[Payouts] GET", `${endpoint}${qsFromDateRange}`); // tiny debug
-
       let res = await fetch(`${endpoint}${qsFromDateRange}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -75,18 +81,24 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
       // vendor-only fallback if first route doesn't exist
       if (!isAdmin && res.status === 404) {
         endpoint = `${API_BASE}/orders/vendor/summary`;
-        console.debug("[Payouts] Fallback GET", `${endpoint}${qsFromDateRange}`);
         res = await fetch(`${endpoint}${qsFromDateRange}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
       }
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Not authenticated");
+        if (res.status === 403) throw new Error("Forbidden (wrong role)");
+        if (res.status === 404) throw new Error("API route not found");
+        const msg = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${msg ? ` - ${msg}` : ""}`);
+      }
+
       const json = await res.json();
       setData(json);
     } catch (err) {
       console.error("❌ payout fetch failed:", err);
-      toast.error("Failed to load payouts");
+      toast.error(err.message || "Failed to load payouts");
       setData(null);
     } finally {
       setLoading(false);
@@ -97,8 +109,8 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     fetchData();
     try { connectSocket(); } catch {}
 
-    const onPayoutUpdate = (p) => { toast.info(`Payout updated for Order #${p?.orderId ?? "-"}`); fetchData(); };
-    const onPaymentsRefresh = () => { toast.info("Payouts refreshed"); fetchData(); };
+    const onPayoutUpdate = () => fetchData();
+    const onPaymentsRefresh = () => fetchData();
 
     socket.on("payout:update", onPayoutUpdate);
     socket.on("payout:updated", onPayoutUpdate);
@@ -109,7 +121,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
       socket.off("payments:refresh", onPaymentsRefresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAdmin, token, qsFromDateRange]);
 
   const exportCSV = () => {
     if (!data) return;
