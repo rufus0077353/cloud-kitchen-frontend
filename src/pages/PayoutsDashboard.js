@@ -11,12 +11,27 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import { connectSocket, socket } from "../utils/socket";
 import { toast } from "react-toastify";
 
-// ---- Config ----
-const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/api";
+/* ---------------- API base normalizer ----------------
+   Put EITHER https://your-backend or https://your-backend/api
+   in REACT_APP_API_BASE_URL — this will normalize to .../api */
+const RAW_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
+function normalizeApiBase(input) {
+  try {
+    const u = new URL(input);
+    const path = u.pathname.replace(/\/+$/, ""); // strip trailing slash(es)
+    const ensured = /\/api$/.test(path) ? path : `${path}/api`;
+    return `${u.origin}${ensured}`;
+  } catch {
+    const trimmed = String(input || "").replace(/\/+$/, "");
+    return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+  }
+}
+const API_BASE = normalizeApiBase(RAW_BASE);
 
-// ---- Helpers ----
+/* ---------------- helpers ---------------- */
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
-const fmtMoney = (n) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
+const fmtMoney = (n) =>
+  `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
 const safeCsv = (v) => {
   if (v == null) return "";
   const s = String(v);
@@ -31,7 +46,6 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
 
-  // modal
   const [selectedPayout, setSelectedPayout] = useState(null);
   const [openModal, setOpenModal] = useState(false);
   const handleOpenModal = (payout) => { setSelectedPayout(payout); setOpenModal(true); };
@@ -44,7 +58,10 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     return qs.length ? `?${qs.join("&")}` : "";
   }, [dateRange]);
 
-  /** Fetch payouts with fallback if route not found */
+  /** Fetch payouts with:
+   *  - admin:  /orders/payouts/summary/all
+   *  - vendor: /orders/payouts/summary, fallback -> /orders/vendor/summary on 404
+   */
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -52,16 +69,18 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
         ? `${API_BASE}/orders/payouts/summary/all`
         : `${API_BASE}/orders/payouts/summary`;
 
+      console.debug("[Payouts] GET", `${endpoint}${qsFromDateRange}`); // tiny debug
+
       let res = await fetch(`${endpoint}${qsFromDateRange}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      // 🔁 fallback if endpoint doesn’t exist (404)
-      if (res.status === 404 && !isAdmin) {
-        console.warn("Fallback to /orders/vendor/summary");
+      // vendor-only fallback if first route doesn't exist
+      if (!isAdmin && res.status === 404) {
         endpoint = `${API_BASE}/orders/vendor/summary`;
+        console.debug("[Payouts] Fallback GET", `${endpoint}${qsFromDateRange}`);
         res = await fetch(`${endpoint}${qsFromDateRange}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
       }
 
@@ -77,24 +96,16 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     }
   };
 
-  // initial load + socket hooks
   useEffect(() => {
     fetchData();
     try { connectSocket(); } catch {}
 
-    const onPayoutUpdate = (p) => {
-      toast.info(`Payout updated for Order #${p?.orderId ?? "-"}`);
-      fetchData();
-    };
-    const onPaymentsRefresh = () => {
-      toast.info("Payouts refreshed");
-      fetchData();
-    };
+    const onPayoutUpdate = (p) => { toast.info(`Payout updated for Order #${p?.orderId ?? "-"}`); fetchData(); };
+    const onPaymentsRefresh = () => { toast.info("Payouts refreshed"); fetchData(); };
 
     socket.on("payout:update", onPayoutUpdate);
     socket.on("payout:updated", onPayoutUpdate);
     socket.on("payments:refresh", onPaymentsRefresh);
-
     return () => {
       socket.off("payout:update", onPayoutUpdate);
       socket.off("payout:updated", onPayoutUpdate);
@@ -103,17 +114,13 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Export CSV
   const exportCSV = () => {
     if (!data) return;
     const rows = Array.isArray(data) ? data : [data];
     if (rows.length === 0) return;
 
     const headers = Array.from(
-      rows.reduce((set, r) => {
-        Object.keys(r || {}).forEach((k) => set.add(k));
-        return set;
-      }, new Set())
+      rows.reduce((set, r) => { Object.keys(r || {}).forEach((k) => set.add(k)); return set; }, new Set())
     );
 
     const csv = [
@@ -130,7 +137,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     URL.revokeObjectURL(url);
   };
 
-  // Vendor summary rows
+  // nice vendor rows
   const vendorRows = useMemo(() => {
     if (!data || isAdmin) return [];
     const ratePct = Number(data.rate || 0) * 100;
@@ -150,40 +157,26 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
           {isAdmin ? "Admin Payout Summary" : "Vendor Payout Summary"}
         </Typography>
         <Stack direction="row" spacing={1}>
-          <Button onClick={fetchData} startIcon={<RefreshIcon />} variant="outlined">
-            Refresh
-          </Button>
-          <Button onClick={exportCSV} startIcon={<DownloadIcon />} variant="contained" color="success">
-            Export CSV
-          </Button>
+          <Button onClick={fetchData} startIcon={<RefreshIcon />} variant="outlined">Refresh</Button>
+          <Button onClick={exportCSV} startIcon={<DownloadIcon />} variant="contained" color="success">Export CSV</Button>
         </Stack>
       </Stack>
 
       {/* Filters */}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }} useFlexGap flexWrap="wrap">
         <TextField
-          type="date"
-          label="From"
-          size="small"
-          InputLabelProps={{ shrink: true }}
-          value={dateRange.from}
-          onChange={(e) => setDateRange((d) => ({ ...d, from: e.target.value }))}
+          type="date" label="From" size="small" InputLabelProps={{ shrink: true }}
+          value={dateRange.from} onChange={(e) => setDateRange((d) => ({ ...d, from: e.target.value }))}
         />
         <TextField
-          type="date"
-          label="To"
-          size="small"
-          InputLabelProps={{ shrink: true }}
-          value={dateRange.to}
-          onChange={(e) => setDateRange((d) => ({ ...d, to: e.target.value }))}
+          type="date" label="To" size="small" InputLabelProps={{ shrink: true }}
+          value={dateRange.to} onChange={(e) => setDateRange((d) => ({ ...d, to: e.target.value }))}
         />
         <Button variant="contained" onClick={fetchData}>Apply</Button>
       </Stack>
 
       {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-          <CircularProgress />
-        </Box>
+        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}><CircularProgress /></Box>
       ) : !data ? (
         <Typography color="text.secondary">No payout data found</Typography>
       ) : (
@@ -208,7 +201,6 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
                 )}
               </TableRow>
             </TableHead>
-
             <TableBody>
               {isAdmin ? (
                 Array.isArray(data) && data.length ? (
@@ -220,9 +212,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
                       <TableCell align="right">{fmtMoney(row.commission)}</TableCell>
                       <TableCell align="right">{fmtMoney(row.netOwed)}</TableCell>
                       <TableCell align="right">
-                        <Button variant="outlined" size="small" onClick={() => handleOpenModal(row)}>
-                          View Details
-                        </Button>
+                        <Button variant="outlined" size="small" onClick={() => handleOpenModal(row)}>View Details</Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -260,23 +250,17 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
               {selectedPayout.status && <Typography><b>Status:</b> {selectedPayout.status}</Typography>}
               <Divider />
               {selectedPayout.createdAt && (
-                <Typography color="text.secondary">
-                  <b>Created:</b> {new Date(selectedPayout.createdAt).toLocaleString()}
-                </Typography>
+                <Typography color="text.secondary"><b>Created:</b> {new Date(selectedPayout.createdAt).toLocaleString()}</Typography>
               )}
               {selectedPayout.updatedAt && (
-                <Typography color="text.secondary">
-                  <b>Updated:</b> {new Date(selectedPayout.updatedAt).toLocaleString()}
-                </Typography>
+                <Typography color="text.secondary"><b>Updated:</b> {new Date(selectedPayout.updatedAt).toLocaleString()}</Typography>
               )}
             </Stack>
           ) : (
             <Typography>No details available</Typography>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseModal}>Close</Button>
-        </DialogActions>
+        <DialogActions><Button onClick={handleCloseModal}>Close</Button></DialogActions>
       </Dialog>
     </Container>
   );
