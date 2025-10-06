@@ -1,9 +1,10 @@
+
 // src/pages/PayoutsDashboard.js
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Container, Typography, Box, Table, TableHead, TableBody, TableRow,
-  TableCell, Paper, TableContainer, Button, CircularProgress, Stack, TextField,
-  Dialog, DialogTitle, DialogContent, DialogActions, Divider
+  TableCell, Paper, TableContainer, Button, CircularProgress, Stack,
+  TextField, Dialog, DialogTitle, DialogContent, DialogActions, Divider
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -47,9 +48,11 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
   const fetchData = async () => {
     setLoading(true);
     try {
+      // ✅ matches backend: /api/orders/payouts/summary[(/all)]
       const endpoint = isAdmin
         ? `${API_BASE}/orders/payouts/summary/all`
         : `${API_BASE}/orders/payouts/summary`;
+
       const res = await fetch(`${endpoint}${qsFromDateRange}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -68,10 +71,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
   // initial load + socket hooks
   useEffect(() => {
     fetchData();
-    // connect once
-    try {
-      connectSocket();
-    } catch {}
+    try { connectSocket(); } catch {}
 
     const onPayoutUpdate = (p) => {
       try { toast.info(`Payout updated for Order #${p?.orderId ?? "-"}`); } catch {}
@@ -83,7 +83,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     };
 
     socket.on("payout:updated", onPayoutUpdate);
-    socket.on("payout:update", onPayoutUpdate);      // support alt name
+    socket.on("payout:update", onPayoutUpdate);      // alt event name
     socket.on("payments:refresh", onPaymentsRefresh);
 
     return () => {
@@ -119,6 +119,19 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // For vendor (non-admin) table: present friendly rows (counts vs money)
+  const vendorRows = useMemo(() => {
+    if (!data || isAdmin) return [];
+    const ratePct = Number(data.rate || 0) * 100;
+    return [
+      ["Paid Orders", fmtNum(data.paidOrders || 0)],
+      ["Gross Paid", fmtMoney(data.grossPaid || 0)],
+      [`Commission (${ratePct.toFixed(0)}%)`, fmtMoney(data.commission || 0)],
+      ["Net Owed", fmtMoney(data.netOwed || 0)],
+      ["Unpaid Gross", fmtMoney(data.grossUnpaid || 0)],
+    ];
+  }, [data, isAdmin]);
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -209,12 +222,10 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
                   </TableRow>
                 )
               ) : (
-                Object.entries(data).map(([k, v]) => (
-                  <TableRow key={k}>
-                    <TableCell>{k}</TableCell>
-                    <TableCell align="right">
-                      {typeof v === "number" ? fmtMoney(v) : String(v)}
-                    </TableCell>
+                vendorRows.map(([label, value]) => (
+                  <TableRow key={label}>
+                    <TableCell>{label}</TableCell>
+                    <TableCell align="right">{value}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -230,20 +241,26 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
           {selectedPayout ? (
             <Stack spacing={1.5}>
               <Typography><b>Vendor:</b> {selectedPayout.vendorName ?? `#${selectedPayout.VendorId ?? "-"}`}</Typography>
-              <Typography><b>Order ID:</b> {selectedPayout.orderId ?? "-"}</Typography>
               <Typography><b>Paid Orders:</b> {fmtNum(selectedPayout.paidOrders)}</Typography>
               <Typography><b>Gross Paid:</b> {fmtMoney(selectedPayout.grossPaid)}</Typography>
-              <Typography><b>Commission Rate:</b> {((selectedPayout.commissionRate || 0) * 100).toFixed(2)}%</Typography>
+              <Typography>
+                <b>Commission Rate:</b>{" "}
+                {(((selectedPayout.rate ?? selectedPayout.commissionRate) || 0) * 100).toFixed(2)}%
+              </Typography>
               <Typography><b>Commission Amount:</b> {fmtMoney(selectedPayout.commission ?? selectedPayout.commissionAmount)}</Typography>
               <Typography><b>Payout Amount (Net Owed):</b> {fmtMoney(selectedPayout.payoutAmount ?? selectedPayout.netOwed)}</Typography>
-              <Typography><b>Status:</b> {selectedPayout.status ?? "-"}</Typography>
+              {selectedPayout.status && <Typography><b>Status:</b> {selectedPayout.status}</Typography>}
               <Divider />
-              <Typography color="text.secondary">
-                <b>Created:</b> {selectedPayout.createdAt ? new Date(selectedPayout.createdAt).toLocaleString() : "-"}
-              </Typography>
-              <Typography color="text.secondary">
-                <b>Updated:</b> {selectedPayout.updatedAt ? new Date(selectedPayout.updatedAt).toLocaleString() : "-"}
-              </Typography>
+              {selectedPayout.createdAt && (
+                <Typography color="text.secondary">
+                  <b>Created:</b> {new Date(selectedPayout.createdAt).toLocaleString()}
+                </Typography>
+              )}
+              {selectedPayout.updatedAt && (
+                <Typography color="text.secondary">
+                  <b>Updated:</b> {new Date(selectedPayout.updatedAt).toLocaleString()}
+                </Typography>
+              )}
             </Stack>
           ) : (
             <Typography>No details available</Typography>
