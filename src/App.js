@@ -25,8 +25,7 @@ import VendorOrders from "./pages/VendorOrders";
 import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
-import AdminPayouts from "./pages/AdminPayouts";
-import PayoutsDashboard from "./pages/PayoutsDashboard";
+import PayoutsDashboard from "./pages/PayoutsDashboard"; // <- single payouts page (admin/vendor via prop)
 
 // Shopping pages
 import BrowseVendors from "./pages/BrowseVendors";
@@ -44,7 +43,7 @@ import NotAuthorized from "./pages/NotAuthorized";
 import { NotificationsProvider } from "./context/NotificationsContext";
 import TrackOrder from "./pages/TrackOrder";
 
-// Public compliance pages (must remain PUBLIC)
+// Public compliance pages
 import Contact from "./pages/static/Contact";
 import Terms from "./pages/static/Terms";
 import Privacy from "./pages/static/Privacy";
@@ -65,11 +64,8 @@ function App() {
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/admin/payouts" element={<AdminPayouts />} />
-              <Route path="/admin/payouts" element={<PayoutsDashboard role="admin" token={localStorage.getItem("token")} />} />
-              <Route path="/vendor/payouts" element={<PayoutsDashboard role="vendor" token={localStorage.getItem("token")} />} />
 
-              {/* Compliance pages for Razorpay reviewers */}
+              {/* Compliance pages for reviewers */}
               <Route path="/contact" element={<Contact />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
@@ -84,8 +80,6 @@ function App() {
                   </PrivateRoute>
                 }
               />
-
-              {/* Orders */}
               <Route
                 path="/orders"
                 element={
@@ -194,11 +188,13 @@ function App() {
                   </PrivateRoute>
                 }
               />
-
               <Route
-               path="/vendor/payouts"
+                path="/vendor/payouts"
                 element={
-                 <RequireAuth role="vendor"><PayoutsDashboard role="vendor" /></RequireAuth>} 
+                  <PrivateRoute role="vendor">
+                    <PayoutsDashboard role="vendor" />
+                  </PrivateRoute>
+                }
               />
 
               {/* ---------- ADMIN ROUTES ---------- */}
@@ -265,8 +261,13 @@ function App() {
               <Route
                 path="/admin/payouts"
                 element={
-                  <RequireAuth role="admin"><PayoutsDashboard role="admin" /></RequireAuth>}
-              />   
+                  <PrivateRoute role="admin">
+                    <AdminRoute>
+                      <PayoutsDashboard role="admin" />
+                    </AdminRoute>
+                  </PrivateRoute>
+                }
+              />
 
               {/* Not authorized + catch-all */}
               <Route path="/not-authorized" element={<NotAuthorized />} />
