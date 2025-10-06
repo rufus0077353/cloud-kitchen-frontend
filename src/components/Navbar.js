@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
 import {
@@ -23,14 +23,11 @@ import CartDrawer from "./CartDrawer";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 
-const BRAND = {
-  src: "/servezy-logo.png",
-  fallback: "/logo192.png",
-  alt: "Servezy",
-};
+const BRAND = { src: "/servezy-logo.png", fallback: "/logo192.png", alt: "Servezy" };
 
 const isPathActive = (location, path) => location.pathname.startsWith(path);
 
+// normalize role
 const getRole = (rawUser) => {
   const r =
     rawUser?.role ??
@@ -63,16 +60,21 @@ export default function Navbar() {
 
   const { totalQty, isOpen, openDrawer, closeDrawer } = useCart();
 
-  const headers = token
-    ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
-    : { "Content-Type": "application/json" };
+  const headers = useMemo(
+    () =>
+      token
+        ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+        : { "Content-Type": "application/json" },
+    [token]
+  );
 
   const role = getRole(user);
   const isAdmin = !!token && role === "admin";
   const isVendor = !!token && role === "vendor";
   const isUser = !!token && !isAdmin && !isVendor;
 
-  const fetchVendorPending = async () => {
+  // --- counters (only if logged in) ---
+  const fetchVendorPending = useCallback(async () => {
     if (!isVendor) return;
     try {
       const res = await fetch(`${API_BASE}/api/orders/vendor`, { headers });
@@ -85,9 +87,9 @@ export default function Navbar() {
     } catch {
       setVendorPendingCount(0);
     }
-  };
+  }, [isVendor, headers]);
 
-  const fetchUserActive = async () => {
+  const fetchUserActive = useCallback(async () => {
     if (!isUser) return;
     try {
       const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
@@ -102,7 +104,7 @@ export default function Navbar() {
     } catch {
       setUserActiveCount(0);
     }
-  };
+  }, [isUser, headers]);
 
   useEffect(() => {
     if (!token) return;
@@ -128,13 +130,14 @@ export default function Navbar() {
       } catch {}
     };
     joinVendor();
-  }, [token, user?.id, isVendor, vendorId]);
+  }, [token, user?.id, isVendor, vendorId, headers]);
 
   useEffect(() => {
     fetchVendorPending();
     fetchUserActive();
-  }, [isVendor, isUser]);
+  }, [isVendor, isUser, fetchVendorPending, fetchUserActive]);
 
+  // --- socket events ---
   useEffect(() => {
     const onNew = (order) => {
       if (isVendor && Number(order?.VendorId) === Number(vendorId)) fetchVendorPending();
@@ -150,7 +153,7 @@ export default function Navbar() {
       socket.off("order:new", onNew);
       socket.off("order:status", onStatus);
     };
-  }, [isVendor, isUser, vendorId, user?.id]);
+  }, [isVendor, isUser, vendorId, user?.id, fetchVendorPending, fetchUserActive]);
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -171,8 +174,7 @@ export default function Navbar() {
         { to: "/admin/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
         { to: "/admin/users", label: "Users", icon: <PeopleIcon /> },
         { to: "/admin/orders", label: "Orders", icon: <ListAltIcon /> },
-        // 🟢 Added payout link for Admin
-        { to: "/admin/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
+        { to: "/admin/payouts", label: "Payouts", icon: <MonetizationOnIcon /> }, // Admin payouts
       ];
     }
     if (isVendor) {
@@ -184,8 +186,7 @@ export default function Navbar() {
           icon: <ListAltIcon />,
           badge: vendorPendingCount,
         },
-        // 🟢 Added payout link for Vendor
-        { to: "/vendor/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
+        { to: "/vendor/payouts", label: "Payouts", icon: <MonetizationOnIcon /> }, // Vendor payouts
       ];
     }
     // default user
@@ -204,13 +205,7 @@ export default function Navbar() {
     <Box
       component={RouterLink}
       to={token ? (isVendor ? "/vendor/dashboard" : isAdmin ? "/admin/dashboard" : "/dashboard") : "/"}
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-        textDecoration: "none",
-        color: "inherit",
-      }}
+      sx={{ display: "flex", alignItems: "center", gap: 1, textDecoration: "none", color: "inherit" }}
     >
       <Avatar
         src={BRAND.src}

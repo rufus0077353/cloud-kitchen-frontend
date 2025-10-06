@@ -1,4 +1,3 @@
-
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
@@ -25,9 +24,9 @@ import VendorOrders from "./pages/VendorOrders";
 import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
-import PayoutsDashboard from "./pages/PayoutsDashboard"; // <- single payouts page (admin/vendor via prop)
+import PayoutsDashboard from "./pages/PayoutsDashboard";
 
-// Shopping pages
+// Shopping
 import BrowseVendors from "./pages/BrowseVendors";
 import Checkout from "./pages/Checkout";
 
@@ -39,7 +38,7 @@ import ConnectionBar from "./components/ConnectionBar";
 import { CartProvider } from "./context/CartContext";
 import NotAuthorized from "./pages/NotAuthorized";
 
-// NEW
+// Notifications + tracking
 import { NotificationsProvider } from "./context/NotificationsContext";
 import TrackOrder from "./pages/TrackOrder";
 
@@ -50,236 +49,236 @@ import Privacy from "./pages/static/Privacy";
 import Refund from "./pages/static/Refund";
 
 function App() {
-  return (
-    <CartProvider>
-      <NotificationsProvider>
-        <Router>
-          <CssBaseline />
-          <Container maxWidth="lg">
-            <Navbar />
-            <ConnectionBar />
+ return (
+   <CartProvider>
+     <NotificationsProvider>
+       <Router>
+         <CssBaseline />
+         <Container maxWidth="lg">
+           <Navbar />
+           <ConnectionBar />
 
-            <Routes>
-              {/* ---------- PUBLIC ROUTES (no auth) ---------- */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
+           <Routes>
+             {/* ---------- PUBLIC ---------- */}
+             <Route path="/" element={<Navigate to="/login" replace />} />
+             <Route path="/login" element={<Login />} />
+             <Route path="/register" element={<Register />} />
 
-              {/* Compliance pages for reviewers */}
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/terms" element={<Terms />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/refund" element={<Refund />} />
+             {/* Compliance pages (public) */}
+             <Route path="/contact" element={<Contact />} />
+             <Route path="/terms" element={<Terms />} />
+             <Route path="/privacy" element={<Privacy />} />
+             <Route path="/refund" element={<Refund />} />
 
-              {/* ---------- USER ROUTES (auth required) ---------- */}
-              <Route
-                path="/dashboard"
-                element={
-                  <PrivateRoute>
-                    <UserDashboard />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/orders"
-                element={
-                  <PrivateRoute>
-                    <UserOrders />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/create-order"
-                element={
-                  <PrivateRoute>
-                    <CreateOrder />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/orders/success"
-                element={
-                  <PrivateRoute>
-                    <OrderSuccess />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/orders/form"
-                element={
-                  <PrivateRoute>
-                    <OrderForm />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/orders/history"
-                element={
-                  <PrivateRoute>
-                    <OrderHistory />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/orders/invoice/:id"
-                element={
-                  <PrivateRoute>
-                    <Invoice />
-                  </PrivateRoute>
-                }
-              />
+             {/* ---------- USER (auth) ---------- */}
+             <Route
+               path="/dashboard"
+               element={
+                 <PrivateRoute>
+                   <UserDashboard />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/orders"
+               element={
+                 <PrivateRoute>
+                   <UserOrders />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/create-order"
+               element={
+                 <PrivateRoute>
+                   <CreateOrder />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/orders/success"
+               element={
+                 <PrivateRoute>
+                   <OrderSuccess />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/orders/form"
+               element={
+                 <PrivateRoute>
+                   <OrderForm />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/orders/history"
+               element={
+                 <PrivateRoute>
+                   <OrderHistory />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/orders/invoice/:id"
+               element={
+                 <PrivateRoute>
+                   <Invoice />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/vendors"
+               element={
+                 <PrivateRoute>
+                   <BrowseVendors />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/vendors/:vendorId"
+               element={
+                 <PrivateRoute>
+                   <UserVendorMenu />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/checkout"
+               element={
+                 <PrivateRoute>
+                   <Checkout />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/track/:id"
+               element={
+                 <PrivateRoute>
+                   <TrackOrder />
+                 </PrivateRoute>
+               }
+             />
 
-              {/* Shopping */}
-              <Route
-                path="/vendors"
-                element={
-                  <PrivateRoute>
-                    <BrowseVendors />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/vendors/:vendorId"
-                element={
-                  <PrivateRoute>
-                    <UserVendorMenu />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/checkout"
-                element={
-                  <PrivateRoute>
-                    <Checkout />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/track/:id"
-                element={
-                  <PrivateRoute>
-                    <TrackOrder />
-                  </PrivateRoute>
-                }
-              />
+             {/* ---------- VENDOR ---------- */}
+             <Route
+               path="/vendor/dashboard"
+               element={
+                 <PrivateRoute role="vendor">
+                   <VendorDashboard />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/vendor/menu"
+               element={
+                 <PrivateRoute role="vendor">
+                   <VendorMenu />
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/vendor/orders"
+               element={
+                 <PrivateRoute role="vendor">
+                   <VendorOrders />
+                 </PrivateRoute>
+               }
+             />
+             {/* ✅ Vendor payouts (auth only) */}
+             <Route
+               path="/vendor/payouts"
+               element={
+                 <PrivateRoute role="vendor">
+                   <PayoutsDashboard role="vendor" />
+                 </PrivateRoute>
+               }
+             />
 
-              {/* ---------- VENDOR ROUTES ---------- */}
-              <Route
-                path="/vendor/dashboard"
-                element={
-                  <PrivateRoute role="vendor">
-                    <VendorDashboard />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/vendor/menu"
-                element={
-                  <PrivateRoute role="vendor">
-                    <VendorMenu />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/vendor/orders"
-                element={
-                  <PrivateRoute role="vendor">
-                    <VendorOrders />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/vendor/payouts"
-                element={
-                  <PrivateRoute role="vendor">
-                    <PayoutsDashboard role="vendor" />
-                  </PrivateRoute>
-                }
-              />
+             {/* ---------- ADMIN ---------- */}
+             <Route
+               path="/admin/dashboard"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <AdminDashboard />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/admin/users"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <AdminUsers />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/admin/users/edit/:id"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <EditUser />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/admin/vendors"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <AdminVendors />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/admin/menu-items"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <AdminMenuItems />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
+             <Route
+               path="/admin/orders"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <AdminOrders />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
+             {/* ✅ Admin payouts (auth only) */}
+             <Route
+               path="/admin/payouts"
+               element={
+                 <PrivateRoute role="admin">
+                   <AdminRoute>
+                     <PayoutsDashboard role="admin" />
+                   </AdminRoute>
+                 </PrivateRoute>
+               }
+             />
 
-              {/* ---------- ADMIN ROUTES ---------- */}
-              <Route
-                path="/admin/dashboard"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminDashboard />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/users"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminUsers />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/users/edit/:id"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <EditUser />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/vendors"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminVendors />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/menu-items"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminMenuItems />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/orders"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminOrders />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/admin/payouts"
-                element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <PayoutsDashboard role="admin" />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
+             {/* Not authorized + catch-all */}
+             <Route path="/not-authorized" element={<NotAuthorized />} />
+             <Route path="*" element={<Navigate to="/login" replace />} />
+           </Routes>
 
-              {/* Not authorized + catch-all */}
-              <Route path="/not-authorized" element={<NotAuthorized />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-
-            <ToastContainer position="top-right" autoClose={5000} />
-          </Container>
-        </Router>
-      </NotificationsProvider>
-    </CartProvider>
-  );
+           <ToastContainer position="top-right" autoClose={5000} />
+         </Container>
+       </Router>
+     </NotificationsProvider>
+   </CartProvider>
+ );
 }
 
 export default App;
