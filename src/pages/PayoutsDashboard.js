@@ -14,19 +14,16 @@ import { toast } from "react-toastify";
 /* ---------------- API base normalizer ----------------
    Put EITHER https://your-backend or https://your-backend/api
    in REACT_APP_API_BASE_URL — this will normalize to .../api */
-const RAW_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
-function normalizeApiBase(input) {
-  try {
-    const u = new URL(input);
-    const path = u.pathname.replace(/\/+$/, ""); // strip trailing slash(es)
-    const ensured = /\/api$/.test(path) ? path : `${path}/api`;
-    return `${u.origin}${ensured}`;
-  } catch {
-    const trimmed = String(input || "").replace(/\/+$/, "");
-    return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
-  }
+function resolveApiBase() {
+    const raw = process.env.REACT_APP_API_BASE_URL || "";
+    if (!raw) return "http://localhost:3001/api"; // default
+
+    const trimmed = raw.replace(/\/+$/,""); // trim trailing slashes
+    //if caller already included /api, keep it; else append it
+    if (/\/api$/i.test(trimmed)) return trimmed;
+    return `${trimmed}/api`;    
 }
-const API_BASE = normalizeApiBase(RAW_BASE);
+const API_BASE = resolveApiBase();
 
 /* ---------------- helpers ---------------- */
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
