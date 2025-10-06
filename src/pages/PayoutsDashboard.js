@@ -5,6 +5,9 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import { connectSocket, socket } from "../utils/socket";
+import { toast } from "react-toastify";
+import { connect } from "socket.io-client";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/api";
 
@@ -38,7 +41,32 @@ export default function PayoutsDashboard({ role = "vendor", token }) {
     }
   };
 
-  useEffect(() => { fetchData(); }, []); // initial
+  useEffect(() => {
+    connectSocket();
+
+    const handlePayoutUpdate = (p) => {
+        toast.info(`Payout updated for Order  #${p?.orderId || "?"}`);
+        fetchData();
+    };
+
+    const handlePaymmentsRefresh = () => {
+        toast.info("Payouts data refreshed");
+        fetchData();
+    };
+    
+    //Register socket listeners
+    socket.on("payout:updated", handlePayoutUpdate);
+    socket.on("payments:refresh", handlePaymmentsRefresh);
+
+    // Cleanup
+    return () => {
+      socket.off("payout:updated", handlePayoutUpdate);
+      socket.off("payments:refresh", handlePaymmentsRefresh);
+    };
+  }, []);
+
+    
+    
 
   const exportCSV = () => {
     if (!data) return;
@@ -142,4 +170,4 @@ export default function PayoutsDashboard({ role = "vendor", token }) {
       )}
     </Container>
   );
-}
+}       
