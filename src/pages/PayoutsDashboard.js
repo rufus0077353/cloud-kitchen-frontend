@@ -16,8 +16,7 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/ap
 
 // ---- Helpers ----
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
-const fmtMoney = (n) =>
-  `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
+const fmtMoney = (n) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
 const safeCsv = (v) => {
   if (v == null) return "";
   const s = String(v);
@@ -45,22 +44,32 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     return qs.length ? `?${qs.join("&")}` : "";
   }, [dateRange]);
 
+  /** Fetch payouts with fallback if route not found */
   const fetchData = async () => {
     setLoading(true);
     try {
-      // ✅ matches backend: /api/orders/payouts/summary[(/all)]
-      const endpoint = isAdmin
+      let endpoint = isAdmin
         ? `${API_BASE}/orders/payouts/summary/all`
         : `${API_BASE}/orders/payouts/summary`;
 
-      const res = await fetch(`${endpoint}${qsFromDateRange}`, {
+      let res = await fetch(`${endpoint}${qsFromDateRange}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      // 🔁 fallback if endpoint doesn’t exist (404)
+      if (res.status === 404 && !isAdmin) {
+        console.warn("Fallback to /orders/vendor/summary");
+        endpoint = `${API_BASE}/orders/vendor/summary`;
+        res = await fetch(`${endpoint}${qsFromDateRange}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
     } catch (err) {
-      console.error("payout fetch failed", err);
+      console.error("❌ payout fetch failed:", err);
       toast.error("Failed to load payouts");
       setData(null);
     } finally {
@@ -74,26 +83,27 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     try { connectSocket(); } catch {}
 
     const onPayoutUpdate = (p) => {
-      try { toast.info(`Payout updated for Order #${p?.orderId ?? "-"}`); } catch {}
+      toast.info(`Payout updated for Order #${p?.orderId ?? "-"}`);
       fetchData();
     };
     const onPaymentsRefresh = () => {
-      toast.info("Payouts data refreshed");
+      toast.info("Payouts refreshed");
       fetchData();
     };
 
+    socket.on("payout:update", onPayoutUpdate);
     socket.on("payout:updated", onPayoutUpdate);
-    socket.on("payout:update", onPayoutUpdate);      // alt event name
     socket.on("payments:refresh", onPaymentsRefresh);
 
     return () => {
-      socket.off("payout:updated", onPayoutUpdate);
       socket.off("payout:update", onPayoutUpdate);
+      socket.off("payout:updated", onPayoutUpdate);
       socket.off("payments:refresh", onPaymentsRefresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Export CSV
   const exportCSV = () => {
     if (!data) return;
     const rows = Array.isArray(data) ? data : [data];
@@ -120,7 +130,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     URL.revokeObjectURL(url);
   };
 
-  // For vendor (non-admin) table: present friendly rows (counts vs money)
+  // Vendor summary rows
   const vendorRows = useMemo(() => {
     if (!data || isAdmin) return [];
     const ratePct = Number(data.rate || 0) * 100;
@@ -175,7 +185,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
           <CircularProgress />
         </Box>
       ) : !data ? (
-        <Typography color="text.secondary">No data</Typography>
+        <Typography color="text.secondary">No payout data found</Typography>
       ) : (
         <TableContainer component={Paper}>
           <Table size="small">
@@ -217,9 +227,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
                     </TableRow>
                   ))
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">No records</TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={6} align="center">No records</TableCell></TableRow>
                 )
               ) : (
                 vendorRows.map(([label, value]) => (
