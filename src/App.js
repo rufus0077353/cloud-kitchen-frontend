@@ -195,6 +195,12 @@ function App() {
                 }
               />
 
+              <Route
+               path="/vendor/payouts"
+                element={
+                 <RequireAuth role="vendor"><PayoutsDashboard role="vendor" /></RequireAuth>} 
+              />
+
               {/* ---------- ADMIN ROUTES ---------- */}
               <Route
                 path="/admin/dashboard"
@@ -257,15 +263,10 @@ function App() {
                 }
               />
               <Route
-                path="/admin/payouts "
+                path="/admin/payouts"
                 element={
-                  <PrivateRoute role="admin">
-                    <AdminRoute>
-                      <AdminPayouts />
-                    </AdminRoute>
-                  </PrivateRoute>
-                }
-              />
+                  <RequireAuth role="admin"><PayoutsDashboard role="admin" /></RequireAuth>}
+              />   
 
               {/* Not authorized + catch-all */}
               <Route path="/not-authorized" element={<NotAuthorized />} />

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
@@ -14,6 +15,7 @@ import ListAltIcon from "@mui/icons-material/ListAlt";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PeopleIcon from "@mui/icons-material/People";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
+import MonetizationOnIcon from "@mui/icons-material/MonetizationOn";
 import NotificationBell from "./NotificationBell";
 
 import { useCart } from "../context/CartContext";
@@ -29,7 +31,6 @@ const BRAND = {
 
 const isPathActive = (location, path) => location.pathname.startsWith(path);
 
-// normalize role
 const getRole = (rawUser) => {
   const r =
     rawUser?.role ??
@@ -71,7 +72,6 @@ export default function Navbar() {
   const isVendor = !!token && role === "vendor";
   const isUser = !!token && !isAdmin && !isVendor;
 
-  // --- counters (only if logged in) ---
   const fetchVendorPending = async () => {
     if (!isVendor) return;
     try {
@@ -128,16 +128,13 @@ export default function Navbar() {
       } catch {}
     };
     joinVendor();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user?.id, isVendor, vendorId]);
 
   useEffect(() => {
     fetchVendorPending();
     fetchUserActive();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser]);
 
-  // --- socket events ---
   useEffect(() => {
     const onNew = (order) => {
       if (isVendor && Number(order?.VendorId) === Number(vendorId)) fetchVendorPending();
@@ -153,7 +150,6 @@ export default function Navbar() {
       socket.off("order:new", onNew);
       socket.off("order:status", onStatus);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVendor, isUser, vendorId, user?.id]);
 
   useEffect(() => {
@@ -167,7 +163,7 @@ export default function Navbar() {
     navigate("/login");
   };
 
-  // Dynamic links only if logged in
+  // ---------- 🔗 Role-based links ----------
   const links = useMemo(() => {
     if (!token) return [];
     if (isAdmin) {
@@ -175,6 +171,8 @@ export default function Navbar() {
         { to: "/admin/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
         { to: "/admin/users", label: "Users", icon: <PeopleIcon /> },
         { to: "/admin/orders", label: "Orders", icon: <ListAltIcon /> },
+        // 🟢 Added payout link for Admin
+        { to: "/admin/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
       ];
     }
     if (isVendor) {
@@ -186,6 +184,8 @@ export default function Navbar() {
           icon: <ListAltIcon />,
           badge: vendorPendingCount,
         },
+        // 🟢 Added payout link for Vendor
+        { to: "/vendor/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
       ];
     }
     // default user
@@ -275,9 +275,8 @@ export default function Navbar() {
 
               <NotificationBell />
 
-              {/* Cart */}
               <Tooltip title="Cart">
-                <IconButton color="inherit" onClick={openDrawer} aria-label="open cart">
+                <IconButton color="inherit" onClick={openDrawer}>
                   <Badge color="secondary" badgeContent={totalQty > 99 ? "99+" : totalQty}>
                     <ShoppingCartIcon />
                   </Badge>
@@ -297,7 +296,7 @@ export default function Navbar() {
         </Toolbar>
       </AppBar>
 
-      {/* Mobile drawer */}
+      {/* Drawer for mobile */}
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box sx={{ width: 270, display: "flex", flexDirection: "column", height: "100%" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, p: 2 }}>
@@ -340,7 +339,6 @@ export default function Navbar() {
                 );
               })}
 
-              {/* Cart in drawer */}
               <ListItemButton
                 onClick={() => {
                   setDrawerOpen(false);
