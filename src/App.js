@@ -30,40 +30,22 @@ import BrowseVendors from "./pages/BrowseVendors";
 import Checkout from "./pages/Checkout";
 import NotAuthorized from "./pages/NotAuthorized";
 import TrackOrder from "./pages/TrackOrder";
+
+// Unified Payouts Page
 import PayoutsDashboard from "./pages/PayoutsDashboard";
 
 // Components
 import Navbar from "./components/Navbar";
+import PrivateRoute from "./components/PrivateRoute";
 import ConnectionBar from "./components/ConnectionBar";
 import { CartProvider } from "./context/CartContext";
 import { NotificationsProvider } from "./context/NotificationsContext";
 
-// Public static pages
+// Static public pages
 import Contact from "./pages/static/Contact";
 import Terms from "./pages/static/Terms";
 import Privacy from "./pages/static/Privacy";
 import Refund from "./pages/static/Refund";
-
-// --- Simple auth helper ---
-const getUserRole = () => {
-  try {
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    return (user?.role || "").toLowerCase();
-  } catch {
-    return "";
-  }
-};
-const isLoggedIn = () => !!localStorage.getItem("token");
-
-// --- Basic wrapper for role-based access ---
-function ProtectedRoute({ roles = [], children }) {
-  if (!isLoggedIn()) return <Navigate to="/login" replace />;
-  const role = getUserRole();
-  if (roles.length && !roles.includes(role)) {
-    return <Navigate to="/not-authorized" replace />;
-  }
-  return children;
-}
 
 function App() {
   return (
@@ -80,6 +62,8 @@ function App() {
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+
+              {/* Public Legal Pages */}
               <Route path="/contact" element={<Contact />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
@@ -89,89 +73,89 @@ function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <UserDashboard />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/orders"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <UserOrders />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/create-order"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <CreateOrder />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/orders/success"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <OrderSuccess />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/orders/form"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <OrderForm />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/orders/history"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <OrderHistory />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/orders/invoice/:id"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <Invoice />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/vendors"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <BrowseVendors />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/vendors/:vendorId"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <UserVendorMenu />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/checkout"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <Checkout />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/track/:id"
                 element={
-                  <ProtectedRoute roles={["user"]}>
+                  <PrivateRoute>
                     <TrackOrder />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
 
@@ -179,33 +163,33 @@ function App() {
               <Route
                 path="/vendor/dashboard"
                 element={
-                  <ProtectedRoute roles={["vendor"]}>
+                  <PrivateRoute role="vendor">
                     <VendorDashboard />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/vendor/menu"
                 element={
-                  <ProtectedRoute roles={["vendor"]}>
+                  <PrivateRoute role="vendor">
                     <VendorMenu />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/vendor/orders"
                 element={
-                  <ProtectedRoute roles={["vendor"]}>
+                  <PrivateRoute role="vendor">
                     <VendorOrders />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/vendor/payouts"
                 element={
-                  <ProtectedRoute roles={["vendor"]}>
+                  <PrivateRoute role="vendor">
                     <PayoutsDashboard role="vendor" />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
 
@@ -213,57 +197,57 @@ function App() {
               <Route
                 path="/admin/dashboard"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <AdminDashboard />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/admin/users"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <AdminUsers />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/admin/users/edit/:id"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <EditUser />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/admin/vendors"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <AdminVendors />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/admin/menu-items"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <AdminMenuItems />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/admin/orders"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <AdminOrders />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
               <Route
                 path="/admin/payouts"
                 element={
-                  <ProtectedRoute roles={["admin"]}>
+                  <PrivateRoute role="admin">
                     <PayoutsDashboard role="admin" />
-                  </ProtectedRoute>
+                  </PrivateRoute>
                 }
               />
 
@@ -272,7 +256,7 @@ function App() {
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
 
-            <ToastContainer position="top-right" autoClose={4000} />
+            <ToastContainer position="top-right" autoClose={5000} />
           </Container>
         </Router>
       </NotificationsProvider>
