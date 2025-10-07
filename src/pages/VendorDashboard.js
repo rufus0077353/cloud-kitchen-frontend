@@ -1,4 +1,5 @@
 
+// src/pages/VendorDashboard.js
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AppBar, Toolbar, Typography, Button, Container, Paper, TextField,
@@ -15,8 +16,17 @@ import { toast } from "react-toastify";
 import { socket, connectSocket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
 
-const ROOT = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
-const apiUrl = (p) => `${ROOT}${p}`;
+/* ------------ API base normalizer (ensure single /api) ------------ */
+function resolveApiBase() {
+  const raw = (process.env.REACT_APP_API_BASE_URL || "").trim();
+  if (!raw) return "http://localhost:5000/api";
+  const trimmed = raw.replace(/\/+$/, "");
+  if (/\/api$/i.test(trimmed)) return trimmed;      // already ends with /api
+  return `${trimmed}/api`;                          // append /api
+}
+const API_BASE = resolveApiBase();
+const apiUrl = (p) => `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`;
+
 const PLACEHOLDER_IMG = "/images/placeholder-food.png";
 
 /* ------------ helpers ------------ */
@@ -159,11 +169,14 @@ const VendorDashboard = () => {
 
   const fetchVendorMe = async () => {
     try {
-      const r = await fetch(apiUrl("/api/vendors/me"), { headers: authHeaders });
+      const r = await fetch(apiUrl("/vendors/me"), { headers: authHeaders });
       const me = await parseJsonSafe(r);
       if (!r.ok) throw new Error(me?.message || `Failed (${r.status})`);
 
-      if (me?.vendorId) setVendorId(me.vendorId);
+      if (me?.vendorId) {
+        setVendorId(me.vendorId);
+        localStorage.setItem("vendorId", String(me.vendorId)); // <-- persist for orders page
+      }
       if (typeof me?.isOpen === "boolean") setIsOpen(me.isOpen);
       setVendorProfile({
         name: me?.name ?? "",
@@ -175,7 +188,7 @@ const VendorDashboard = () => {
     } catch {
       if (!vendorId) return;
       try {
-        const r2 = await fetch(apiUrl(`/api/vendors/${vendorId}`), { headers: authHeaders });
+        const r2 = await fetch(apiUrl(`/vendors/${vendorId}`), { headers: authHeaders });
         const v = await parseJsonSafe(r2);
         if (!r2.ok) throw new Error(v?.message || `Failed (${r2.status})`);
         if (typeof v?.isOpen === "boolean") setIsOpen(v.isOpen);
@@ -204,7 +217,7 @@ const VendorDashboard = () => {
         phone: vendorProfile.phone || null,
         logoUrl: vendorProfile.logoUrl || null,
       };
-      const res = await fetch(apiUrl(`/api/vendors/${vendorId}`), {
+      const res = await fetch(apiUrl(`/vendors/${vendorId}`), {
         method: "PUT",
         headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -223,7 +236,7 @@ const VendorDashboard = () => {
   /* ---------- MENU LOAD ---------- */
   const fetchMenu = async () => {
     const tryMine = async () => {
-      const res = await fetch(apiUrl("/api/menu-items/mine"), { headers: authHeaders });
+      const res = await fetch(apiUrl("/menu-items/mine"), { headers: authHeaders });
       const data = await parseJsonSafe(res);
       if (!res.ok) throw new Error(data?.message || `Failed (${res.status})`);
       return Array.isArray(data) ? data : [];
@@ -232,12 +245,12 @@ const VendorDashboard = () => {
     const tryVendorMenu = async () => {
       let vId = vendorId;
       if (!vId) {
-        const r = await fetch(apiUrl("/api/vendors/me"), { headers: authHeaders });
+        const r = await fetch(apiUrl("/vendors/me"), { headers: authHeaders });
         const me = await parseJsonSafe(r);
         if (me?.vendorId) vId = me.vendorId;
       }
       if (!vId) throw new Error("No vendor profile attached to this account.");
-      const r2 = await fetch(apiUrl(`/api/vendors/${vId}/menu`), { headers: authHeaders });
+      const r2 = await fetch(apiUrl(`/vendors/${vId}/menu`), { headers: authHeaders });
       const d2 = await parseJsonSafe(r2);
       if (!r2.ok) throw new Error(d2?.message || `Failed (${r2.status})`);
       return Array.isArray(d2) ? d2 : (Array.isArray(d2.items) ? d2.items : []);
@@ -262,7 +275,7 @@ const VendorDashboard = () => {
   const fetchSummary = async () => {
     setSummaryLoading(true);
     try {
-      const res = await fetch(apiUrl("/api/orders/vendor/summary"), { headers: authHeaders });
+      const res = await fetch(apiUrl("/orders/vendor/summary"), { headers: authHeaders });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -289,7 +302,7 @@ const VendorDashboard = () => {
   const fetchDaily = async (range = days) => {
     setLoadingDaily(true);
     try {
-      const res = await fetch(apiUrl(`/api/orders/vendor/daily?days=${range}`), { headers: authHeaders });
+      const res = await fetch(apiUrl(`/orders/vendor/daily?days=${range}`), { headers: authHeaders });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -317,23 +330,22 @@ const VendorDashboard = () => {
 
   /* ---------- PAYOUTS (SUMMARY) ---------- */
   const fetchPayouts = async () => {
-   setPayoutsLoading(true);
+    setPayoutsLoading(true);
     try {
-     const res = await fetch(apiUrl(`/api/orders/payouts/summary`), { headers: authHeaders });
-     const data = await parseJsonSafe(res);
-     if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
-     // normalize to the shape your UI expects
-     setPayoutSummary({
-      paidOrders: data.paidOrders || 0,
-      grossPaid: data.grossPaid || 0,
-      commission: data.commission || 0,
-      netOwed: data.netOwed || 0,
-     });
+      const res = await fetch(apiUrl(`/orders/payouts/summary`), { headers: authHeaders });
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
+      setPayoutSummary({
+        paidOrders: data.paidOrders || 0,
+        grossPaid: data.grossPaid || 0,
+        commission: data.commission || 0,
+        netOwed: data.netOwed || 0,
+      });
     } catch (e) {
-     console.error("Failed to fetch payouts:", e?.message);
-     setPayoutSummary(null);
+      console.error("Failed to fetch payouts:", e?.message);
+      setPayoutSummary(null);
     }  finally {
-     setPayoutsLoading(false);
+      setPayoutsLoading(false);
     }
   };
 
@@ -341,7 +353,7 @@ const VendorDashboard = () => {
   const fetchTopItems = async () => {
     setLoadingTop(true);
     try {
-      const res = await fetch(apiUrl("/api/orders/vendor?page=1&pageSize=200"), { headers: authHeaders });
+      const res = await fetch(apiUrl("/orders/vendor?page=1&pageSize=200"), { headers: authHeaders });
       if (res.status === 401) {
         toast.error("Session expired. Please log in again.");
         localStorage.clear();
@@ -422,16 +434,20 @@ const VendorDashboard = () => {
   /* ---- socket: join vendor room + live updates ---- */
   useEffect(() => {
     connectSocket();
+
     const getMeAndJoin = async () => {
       try {
-        const r = await fetch(apiUrl("/api/vendors/me"), { headers: authHeaders });
+        const r = await fetch(apiUrl("/vendors/me"), { headers: authHeaders });
         if (!r.ok) return;
         const me = await r.json();
         if (me?.vendorId) {
           setVendorId(me.vendorId);
+          localStorage.setItem("vendorId", String(me.vendorId)); // persist for other pages
           const persisted = localStorage.getItem("vd_is_open");
           setIsOpen(typeof persisted === "string" ? persisted === "true" : Boolean(me.isOpen));
           socket.emit("vendor:join", me.vendorId);
+          // tiny debug
+          // console.log("[socket] vendor:join ->", me.vendorId);
         }
       } catch { /* ignore */ }
     };
@@ -502,8 +518,8 @@ const VendorDashboard = () => {
     }
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem
-      ? apiUrl(`/api/menu-items/${editingItem.id}`)
-      : apiUrl(`/api/menu-items`);
+      ? apiUrl(`/menu-items/${editingItem.id}`)
+      : apiUrl(`/menu-items`);
 
     const rawUrl = (form.imageUrl || "").trim();
     const imageUrl = (isImageHttpUrl(rawUrl) || isLocalImagePath(rawUrl)) ? rawUrl : null;
@@ -554,7 +570,7 @@ const VendorDashboard = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(apiUrl(`/api/menu-items/${id}`), {
+      const res = await fetch(apiUrl(`/menu-items/${id}`), {
         method: "DELETE",
         headers: authHeaders,
       });
@@ -574,13 +590,13 @@ const VendorDashboard = () => {
     }
   };
 
-  // ✅ Use vendor-safe toggle endpoint to avoid PUT coupling and reduce payload
+  // ✅ open/close toggle (vendor-safe endpoint)
   const toggleOpen = async (checked) => {
     const prev = isOpen;
     setIsOpen(checked);
     setIsOpenSaving(true);
     try {
-      const res = await fetch(apiUrl(`/api/vendors/me/open`), {
+      const res = await fetch(apiUrl(`/vendors/me/open`), {
         method: "PATCH",
         headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ isOpen: checked }),
@@ -628,12 +644,11 @@ const VendorDashboard = () => {
         fetchDaily(days),
         fetchTopItems(),
       ]);
-      // if vendorId is known, fetch payouts
       if (vendorId) await fetchPayouts();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   const rows = Array.isArray(menuItems) ? menuItems : [];
   const byStatus = summary?.byStatus || {};
 
@@ -1073,7 +1088,7 @@ const VendorDashboard = () => {
                     const data = new FormData();
                     data.append("image", file);
                     try {
-                      const res = await fetch(apiUrl(`/api/uploads`), {
+                      const res = await fetch(apiUrl(`/uploads`), {
                         method: "POST",
                         headers: authHeaders, // FormData: do NOT set Content-Type manually
                         body: data,
@@ -1130,7 +1145,8 @@ const VendorDashboard = () => {
             </TableHead>
             <TableBody>
               {(Array.isArray(menuItems) ? menuItems : []).map((item) => {
-                const isTop = topNames.has((item.name || "").toLowerCase());
+                const isTop = new Set((topItems || []).slice(0, 3).map(i => (i.name || "").toLowerCase()))
+                  .has((item.name || "").toLowerCase());
                 const img = item.imageUrl ?? item.imageURL ?? "";
                 const thumbSrc = pickThumb(img);
                 return (
