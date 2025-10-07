@@ -1,3 +1,4 @@
+
 // src/pages/VendorOrders.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -13,20 +14,29 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
-import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { socket } from "../utils/socket";
+import { socket, connectSocket } from "../utils/socket";
 import PaymentBadge from "../components/PaymentBadge";
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
-const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor";
+/* ---------- API base normalizer ----------
+   Put either https://your-backend OR https://your-backend/api
+   in REACT_APP_API_BASE_URL. This will normalize to .../api. */
+function resolveApiBase() {
+  const raw = process.env.REACT_APP_API_BASE_URL || "";
+  if (!raw) return "http://localhost:5000/api";
+  const trimmed = raw.replace(/\/+$/, "");
+  return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
+}
+const API_BASE = resolveApiBase();
+
+const DASHBOARD_PATH = process.env.REACT_APP_VENDOR_DASH_PATH || "/vendor/dashboard";
 
 const STATUS_COLORS = {
-  pending:   "default",
-  accepted:  "primary",
-  rejected:  "error",
-  ready:     "warning",
+  pending: "default",
+  accepted: "primary",
+  rejected: "error",
+  ready: "warning",
   delivered: "success",
 };
 
@@ -73,43 +83,79 @@ export default function VendorOrders() {
     } catch {}
   };
 
-  const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const token = localStorage.getItem("token") || "";
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
+  // --- get vendor id (for legacy fallback + join socket room)
+  useEffect(() => {
+    const getMe = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/vendors/me`, { headers: authHeaders, credentials: "include" });
+        if (!r.ok) return;
+        const me = await r.json();
+        if (me?.vendorId) setVendorId(me.vendorId);
+        else if (me?.id) setVendorId(me.id);
+      } catch {}
+    };
+    getMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- loaders (secure + legacy fallback) ----
   const loadOrders = async ({ silent = false, toPage = page, size = rowsPerPage } = {}) => {
     if (!silent) setLoading(true);
     try {
       const q = new URLSearchParams({ page: String(toPage + 1), pageSize: String(size) }).toString();
-      const res = await fetch(`${API_BASE}/api/orders/vendor?${q}`, {
-        headers,
+
+      // Preferred secure route
+      let res = await fetch(`${API_BASE}/orders/vendor?${q}`, {
+        headers: authHeaders,
         credentials: "include",
       });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        window.location.href = "/login";
-        return;
+
+      // Legacy fallback if route not present or forbidden
+      if (res.status === 404 || res.status === 403) {
+        // ensure vendorId (may have been set by /vendors/me)
+        let vId = vendorId;
+        if (!vId) {
+          try {
+            const me = await fetch(`${API_BASE}/vendors/me`, { headers: authHeaders, credentials: "include" });
+            const js = await me.json().catch(() => ({}));
+            vId = js?.vendorId || js?.id || null;
+            if (vId) setVendorId(vId);
+          } catch {}
+        }
+        if (!vId) throw new Error("Could not resolve vendor id for legacy endpoint");
+
+        res = await fetch(`${API_BASE}/orders/vendor/${vId}`, {
+          headers: authHeaders,
+          credentials: "include",
+        });
       }
-      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         const msg = data?.message || `Failed (${res.status})`;
         if (!silent) toast.error(msg);
         setOrders([]);
         setTotal(0);
         return;
       }
-      if (Array.isArray(data)) {
-        setOrders(data);
-        setTotal(data.length);
-      } else {
-        setOrders(Array.isArray(data.items) ? data.items : []);
-        setTotal(Number(data.total || 0));
-      }
 
-      const incoming = Array.isArray(data) ? data : (data.items || []);
-      const currentPendingIds = new Set(
-        (incoming || []).filter((o) => o.status === "pending").map((o) => o.id)
-      );
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data.items)
+        ? data.items
+        : Array.isArray(data.rows)
+        ? data.rows
+        : [];
+
+      setOrders(list);
+      setTotal(Number(data.total || list.length || 0));
+
+      // beep heuristic for new pending orders
+      const currentPendingIds = new Set((list || []).filter((o) => o.status === "pending").map((o) => o.id));
       const hadNew =
         [...currentPendingIds].some((id) => !prevPendingIdsRef.current.has(id)) &&
         prevPendingIdsRef.current.size !== 0;
@@ -127,6 +173,51 @@ export default function VendorOrders() {
     }
   };
 
+  // initial load + sockets
+  useEffect(() => {
+    connectSocket();
+    loadOrders();
+
+    const s = socket;
+    socketRef.current = s;
+
+    const onNew = () => loadOrders({ silent: true });
+    const onStatus = () => loadOrders({ silent: true });
+    const onPayment = () => loadOrders({ silent: true });
+
+    s.on("order:new", onNew);
+    s.on("order:status", onStatus);
+    s.on("order:payment", onPayment);
+    s.on("payments:refresh", () => loadOrders({ silent: true }));
+
+    return () => {
+      try {
+        s.off("order:new", onNew);
+        s.off("order:status", onStatus);
+        s.off("order:payment", onPayment);
+        s.off("payments:refresh");
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // join vendor room when vendorId known
+  useEffect(() => {
+    if (!vendorId || !socketRef.current) return;
+    try {
+      socketRef.current.emit("vendor:join", vendorId);
+    } catch {}
+  }, [vendorId]);
+
+  // optional polling fallback
+  useEffect(() => {
+    if (!realtime) return;
+    const id = setInterval(() => loadOrders({ silent: true }), pollMs);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtime, pollMs]);
+
+  // --- actions ---
   const updateStatus = async (id, status) => {
     const prev = orders;
     const next = prev.map((o) => (o.id === id ? { ...o, status } : o));
@@ -134,18 +225,12 @@ export default function VendorOrders() {
     setUpdatingId(id);
 
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${id}/status`, {
+      const res = await fetch(`${API_BASE}/orders/${id}/status`, {
         method: "PATCH",
-        headers,
+        headers: { ...authHeaders, "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ status }),
       });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        window.location.href = "/login";
-        return;
-      }
       if (!res.ok) {
         const msg = (await res.json().catch(() => ({}))).message || "Failed to update";
         setOrders(prev); // rollback
@@ -154,21 +239,21 @@ export default function VendorOrders() {
       }
       toast.success("Status updated");
       loadOrders({ silent: true });
-    } catch (e) {
-      setOrders(prev); // rollback
+    } catch {
+      setOrders(prev);
       toast.error("Network error");
     } finally {
       setUpdatingId(null);
     }
   };
 
-  // Mark COD order as paid (backend expects { status: "paid" })
+  // Mark COD order as paid
   const markPaid = async (id) => {
     setPayingId(id);
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${id}/payment`, {
+      const res = await fetch(`${API_BASE}/orders/${id}/payment`, {
         method: "PATCH",
-        headers,
+        headers: { ...authHeaders, "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ status: "paid" }),
       });
@@ -183,7 +268,7 @@ export default function VendorOrders() {
           o.id === id ? { ...o, paymentStatus: "paid", paidAt: new Date().toISOString() } : o
         )
       );
-    } catch (e) {
+    } catch {
       toast.error("Network error");
     } finally {
       setPayingId(null);
@@ -192,26 +277,14 @@ export default function VendorOrders() {
 
   // View/print invoice (tries PDF first; falls back to HTML)
   const openInvoice = async (orderId, { pdf = false } = {}) => {
-    const tryOnce = async (url) => {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
-      return res;
-    };
+    const tryOnce = async (url) =>
+      fetch(url, { headers: authHeaders, credentials: "include" });
 
     try {
-      const pdfUrl = `${API_BASE}/api/orders/${orderId}/invoice.pdf`;
-      const htmlUrl = `${API_BASE}/api/orders/${orderId}/invoice`;
+      const pdfUrl = `${API_BASE}/orders/${orderId}/invoice.pdf`;
+      const htmlUrl = `${API_BASE}/orders/${orderId}/invoice`;
 
       const res = pdf ? await tryOnce(pdfUrl) : await tryOnce(htmlUrl);
-
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        window.location.href = "/login";
-        return;
-      }
 
       // If we asked for PDF and got 404/405, fall back to HTML
       if (pdf && [404, 405].includes(res.status)) {
@@ -238,95 +311,12 @@ export default function VendorOrders() {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
+    } catch {
       toast.error("Network error while opening invoice");
     }
   };
 
-  // get vendor id (optional, for socket room)
-  useEffect(() => {
-    const getMe = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers, credentials: "include" });
-        if (!r.ok) return;
-        const me = await r.json();
-        if (me?.vendorId) setVendorId(me.vendorId);
-      } catch {}
-    };
-    getMe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // initial load
-  useEffect(() => {
-    loadOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // sockets
-  useEffect(() => {
-    if (!token) return;
-    const s = socket;
-    socketRef.current = s;
-
-    const onNew = (fullOrder) => {
-      if (page > 0 || rowsPerPage > 0) {
-        loadOrders({ silent: true });
-      } else {
-        setOrders((prev) => [fullOrder, ...prev]);
-      }
-      playBeep();
-      toast.info(`New order #${fullOrder?.id || ""}`);
-    };
-
-    const onStatus = (payload) => {
-      setOrders((prev) =>
-        prev.map((o) => (o.id === payload.id ? { ...o, status: payload.status } : o))
-      );
-    };
-
-    const onPayment = (payload) => {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === (payload.orderId || payload.id)
-            ? { ...o, paymentStatus: payload.paymentStatus, paidAt: payload.paidAt || o.paidAt }
-            : o
-        )
-      );
-    };
-
-    s.on("order:new", onNew);
-    s.on("order:status", onStatus);
-    s.on("order:payment", onPayment);
-    s.on("payments:refresh", () => loadOrders({ silent: true }));
-
-    return () => {
-      try {
-        s.off("order:new", onNew);
-        s.off("order:status", onStatus);
-        s.off("order:payment", onPayment);
-        s.off("payments:refresh");
-      } catch {}
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, page, rowsPerPage]);
-
-  // join vendor room when vendorId known
-  useEffect(() => {
-    if (!vendorId || !socketRef.current) return;
-    try {
-      socketRef.current.emit("vendor:join", vendorId);
-    } catch {}
-  }, [vendorId]);
-
-  // optional polling fallback
-  useEffect(() => {
-    if (!realtime) return;
-    const id = setInterval(() => loadOrders({ silent: true }), pollMs);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [realtime, pollMs]);
-
+  // --- client-side filters/sorting/export ---
   const getLineItems = (order) => {
     if (Array.isArray(order?.OrderItems) && order.OrderItems.length) {
       return order.OrderItems.map((oi) => ({
@@ -355,7 +345,7 @@ export default function VendorOrders() {
     const userEmail = (order?.User?.email || "").toLowerCase();
     const itemsStr = itemsToText(order).toLowerCase();
     return userName.includes(needle) || userEmail.includes(needle) || itemsStr.includes(needle);
-  };
+    };
 
   const withinDateRange = (order) => {
     if (!dateFrom && !dateTo) return true;
@@ -665,7 +655,6 @@ export default function VendorOrders() {
                             <Button size="small" variant="text" onClick={() => openInvoice(o.id)}>
                               Receipt
                             </Button>
-                            
 
                             {o.status === "pending" && (
                               <>
@@ -742,22 +731,13 @@ export default function VendorOrders() {
                                   <Typography variant="caption" sx={{ fontWeight: 600 }}>
                                     Item
                                   </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ fontWeight: 600, textAlign: "right" }}
-                                  >
+                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>
                                     Qty
                                   </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ fontWeight: 600, textAlign: "right" }}
-                                  >
+                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>
                                     Price
                                   </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ fontWeight: 600, textAlign: "right" }}
-                                  >
+                                  <Typography variant="caption" sx={{ fontWeight: 600, textAlign: "right" }}>
                                     Line Total
                                   </Typography>
 
@@ -792,9 +772,7 @@ export default function VendorOrders() {
                                 <Typography variant="body2" color="text.secondary">
                                   Payment: {o.paymentMethod === "mock_online" ? "Online" : "COD"} ·{" "}
                                   {o.paymentStatus || "unpaid"}
-                                  {o.paidAt
-                                    ? ` · Paid at: ${new Date(o.paidAt).toLocaleString()}`
-                                    : ""}
+                                  {o.paidAt ? ` · Paid at: ${new Date(o.paidAt).toLocaleString()}` : ""}
                                 </Typography>
                                 <Typography variant="subtitle2">Total: {inr(o.totalAmount)}</Typography>
                               </Stack>
