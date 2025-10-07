@@ -15,6 +15,7 @@ import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { socket, connectSocket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
+import LiveOrdersWidget from "../components/LiveOrdersWidget";
 
 /* ------------ API base normalizer (ensure single /api) ------------ */
 function resolveApiBase() {
@@ -776,6 +777,11 @@ const VendorDashboard = () => {
             </Box>
           </Stack>
         </Paper>
+
+        {/* ---- LIVE ORDERS WIDGET ---- */}
+        <Box sx={{ mb: 3 }}>
+          <LiveOrdersWidget limit={10} enablePolling={true} pollMs={30000} />
+        </Box>
 
         {/* ---- SUMMARY + TREND ---- */}
         <Paper sx={{ p: 2, mb: 3 }}>
