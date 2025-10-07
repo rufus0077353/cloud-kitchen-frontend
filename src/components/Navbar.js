@@ -27,13 +27,14 @@ const BRAND = { src: "/servezy-logo.png", fallback: "/logo192.png", alt: "Servez
 
 const isPathActive = (location, path) => location.pathname.startsWith(path);
 
-// normalize role
+// normalize role like PrivateRoute
 const getRole = (rawUser) => {
   const r =
     rawUser?.role ??
     rawUser?.Role ??
     rawUser?.userRole ??
     rawUser?.user_type ??
+    rawUser?.userType ??
     "";
   return (typeof r === "string" ? r : String(r || "")).toLowerCase();
 };
@@ -73,7 +74,7 @@ export default function Navbar() {
   const isVendor = !!token && role === "vendor";
   const isUser = !!token && !isAdmin && !isVendor;
 
-  // --- counters (only if logged in) ---
+  // --- counters ---
   const fetchVendorPending = useCallback(async () => {
     if (!isVendor) return;
     try {
@@ -166,7 +167,7 @@ export default function Navbar() {
     navigate("/login");
   };
 
-  // ---------- 🔗 Role-based links ----------
+  // ---------- links ----------
   const links = useMemo(() => {
     if (!token) return [];
     if (isAdmin) {
@@ -174,7 +175,7 @@ export default function Navbar() {
         { to: "/admin/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
         { to: "/admin/users", label: "Users", icon: <PeopleIcon /> },
         { to: "/admin/orders", label: "Orders", icon: <ListAltIcon /> },
-        { to: "/admin/payouts", label: "Payouts", icon: <MonetizationOnIcon /> }, // Admin payouts
+        { to: "/admin/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
       ];
     }
     if (isVendor) {
@@ -186,10 +187,10 @@ export default function Navbar() {
           icon: <ListAltIcon />,
           badge: vendorPendingCount,
         },
-        { to: "/vendor/payouts", label: "Payouts", icon: <MonetizationOnIcon /> }, // Vendor payouts
+        { to: "/vendor/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
       ];
     }
-    // default user
+    // user
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {

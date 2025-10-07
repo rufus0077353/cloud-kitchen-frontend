@@ -1,5 +1,3 @@
-
-// src/pages/PayoutsDashboard.js
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Container, Typography, Box, Table, TableHead, TableBody, TableRow,
@@ -11,18 +9,16 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import { connectSocket, socket } from "../utils/socket";
 import { toast } from "react-toastify";
 
-/* ---------------- API base normalizer ----------------
-   Put EITHER https://your-backend OR https://your-backend/api
-   in REACT_APP_API_BASE_URL — this will normalize to .../api */
+/* API base normalizer */
 function resolveApiBase() {
   const raw = process.env.REACT_APP_API_BASE_URL || "";
-  if (!raw) return "http://localhost:5000/api"; // sensible default
+  if (!raw) return "http://localhost:5000/api";
   const trimmed = raw.replace(/\/+$/, "");
   return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
 }
 const API_BASE = resolveApiBase();
 
-/* ---------------- helpers ---------------- */
+/* helpers */
 const fmtNum = (n) => new Intl.NumberFormat("en-IN").format(Number(n || 0));
 const fmtMoney = (n) =>
   `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n || 0))}`;
@@ -31,14 +27,14 @@ const safeCsv = (v) => {
   const s = String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-// Accepts "yyyy-mm-dd" or "dd-mm-yyyy" and returns valid "yyyy-mm-dd" or ""
+// Accepts "yyyy-mm-dd" or "dd-mm-yyyy" and returns "yyyy-mm-dd" or ""
 const toISODate = (s = "") => {
   if (!s) return "";
   const t = s.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;               // already ISO
-  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);              // dd-mm-yyyy
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  return ""; // anything else -> ignore
+  return "";
 };
 
 export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) {
@@ -63,10 +59,6 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     return qs.length ? `?${qs.join("&")}` : "";
   }, [dateRange]);
 
-  /** Fetch payouts with:
-   *  - admin:  /orders/payouts/summary/all
-   *  - vendor: /orders/payouts/summary   (fallback -> /orders/vendor/summary on 404)
-   */
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -78,7 +70,7 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      // vendor-only fallback if first route doesn't exist
+      // vendor fallback if first route missing
       if (!isAdmin && res.status === 404) {
         endpoint = `${API_BASE}/orders/vendor/summary`;
         res = await fetch(`${endpoint}${qsFromDateRange}`, {
@@ -146,7 +138,6 @@ export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) 
     URL.revokeObjectURL(url);
   };
 
-  // nice vendor rows
   const vendorRows = useMemo(() => {
     if (!data || isAdmin) return [];
     const ratePct = Number(data.rate || 0) * 100;
