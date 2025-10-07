@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Paper, Stack, Typography, IconButton, Tooltip, Chip, Box, Button,
-  CircularProgress, Divider, Badge
+  CircularProgress, Divider, Badge, Collapse
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
