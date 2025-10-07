@@ -39,7 +39,7 @@ const toISODate = (s = "") => {
 
 export default function PayoutsDashboard({ role = "vendor", token: tokenProp }) {
   const token = tokenProp || localStorage.getItem("token") || "";
-  const isAdmin = role === "admin";
+  const isAdmin = ( role || "").toLowerCase() === "admin";
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
