@@ -46,6 +46,7 @@ import Contact from "./pages/static/Contact";
 import Terms from "./pages/static/Terms";
 import Privacy from "./pages/static/Privacy";
 import Refund from "./pages/static/Refund";
+import BrowseVendorsMap from "./pages/BrowseVendorsMap";
 
 function App() {
   return (
@@ -158,6 +159,14 @@ function App() {
                   </PrivateRoute>
                 }
               />
+              <Route
+                path="/browse-map"
+                element={
+                  <PrivateRoute>
+                    <BrowseVendorsMap />
+                  </PrivateRoute>
+                }
+              />  
 
               {/* ---------- VENDOR ---------- */}
               <Route

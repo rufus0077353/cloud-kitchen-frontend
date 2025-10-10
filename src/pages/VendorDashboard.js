@@ -16,6 +16,7 @@ import { toast } from "react-toastify";
 import { socket, connectSocket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
 import LiveOrdersWidget from "../components/LiveOrdersWidget";
+import MapPicker from "../components/MapPicker";
 
 /* ------------ API base normalizer (ensure single /api) ------------ */
 function resolveApiBase() {
@@ -129,7 +130,8 @@ const VendorDashboard = () => {
 
   // vendor profile
   const [vendorProfile, setVendorProfile] = useState({
-    name: "", cuisine: "", location: "", phone: "", logoUrl: ""
+    name: "", cuisine: "", location: "", phone: "", logoUrl: "",
+    lat: null, lng: null,
   });
   const [savingVendorProfile, setSavingVendorProfile] = useState(false);
 
@@ -185,6 +187,8 @@ const VendorDashboard = () => {
         location: me?.location ?? "",
         phone: me?.phone ?? "",
         logoUrl: me?.logoUrl ?? "",
+        lat: me?.lat ?? me?.latitude ?? null,
+        lng: me?.lng ?? me?.longitude ?? null,
       });
     } catch {
       if (!vendorId) return;
@@ -217,6 +221,8 @@ const VendorDashboard = () => {
         location: vendorProfile.location,
         phone: vendorProfile.phone || null,
         logoUrl: vendorProfile.logoUrl || null,
+        lat: vendorProfile.lat,
+        lng: vendorProfile.lng,
       };
       const res = await fetch(apiUrl(`/vendors/${vendorId}`), {
         method: "PUT",
@@ -1013,6 +1019,22 @@ const VendorDashboard = () => {
                     fullWidth
                   />
                 </Grid>
+                <Grid item xs={12}>
+                  <Divider sx={{ my:2 }} />
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Location (click map on search)
+                  </Typography>
+                  <MapPicker
+                    value={vendorProfile.lat && vendorProfile.lng ? [vendorProfile.lat, vendorProfile.lng] : null}
+                    onChange={(coords) => 
+                      setVendorProfile((p) => ({
+                        ...p,
+                        lat: coords ?. lat ??null,
+                        lng: coords ?. lng ?? null,
+                      }))
+                    }
+                  />  
+                </Grid>
                 <Grid item xs={12} sm={6}>
                   <TextField
                     label="Phone"
@@ -1028,7 +1050,7 @@ const VendorDashboard = () => {
                     onChange={(e) => setVendorProfile((p) => ({ ...p, logoUrl: e.target.value }))}
                     helperText="Tip: upload via the same /api/uploads endpoint or paste an https .jpg/.png"
                     fullWidth
-                  />
+                  />                
                 </Grid>
               </Grid>
             </Grid>
