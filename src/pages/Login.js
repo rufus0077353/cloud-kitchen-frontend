@@ -1,123 +1,140 @@
 
 // src/pages/Login.js
 import React, { useState } from "react";
-import { toast } from "react-toastify";
 import {
-  Box,
-  Button,
-  Container,
-  TextField,
-  Typography,
-  Alert,
-  Link
+  Container, Paper, TextField, Button, Typography, Stack
 } from "@mui/material";
-import { useNavigate } from "react-router-dom";
-import { socket, refreshSocketAuth } from "../utils/socket"; // ✅ add this import
+import { useNavigate, useLocation } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API_BASE = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
 
-const Login = () => {
-  const navigate = useNavigate();
+function getRole(user) {
+  const r =
+    user?.role ??
+    user?.Role ??
+    user?.userRole ??
+    user?.user_type ??
+    user?.userType ??
+    "";
+  return String(r || "").trim().toLowerCase();
+}
+
+export default function Login() {
+  const nav = useNavigate();
+  const location = useLocation();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
 
-  const handleLogin = async (e) => {
+  const goToHomeByRole = async (user, token) => {
+    const role = getRole(user);
+
+    // Vendors: make sure we have vendorId in storage
+    if (role === "vendor") {
+      try {
+        const res = await fetch(`${API_BASE}/api/vendors/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const me = await res.json();
+          if (me?.vendorId || me?.id) {
+            localStorage.setItem("vendorId", String(me.vendorId ?? me.id));
+          }
+        }
+      } catch (_) {}
+      nav("/vendor/dashboard", { replace: true });
+      return;
+    }
+
+    if (role === "admin") {
+      nav("/admin/dashboard", { replace: true });
+      return;
+    }
+
+    // fallback: normal user
+    const redirectBack = location.state?.from?.pathname;
+    nav(redirectBack || "/dashboard", { replace: true });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-
+    setErr("");
+    setLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/login`, {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
-
-      if (res.ok) {
-        toast.success("Login successful");
-
-        // store auth
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-
-        // vendorId convenience
-        if (data.user.role === "vendor" && data.vendor?.id) {
-          localStorage.setItem("vendorId", data.vendor.id);
-        }
-
-        // ✅ attach token to the socket and (re)connect if needed
-        refreshSocketAuth(data.token);
-
-        // ✅ join the appropriate room immediately
-        if (data.user.role === "vendor" && data.vendor?.id) {
-          socket.emit("vendor:join", data.vendor.id);
-        } else {
-          socket.emit("user:join", data.user.id);
-        }
-
-        // route
-        if (data.user.role === "admin") {
-          navigate("/admin/dashboard");
-        } else if (data.user.role === "vendor") {
-          navigate("/vendor/dashboard");
-        } else {
-          navigate("/dashboard");
-        }
-      } else {
-        toast.error(data.message || "Login failed");
-        setError(data.message || "Login failed");
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `Login failed (${res.status})`);
       }
-    } catch (err) {
-      console.error("Login error:", err);
-      toast.error("Server error. Please try again later");
-      setError("Server error");
+
+      const json = await res.json();
+      // Expecting { token, user } but tolerate variants
+      const token = json.token || json.accessToken || json.jwt;
+      const user  = json.user  || json.profile  || json.data  || {};
+      if (!token || !user?.id) {
+        throw new Error("Invalid login response");
+      }
+
+      // Store auth
+      localStorage.setItem("token", token);
+      localStorage.setItem("user", JSON.stringify(user));
+
+      // Route based on role (vendor/admin/user)
+      await goToHomeByRole(user, token);
+    } catch (e) {
+      setErr(e.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Container maxWidth="xs">
-      <Box sx={{ mt: 8 }}>
-        <Typography variant="h4" align="center" gutterBottom>
-          Login
+    <Container maxWidth="xs" sx={{ mt: 8 }}>
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+          Sign in
         </Typography>
-        {error && <Alert severity="error">{error}</Alert>}
-        <form onSubmit={handleLogin}>
-          <TextField
-            fullWidth
-            label="Email"
-            margin="normal"
-            type="email"
-            value={email}
-            required
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <TextField
-            fullWidth
-            label="Password"
-            margin="normal"
-            type="password"
-            value={password}
-            required
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button type="submit" fullWidth variant="contained" sx={{ mt: 2 }}>
-            Login
-          </Button>
-        </form>
 
-        <Box sx={{ mt: 2, textAlign: "center" }}>
-          <Typography variant="body2">
-            Don&apos;t have an account?{" "}
-            <Link component="button" variant="body2" onClick={() => navigate("/register")}>
-              Register Now
-            </Link>
-          </Typography>
-        </Box>
-      </Box>
+        <form onSubmit={handleSubmit}>
+          <Stack spacing={2}>
+            <TextField
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              fullWidth
+            />
+            {err && (
+              <Typography color="error" variant="body2">
+                {err}
+              </Typography>
+            )}
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={loading}
+            >
+              {loading ? "Signing in…" : "Login"}
+            </Button>
+          </Stack>
+        </form>
+      </Paper>
     </Container>
   );
-};
-
-export default Login;
+}
