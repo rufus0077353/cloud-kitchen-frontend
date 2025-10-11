@@ -2,71 +2,59 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
 
-// Prefer explicit socket URL, otherwise fall back to the API base
-const BASE =
+// ---- Base URL ----------------------------------------------------
+const RAW_BASE =
   process.env.REACT_APP_SOCKET_URL ||
   process.env.REACT_APP_API_BASE_URL ||
   window.location.origin;
 
-// Small helper so trailing slashes don’t break path resolution
-const trim = (s = "") => s.replace(/\/+$/, "");
+const BASE = (RAW_BASE || "").replace(/\/+$/, "");
 
-// Singleton socket instance
-let socket = null;
-
-/**
- * Create (or return) a connected Socket.IO client.
- * It will send the JWT in `auth` so your backend can authorize the connection.
- */
-export function connectSocket(token) {
-  const authToken = token || localStorage.getItem("token") || "";
-
-  if (socket && socket.connected) return socket;
-
-  // If an old instance exists, clean it up before creating a new one
-  if (socket) {
-    try { socket.disconnect(); } catch (_) {}
-    socket = null;
-  }
-
-  socket = io(trim(BASE), {
-    path: "/socket.io",
-    transports: ["websocket", "polling"],
-    withCredentials: true,
-    auth: authToken ? { token: authToken } : {},
-    autoConnect: true,
-    reconnection: true,
-    reconnectionAttempts: 10,
-    reconnectionDelay: 1000,
-  });
-
-  // Optional logging (harmless in production)
-  socket.on("connect", () => console.log("[socket] connected:", socket.id));
-  socket.on("disconnect", (reason) => console.log("[socket] disconnected:", reason));
-  socket.on("connect_error", (err) => console.warn("[socket] connect_error:", err?.message || err));
-
-  return socket;
+// ---- Auth helper -------------------------------------------------
+function authFromStorage() {
+  const token = localStorage.getItem("token") || "";
+  return token ? { token } : {};
 }
 
-/**
- * Update the JWT used by the socket and reconnect.
- * Call this right after login/logout or token refresh.
- */
-export function refreshSocketAuth(newToken) {
-  const token = newToken || localStorage.getItem("token") || "";
+// ---- Singleton socket (never null) -------------------------------
+// Use polling first to avoid noisy "websocket closed before connect" logs.
+export const socket = io(BASE || window.location.origin, {
+  path: "/socket.io",
+  transports: ["polling", "websocket"],
+  withCredentials: true,
+  autoConnect: false,            // we'll call connectSocket() ourselves
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+  auth: authFromStorage(),
+});
 
-  if (!socket) {
-    // No instance yet — just create one with the token
-    return connectSocket(token);
-  }
+// Optional lightweight logs (helpful during dev)
+if (process.env.NODE_ENV !== "production") {
+  socket.on("connect", () => console.log("[socket] connected:", socket.id));
+  socket.on("disconnect", (r) => console.log("[socket] disconnected:", r));
+  socket.on("connect_error", (e) =>
+    console.warn("[socket] connect_error:", e?.message || e)
+  );
+}
 
-  // Update auth payload and reconnect
-  socket.auth = token ? { token } : {};
-  try { socket.disconnect(); } catch (_) {}
+// Call this once on app start (e.g., in App) or right after login.
+export function connectSocket() {
+  if (socket.connected || socket.active) return socket;
+  socket.auth = authFromStorage();
   socket.connect();
   return socket;
 }
 
-/** Expose the instance for components already importing { socket } */
-export { socket };
+// Call this whenever the JWT changes (login/logout/refresh) or on Retry.
+export function refreshSocketAuth(newToken) {
+  const token = newToken ?? localStorage.getItem("token") ?? "";
+  socket.auth = token ? { token } : {};
+  try {
+    if (socket.connected) socket.disconnect();
+  } catch {}
+  socket.connect();
+  return socket;
+}
+
 export default socket;

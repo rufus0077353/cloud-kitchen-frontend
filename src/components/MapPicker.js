@@ -1,10 +1,12 @@
+
 import React, { useCallback, useMemo, useState } from "react";
 import { Box, TextField, Stack, Button, Typography } from "@mui/material";
 import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from "@react-google-maps/api";
 
+// ✅ Stable constants — these should never be declared inside the component
 const MAPS_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "";
 const containerStyle = { width: "100%", height: 320 };
-
+const MAP_LIBRARIES = ["places"]; // 👈 declare outside component to stop reloading warning
 const defaultCenter = { lat: 12.9716, lng: 77.5946 }; // Bengaluru fallback
 
 /**
@@ -23,10 +25,11 @@ export default function MapPicker({ value, onChange, disabled = false }) {
     return defaultCenter;
   }, [value]);
 
+  // ✅ use stable MAP_LIBRARIES constant
   const { isLoaded } = useJsApiLoader({
     id: "servezy-maps",
     googleMapsApiKey: MAPS_KEY,
-    libraries: ["places"],
+    libraries: MAP_LIBRARIES, // 👈 fix: don't create a new array each render
   });
 
   const onMapClick = useCallback(
@@ -48,7 +51,7 @@ export default function MapPicker({ value, onChange, disabled = false }) {
     );
   };
 
-  // No key? give a graceful fallback
+  // Graceful fallback if no key
   if (!hasKey) {
     return (
       <Stack spacing={1}>
@@ -83,11 +86,14 @@ export default function MapPicker({ value, onChange, disabled = false }) {
   return (
     <Stack spacing={1}>
       <Stack direction="row" spacing={1}>
-        <Autocomplete onLoad={setAuto} onPlaceChanged={() => {
-          const p = auto?.getPlace();
-          const loc = p?.geometry?.location;
-          if (loc) onChange?.({ lat: loc.lat(), lng: loc.lng() });
-        }}>
+        <Autocomplete
+          onLoad={setAuto}
+          onPlaceChanged={() => {
+            const p = auto?.getPlace();
+            const loc = p?.geometry?.location;
+            if (loc) onChange?.({ lat: loc.lat(), lng: loc.lng() });
+          }}
+        >
           <TextField fullWidth size="small" placeholder="Search address or place…" />
         </Autocomplete>
         <Button size="small" variant="outlined" onClick={locateMe} disabled={disabled}>
@@ -102,14 +108,28 @@ export default function MapPicker({ value, onChange, disabled = false }) {
         onClick={onMapClick}
         options={{ streetViewControl: false, mapTypeControl: false }}
       >
-        {value?.lat && value?.lng && <Marker position={{ lat: value.lat, lng: value.lng }} draggable={!disabled}
-          onDragEnd={(e) => onChange?.({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
-        />}
+        {value?.lat && value?.lng && (
+          <Marker
+            position={{ lat: value.lat, lng: value.lng }}
+            draggable={!disabled}
+            onDragEnd={(e) => onChange?.({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
+          />
+        )}
       </GoogleMap>
 
       <Stack direction="row" spacing={1}>
-        <TextField size="small" label="Lat" value={value?.lat ?? ""} onChange={(e) => onChange?.({ lat: Number(e.target.value || 0), lng: value?.lng ?? 0 })}/>
-        <TextField size="small" label="Lng" value={value?.lng ?? ""} onChange={(e) => onChange?.({ lat: value?.lat ?? 0, lng: Number(e.target.value || 0) })}/>
+        <TextField
+          size="small"
+          label="Lat"
+          value={value?.lat ?? ""}
+          onChange={(e) => onChange?.({ lat: Number(e.target.value || 0), lng: value?.lng ?? 0 })}
+        />
+        <TextField
+          size="small"
+          label="Lng"
+          value={value?.lng ?? ""}
+          onChange={(e) => onChange?.({ lat: value?.lat ?? 0, lng: Number(e.target.value || 0) })}
+        />
       </Stack>
     </Stack>
   );
