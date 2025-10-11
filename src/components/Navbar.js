@@ -1,4 +1,5 @@
 
+// src/components/Navbar.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import { socket } from "../utils/socket";
@@ -21,36 +22,72 @@ import NotificationBell from "./NotificationBell";
 import { useCart } from "../context/CartContext";
 import CartDrawer from "./CartDrawer";
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+/* ---------------- API base normalizer ----------------
+   Accepts either https://host OR https://host/api and
+   returns helpers to build correct URLs.
+*/
+const RAW_BASE = process.env.REACT_APP_API_BASE_URL || "";
+const trim = (s = "") => s.replace(/\/+$/, "");
+const BASE = trim(RAW_BASE);
+const api = (path) => {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  // if BASE already ends with /api, don't add another /api
+  if (/\/api$/i.test(BASE)) return `${BASE}${p}`;
+  return `${BASE}/api${p}`;
+};
 
 const BRAND = { src: "/servezy-logo.png", fallback: "/logo192.png", alt: "Servezy" };
-
 const isPathActive = (location, path) => location.pathname.startsWith(path);
 
-// normalize role like PrivateRoute
-const getRole = (rawUser) => {
+// normalize role like PrivateRoute (case-insensitive + alternate fields)
+const getRole = (rawUser = {}) => {
   const r =
-    rawUser?.role ??
-    rawUser?.Role ??
-    rawUser?.userRole ??
-    rawUser?.user_type ??
-    rawUser?.userType ??
+    rawUser.role ??
+    rawUser.Role ??
+    rawUser.userRole ??
+    rawUser.user_type ??
+    rawUser.userType ??
     "";
-  return (typeof r === "string" ? r : String(r || "")).toLowerCase();
+  return String(r || "").trim().toLowerCase();
 };
 
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const user = useMemo(() => {
+  // 🔄 Keep token & user in sync with localStorage (after login/logout)
+  const [token, setToken] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("token") : null
+  );
+  const [user, setUser] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("user") || "{}");
+      return typeof window !== "undefined"
+        ? JSON.parse(localStorage.getItem("user") || "{}")
+        : {};
     } catch {
       return {};
     }
-  }, []);
+  });
+
+  // Re-read token/user on route change and on storage events (switching tabs or after login)
+  useEffect(() => {
+    const read = () => {
+      setToken(localStorage.getItem("token"));
+      try {
+        setUser(JSON.parse(localStorage.getItem("user") || "{}"));
+      } catch {
+        setUser({});
+      }
+    };
+    read();
+
+    const onStorage = (e) => {
+      if (e.key === "token" || e.key === "user") read();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [vendorId, setVendorId] = useState(
@@ -74,16 +111,16 @@ export default function Navbar() {
   const isVendor = !!token && role === "vendor";
   const isUser = !!token && !isAdmin && !isVendor;
 
-  // --- counters ---
+  // --- counters (only if logged in) ---
   const fetchVendorPending = useCallback(async () => {
     if (!isVendor) return;
     try {
-      const res = await fetch(`${API_BASE}/api/orders/vendor`, { headers });
+      const res = await fetch(api("/orders/vendor"), { headers });
       if (!res.ok) return setVendorPendingCount(0);
       const data = await res.json();
       const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
       setVendorPendingCount(
-        list.filter((o) => (o.status || "").toLowerCase() === "pending").length
+        list.filter((o) => (String(o.status || "")).toLowerCase() === "pending").length
       );
     } catch {
       setVendorPendingCount(0);
@@ -93,7 +130,7 @@ export default function Navbar() {
   const fetchUserActive = useCallback(async () => {
     if (!isUser) return;
     try {
-      const res = await fetch(`${API_BASE}/api/orders/my`, { headers });
+      const res = await fetch(api("/orders/my"), { headers });
       if (!res.ok) return setUserActiveCount(0);
       const data = await res.json();
       const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
@@ -119,7 +156,7 @@ export default function Navbar() {
         return;
       }
       try {
-        const r = await fetch(`${API_BASE}/api/vendors/me`, { headers });
+        const r = await fetch(api("/vendors/me"), { headers });
         if (r.ok) {
           const me = await r.json();
           if (me?.vendorId) {
@@ -161,13 +198,15 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
-    localStorage.removeItem("vendorId");
-    navigate("/login");
+    try {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+      localStorage.removeItem("vendorId");
+    } catch {}
+    navigate("/login", { replace: true });
   };
 
-  // ---------- links ----------
+  // ---------- Role-based links ----------
   const links = useMemo(() => {
     if (!token) return [];
     if (isAdmin) {
@@ -190,7 +229,7 @@ export default function Navbar() {
         { to: "/vendor/payouts", label: "Payouts", icon: <MonetizationOnIcon /> },
       ];
     }
-    // user
+    // default user
     return [
       { to: "/dashboard", label: "Home", icon: <HomeIcon /> },
       {
@@ -205,7 +244,15 @@ export default function Navbar() {
   const Brand = (
     <Box
       component={RouterLink}
-      to={token ? (isVendor ? "/vendor/dashboard" : isAdmin ? "/admin/dashboard" : "/dashboard") : "/"}
+      to={
+        token
+          ? isVendor
+            ? "/vendor/dashboard"
+            : isAdmin
+            ? "/admin/dashboard"
+            : "/dashboard"
+          : "/"
+      }
       sx={{ display: "flex", alignItems: "center", gap: 1, textDecoration: "none", color: "inherit" }}
     >
       <Avatar
