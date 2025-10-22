@@ -53,91 +53,68 @@ export default function AdminOrders() {
     !['rejected','canceled','cancelled'].includes((o?.status || '').toLowerCase());
 
   const load = async () => {
-    setLoading(true);
-    setErr('');
-    try {
-      // --- Build filters once ---
-      const params = new URLSearchParams();
-      if (status)  params.set('status', status);
-      if (vendorId) params.set('VendorId', vendorId);   // uppercase supported by backend
-      if (userId)   params.set('UserId', userId);
-      if (dateFrom) params.set('startDate', dateFrom);
-      if (dateTo)   params.set('endDate', dateTo);
+  setLoading(true);
+  setErr('');
+  try {
+    // --- Build filters with the param names your admin route expects ---
+    const params = new URLSearchParams();
+    if (status)  params.set('status', status);
+    if (vendorId) params.set('vendorId', vendorId); // <-- lowerCamel
+    if (userId)   params.set('userId', userId);     // <-- lowerCamel
+    if (dateFrom) params.set('from', dateFrom);     // <-- 'from'
+    if (dateTo)   params.set('to', dateTo);         // <-- 'to'
 
-      const getUrl = `${API_BASE}/api/admin/orders?${params.toString()}`;
+    const url = `${API_BASE}/api/admin/orders?${params.toString()}`;
 
-      // --- Try GET first ---
-      let res = await fetch(getUrl, { headers, credentials: 'include' });
-
-      // If GET fails (404/405/500/403/etc.), try POST with JSON body as a fallback
-      if (!res.ok) {
-        // collect readable reason
-        const text = await res.text().catch(() => '');
-        console.warn('[AdminOrders] GET failed:', res.status, text);
-
-        const postUrl = `${API_BASE}/api/admin/orders`;
-        const body = {
+    let res = await fetch(url, { headers, credentials: 'include' });
+    if (!res.ok) {
+      // optional fallback: POST with same filter body (works with some backends)
+      const postUrl = `${API_BASE}/api/admin/orders`;
+      res = await fetch(postUrl, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
           status: status || undefined,
-          VendorId: vendorId || undefined,
-          UserId: userId || undefined,
-          startDate: dateFrom || undefined,
-          endDate: dateTo || undefined,
-        };
-
-        res = await fetch(postUrl, {
-          method: 'POST',
-          headers,
-          credentials: 'include',
-          body: JSON.stringify(body),
-        });
-
-        if (!res.ok) {
-          const fallbackText = await res.text().catch(() => '');
-          setRows([]);
-          setErr(
-            `Admin orders request failed.
-Tried GET ${getUrl} and POST ${postUrl}.
-Last response: ${res.status} ${res.statusText}
-${fallbackText || '(no response text)'}`
-          );
-          return;
-        }
-      }
-
-      // Parse JSON safely
-      let data = null;
-      try {
-        data = await res.json();
-      } catch {
-        const raw = await res.text().catch(() => '');
+          vendorId: vendorId || undefined,
+          userId: userId || undefined,
+          from: dateFrom || undefined,
+          to: dateTo || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
         setRows([]);
-        setErr(
-          `Server returned non-JSON for admin orders.
-Status: ${res.status} ${res.statusText}
-Payload (first 400 chars): ${raw.slice(0, 400)}`
-        );
+        setErr(`Admin orders request failed (${res.status}). ${txt}`);
         return;
       }
-
-      if (!Array.isArray(data)) {
-        if (data && data.message) {
-          setErr(`Backend error: ${data.message}`);
-        } else {
-          setErr('Unexpected response shape (not an array).');
-        }
-        setRows([]);
-        return;
-      }
-
-      setRows(data);
-    } catch (e) {
-      console.error(e);
-      setErr(`Network error: ${e?.message || e}`);
-      setRows([]);
-    } finally {
-      setLoading(false);
     }
-  };
+
+    // --- Accept any of the common shapes: array | {items:[]} | {orders:[]} ---
+    const data = await res.json().catch(() => null);
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.orders)
+      ? data.orders
+      : [];
+
+    if (!Array.isArray(list)) {
+      setRows([]);
+      setErr('Unexpected response shape (not an array).');
+      return;
+    }
+
+    setRows(list);
+  } catch (e) {
+    console.error(e);
+    setErr(`Network error: ${e?.message || e}`);
+    setRows([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => { load(); }, []); // eslint-disable-line
 
