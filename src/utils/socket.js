@@ -20,7 +20,7 @@ function authFromStorage() {
 // Use polling first to avoid noisy "websocket closed before connect" logs.
 export const socket = io(BASE || window.location.origin, {
   path: "/socket.io",
-  transports: [ "websocket"],
+  transports: [ "websocket", "polling" ],
   withCredentials: false,
   autoConnect: false,            // we'll call connectSocket() ourselves
   reconnection: true,
