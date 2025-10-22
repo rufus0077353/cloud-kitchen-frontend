@@ -1,1 +1,1 @@
-{"last_found_secrets": [{"match": "9b2cd85b4a390d5b133b5b9e531f1aaf0d891f1c22f85cc049c0dcc088049d26", "name": "Google API Key - commit://staged/fake-aws.txt"}]}
+{"last_found_secrets": [{"name": "Google API Key - commit://d1196c4040dd12134b5c2003e13a7df751a32446/.env", "match": "9b2cd85b4a390d5b133b5b9e531f1aaf0d891f1c22f85cc049c0dcc088049d26"}, {"name": "Google API Key - commit://5facfb0ca2661490171bbb04eb2a1efcf99cdf45/.env", "match": "e261db3e7e3593904d34095c96e8d3cf1754e42fed403ab7f2630a96cc5ddc2e"}]}

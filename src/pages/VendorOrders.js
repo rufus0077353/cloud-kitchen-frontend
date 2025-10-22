@@ -179,6 +179,7 @@ export default function VendorOrders() {
     loadOrders();
 
     const s = socket;
+    if (!s) return;
     socketRef.current = s;
 
     const onNew = () => loadOrders({ silent: true });
@@ -247,7 +248,7 @@ export default function VendorOrders() {
     }
   };
 
-  // Mark COD order as paid
+  // Mark COD order as paid  🔧 FIXED: backend expects { paymentStatus: "paid" }
   const markPaid = async (id) => {
     setPayingId(id);
     try {
@@ -255,7 +256,7 @@ export default function VendorOrders() {
         method: "PATCH",
         headers: { ...authHeaders, "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status: "paid" }),
+        body: JSON.stringify({ paymentStatus: "paid" }), // ← fixed
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

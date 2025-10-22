@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import {
   Container, Paper, TextField, Button, Typography, Stack
 } from "@mui/material";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 
 const API_BASE = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
 
@@ -132,6 +132,12 @@ export default function Login() {
             >
               {loading ? "Signing in…" : "Login"}
             </Button>
+            <Box sx={{ mt: 2, textAlign: "center" }}>
+              <Typography variant="body2">
+                Don't have an account? {""}
+                <Link to="/register" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none"}}>Register here</Link>
+              </Typography>
+            </Box>
           </Stack>
         </form>
       </Paper>
