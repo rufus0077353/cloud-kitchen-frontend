@@ -1,6 +1,5 @@
 
-import React, { useEffect, useState } from "react";
-import { toast } from "react-toastify";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Container,
   Typography,
@@ -12,50 +11,64 @@ import {
   TableCell,
   TableBody,
   Paper,
+  CircularProgress,
+  Alert,
+  Stack,
 } from "@mui/material";
+import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 
 const API = process.env.REACT_APP_API_BASE_URL;
 
-const AdminUsers = () => {
+export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "user" });
   const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
-  // ✅ Fix added here
   const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const fetchUsers = async () => {
+  /** Fetch all users */
+  const fetchUsers = useCallback(async () => {
+    if (!token) return navigate("/login");
+    setLoading(true);
+    setErr("");
     try {
       const res = await fetch(`${API}/api/admin/users`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
-      setUsers(data);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.message || `Failed to load users (${res.status})`);
+      }
+
+      // Handle both {items:[...]} or direct array
+      const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      setUsers(list);
     } catch (err) {
-      console.error("Failed to fetch users:", err);
+      console.error("Error fetching users:", err);
+      setErr(err.message || "Unable to load users");
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [token, navigate]);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
+  /** Add or update a user */
   const handleSubmit = async (e) => {
     e.preventDefault();
     const url = editingId
       ? `${API}/api/admin/users/${editingId}`
       : `${API}/api/auth/register`;
-
     const method = editingId ? "PUT" : "POST";
 
     try {
@@ -67,60 +80,69 @@ const AdminUsers = () => {
         },
         body: JSON.stringify(formData),
       });
+      const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        toast.success(editingId ? "User updated" : "User created");
-        setFormData({ name: "", email: "", password: "", role: "user" });
-        setEditingId(null);
-        fetchUsers();
-      } else {
-        const errorData = await res.json();
-        toast.error(errorData.message || "Failed to create/update user");
-      }
+      if (!res.ok) throw new Error(data?.message || "Operation failed");
+
+      toast.success(editingId ? "User updated" : "User created");
+      setFormData({ name: "", email: "", password: "", role: "user" });
+      setEditingId(null);
+      fetchUsers();
     } catch (err) {
-      console.error("Error submitting user:", err);
-      toast.error("Server error while submitting user");
+      console.error("Submit error:", err);
+      toast.error(err.message || "Server error while saving user");
     }
   };
 
+  /** Edit user */
   const handleEdit = (user) => {
-    setFormData({ name: user.name, email: user.email, password: "", role: user.role });
+    setFormData({
+      name: user.name || "",
+      email: user.email || "",
+      password: "",
+      role: user.role || "user",
+    });
     setEditingId(user.id);
   };
 
+  /** Delete user */
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
-
     try {
-      await fetch(`${API}/api/admin/users/${id}`, {
+      const res = await fetch(`${API}/api/admin/users/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      fetchUsers();
+      if (res.ok) {
+        toast.success("User deleted");
+        fetchUsers();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data?.message || "Failed to delete user");
+      }
     } catch (err) {
-      console.error("Failed to delete user:", err);
+      toast.error("Server error while deleting user");
     }
   };
 
+  /** Promote to vendor */
   const promoteUser = async (userId) => {
-  try {
-    const res = await fetch(`${API}/api/admin/promote/${userId}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
-    if (res.ok) {
-      toast.success("User promoted to vendor successfully!");
-      fetchUsers();
-    } else {
-      toast.error(data.message || "Promotion failed");
+    try {
+      const res = await fetch(`${API}/api/admin/promote/${userId}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success("User promoted to vendor successfully!");
+        fetchUsers();
+      } else {
+        toast.error(data?.message || "Promotion failed");
+      }
+    } catch (err) {
+      toast.error("Server error during promotion");
     }
-  } catch (err) {
-    toast.error("Server error during promotion");
-  }
-};
+  };
 
   const handleLogout = () => {
     localStorage.clear();
@@ -128,17 +150,22 @@ const AdminUsers = () => {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        Admin User Management
-      </Typography>
+    <Container maxWidth="md" sx={{ mt: 4, mb: 6 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="h4" fontWeight={700}>
+          Admin User Management
+        </Typography>
+        <Button variant="outlined" color="error" onClick={handleLogout}>
+          Logout
+        </Button>
+      </Stack>
 
-      <Button variant="outlined" onClick={handleLogout} sx={{ mb: 2 }}>
-        Logout
-      </Button>
-
+      {/* FORM */}
       <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h6">{editingId ? "Edit User" : "Add New User"}</Typography>
+        <Typography variant="h6" gutterBottom>
+          {editingId ? "Edit User" : "Add New User"}
+        </Typography>
+
         <form onSubmit={handleSubmit}>
           <TextField
             name="name"
@@ -152,6 +179,7 @@ const AdminUsers = () => {
           <TextField
             name="email"
             label="Email"
+            type="email"
             fullWidth
             margin="normal"
             value={formData.email}
@@ -178,44 +206,78 @@ const AdminUsers = () => {
             required
           />
           <Button type="submit" variant="contained" sx={{ mt: 2 }}>
-            {editingId ? "Update" : "Create"}
+            {editingId ? "Update User" : "Create User"}
           </Button>
         </form>
       </Paper>
 
+      {/* USERS TABLE */}
       <Typography variant="h6" gutterBottom>
         All Users
       </Typography>
-      <Table component={Paper}>
-        <TableHead>
-          <TableRow>
-            <TableCell>Name</TableCell>
-            <TableCell>Email</TableCell>
-            <TableCell>Role</TableCell>
-            <TableCell>Actions</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell>{user.name}</TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>{user.role}</TableCell>
-              <TableCell>
-                {user.role !== "vendor" && (
-                  <Button onClick={() => promoteUser(user.id)}>Promote to Vendor</Button>
-                )}
-                <Button onClick={() => handleEdit(user)}>Edit</Button>
-                <Button onClick={() => handleDelete(user.id)} color="error">
-                  Delete
-                </Button>
-              </TableCell>
+
+      {loading ? (
+        <Paper sx={{ p: 4, textAlign: "center" }}>
+          <CircularProgress />
+        </Paper>
+      ) : err ? (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {err}
+        </Alert>
+      ) : (
+        <Table component={Paper}>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Email</TableCell>
+              <TableCell>Role</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHead>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id} hover>
+                <TableCell>{user.name}</TableCell>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.role}</TableCell>
+                <TableCell align="right">
+                  {user.role !== "vendor" && (
+                    <Button
+                      size="small"
+                      onClick={() => promoteUser(user.id)}
+                      sx={{ mr: 1 }}
+                    >
+                      Promote
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    onClick={() => handleEdit(user)}
+                    sx={{ mr: 1 }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="small"
+                    color="error"
+                    onClick={() => handleDelete(user.id)}
+                  >
+                    Delete
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+
+            {users.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} align="center">
+                  No users found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      )}
     </Container>
   );
-};
-
-export default AdminUsers;
+}
