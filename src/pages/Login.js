@@ -132,12 +132,16 @@ export default function Login() {
             >
               {loading ? "Signing in…" : "Login"}
             </Button>
-            <Box sx={{ mt: 2, textAlign: "center" }}>
+            <Button sx={{ mt: 2, textAlign: "center" }}>
               <Typography variant="body2">
                 Don't have an account? {""}
                 <Link to="/register" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none"}}>Register here</Link>
               </Typography>
-            </Box>
+
+              <Typography variant="body2">
+                <Link to="/forgot-password" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none"}}>Forgot Password?</Link>
+              </Typography>
+            </Button>
           </Stack>
         </form>
       </Paper>
