@@ -156,24 +156,64 @@ export default function AdminDashboard() {
     window.location.href = "/login";
   };
 
-  /* ---------------- API: Stats ---------------- */
-  const fetchStats = async () => {
-    setStatsLoading(true);
-    try {
-      const res = await axios.get(`${API}/api/admin/overview`, { headers, validateStatus: () => true });
-      if (res.status === 401) return handle401();
-      if (res.status >= 400) throw new Error();
-      if (!mounted.current) return;
-      setStats(res.data || {});
-    } catch {
-      if (!mounted.current) return;
-      toast.error("Failed to load overview");
-      setStats(null);
-    } finally {
-      if (mounted.current) setStatsLoading(false);
-    }
+ 
+/* ---------------- API: Stats (with fallbacks) ---------------- */
+const fetchStats = async () => {
+  setStatsLoading(true);
+
+  const headersLocal = headers; // just to be explicit inside try/catch
+  const tryRoute = async (path) => {
+    const res = await axios.get(`${API}${path}`, {
+      headers: headersLocal,
+      validateStatus: () => true,
+    });
+    if (res.status === 401) return handle401();
+    if (res.status >= 400) throw new Error(`Stats ${path} returned ${res.status}`);
+    return res.data || {};
   };
 
+  try {
+    // 1) try /overview, 2) fall back to /dashboard
+    let data = {};
+    try {
+      data = await tryRoute(`/api/admin/overview`);
+    } catch {
+      data = await tryRoute(`/api/admin/dashboard`);
+    }
+
+    // final safety: if backend didn’t send counts, derive them from lists we already load
+    const derived = {
+      totalUsers:
+        data.totalUsers ??
+        (typeof userTotal === "number" && userTotal > 0 ? userTotal : (Array.isArray(users) ? users.length : 0)),
+      totalVendors:
+        data.totalVendors ??
+        (typeof vendorTotal === "number" && vendorTotal > 0 ? vendorTotal : (Array.isArray(vendors) ? vendors.length : 0)),
+      totalOrders:
+        data.totalOrders ??
+        (Array.isArray(orders) ? orders.length : 0),
+      totalRevenue: data.totalRevenue ?? 0,
+      totalCommission: data.totalCommission ?? 0,
+      monthCommission: data.monthCommission, // can be undefined; UI has a local fallback
+    };
+
+    if (mounted.current) setStats(derived);
+  } catch {
+    if (mounted.current) {
+      // still show something meaningful from local data
+      setStats({
+        totalUsers: Array.isArray(users) ? users.length : 0,
+        totalVendors: Array.isArray(vendors) ? vendors.length : 0,
+        totalOrders: Array.isArray(orders) ? orders.length : 0,
+        totalRevenue: 0,
+        totalCommission: 0,
+      });
+      toast.error("Failed to load overview; showing local counts.");
+    }
+  } finally {
+    if (mounted.current) setStatsLoading(false);
+  }
+};
   /* ---------------- API: Users (server-side pagination w/ fallback) ---------------- */
   const fetchUsers = async ({ page = userPage, size = userRowsPerPage } = {}) => {
     setUsersLoading(true);
