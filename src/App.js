@@ -48,6 +48,7 @@ import Privacy from "./pages/static/Privacy";
 import Refund from "./pages/static/Refund";
 import BrowseVendorsMap from "./pages/BrowseVendorsMap";
 import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 function App() {
   return (
@@ -65,6 +66,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
               {/* Public Legal Pages */}
               <Route path="/contact" element={<Contact />} />
