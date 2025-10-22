@@ -6,3 +6,10 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[redirects]]
+   from = "https://servezy.in/*"
+   to = "https://servezy.in/:splat"
+   status = 301
+   force = true
+   
