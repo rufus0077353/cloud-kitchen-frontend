@@ -1,12 +1,16 @@
+
 // src/pages/AdminPayouts.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Paper, Stack, Typography, TextField, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Chip, LinearProgress
+  Chip, LinearProgress, Tooltip
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ScheduleIcon from "@mui/icons-material/Schedule";
+import { toast } from "react-toastify";
 
 const API = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/,"");
 
@@ -42,15 +46,13 @@ export default function AdminPayouts() {
   const [source, setSource] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [busyVendorId, setBusyVendorId] = useState(null);
 
   const fetchPayouts = async () => {
     setLoading(true);
     setErr("");
     try {
-      // Primary admin endpoint
-      let r = await fetch(`${API}/api/admin/payouts`, { headers });
-
-      // Allow legacy vendor-wide summary array (older code paths)
+      const r = await fetch(`${API}/api/admin/payouts`, { headers });
       if (!r.ok) {
         const text = await r.text().catch(()=> "");
         throw new Error(text || `HTTP ${r.status}`);
@@ -61,10 +63,10 @@ export default function AdminPayouts() {
         // Older shape: array only
         setRows(data);
         const t = data.reduce((acc, v) => {
-          acc.gross += Number(v.grossPaid || v.gross || 0);
+          acc.gross       += Number(v.grossPaid || v.gross || 0);
           acc.platformFee += Number(v.platformFee || v.commission || 0);
-          acc.net += Number(v.netOwed || v.net || v.payoutAmount || 0);
-          acc.payableNow += Number(v.payableNow || 0);
+          acc.net         += Number(v.netOwed || v.net || v.payoutAmount || 0);
+          acc.payableNow  += Number(v.payableNow || 0);
           return acc;
         }, { gross: 0, platformFee: 0, net: 0, payableNow: 0 });
         setTotals({
@@ -137,6 +139,51 @@ export default function AdminPayouts() {
     downloadCsv("admin-payouts", headersCsv, rowsCsv);
   };
 
+  // ---- Actions (only meaningful when source === "payouts") ----
+  const markPaid = async (vendorId) => {
+    try {
+      setBusyVendorId(vendorId);
+      const res = await fetch(`${API}/api/admin/payouts/vendor/${vendorId}/pay`, {
+        method: "PATCH",
+        headers,
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(()=> "");
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
+      const json = await res.json().catch(() => ({}));
+      toast.success(`Marked paid (affected: ${json.affected ?? "?"})`);
+      await fetchPayouts();
+    } catch (e) {
+      toast.error(`Mark paid failed: ${e.message || e}`);
+    } finally {
+      setBusyVendorId(null);
+    }
+  };
+
+  const markScheduled = async (vendorId) => {
+    try {
+      setBusyVendorId(vendorId);
+      const res = await fetch(`${API}/api/admin/payouts/vendor/${vendorId}/schedule`, {
+        method: "PATCH",
+        headers,
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(()=> "");
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
+      const json = await res.json().catch(() => ({}));
+      toast.success(`Scheduled (affected: ${json.affected ?? "?"})`);
+      await fetchPayouts();
+    } catch (e) {
+      toast.error(`Schedule failed: ${e.message || e}`);
+    } finally {
+      setBusyVendorId(null);
+    }
+  };
+
+  const actionsEnabled = source === "payouts"; // hide buttons in orders-fallback mode
+
   return (
     <Box p={3}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2, gap: 2, flexWrap: "wrap" }}>
@@ -200,6 +247,8 @@ export default function AdminPayouts() {
                 r.commissionRate != null ? Number(r.commissionRate).toFixed(2) :
                 r.rate != null ? (Number(r.rate) * 100).toFixed(2) : ""; // tolerate older shapes
               const statuses = r.statusCounts || {};
+              const rowBusy = busyVendorId === vendorId;
+
               return (
                 <TableRow key={vendorId} hover>
                   <TableCell>#{vendorId} — {vendorName}</TableCell>
@@ -216,8 +265,42 @@ export default function AdminPayouts() {
                     </Stack>
                   </TableCell>
                   <TableCell align="right">
-                    {/* Hook up actions later (mark paid/scheduled, open details, etc.) */}
-                    <IconButton size="small" disabled><RefreshIcon fontSize="inherit" /></IconButton>
+                    {actionsEnabled ? (
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Tooltip title="Mark pending payouts as SCHEDULED">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => markScheduled(vendorId)}
+                              disabled={rowBusy}
+                              color="warning"
+                            >
+                              <ScheduleIcon fontSize="inherit" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Mark pending payouts as PAID">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => markPaid(vendorId)}
+                              disabled={rowBusy}
+                              color="success"
+                            >
+                              <CheckCircleIcon fontSize="inherit" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Stack>
+                    ) : (
+                      <Tooltip title="Actions are available when payouts table is enabled (source: payouts)">
+                        <span>
+                          <IconButton size="small" disabled>
+                            <RefreshIcon fontSize="inherit" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               );
