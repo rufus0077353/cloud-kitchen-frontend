@@ -16,6 +16,7 @@ import AdminUsers from "./pages/AdminUsers";
 import EditUser from "./pages/EditUser";
 import AdminVendors from "./pages/AdminVendors";
 import AdminMenuItems from "./pages/AdminMenuItems";
+import AdminPayouts from "./pages/AdminPayouts";
 import UserOrders from "./pages/UserOrders";
 import CreateOrder from "./pages/CreateOrder";
 import OrderSuccess from "./pages/OrderSuccess";
