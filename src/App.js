@@ -260,7 +260,7 @@ function App() {
                 path="/admin/payouts"
                 element={
                   <PrivateRoute role="admin">
-                    <PayoutsDashboard role="admin" />
+                    <AdminPayouts />
                   </PrivateRoute>
                 }
               />
