@@ -39,13 +39,28 @@ const isHttpUrl = (v) => {
   }
 };
 
-function VendorChipsSkeleton() {
+/* ---------- Skeletons ---------- */
+function VendorListSkeleton() {
   return (
-    <Stack direction="row" spacing={1} flexWrap="wrap">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} variant="rounded" width={100} height={32} />
+    <List disablePadding>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <React.Fragment key={i}>
+          <ListItem
+            disableGutters
+            secondaryAction={<Skeleton variant="rounded" width={96} height={36} />}
+          >
+            <ListItemAvatar>
+              <Skeleton variant="circular" width={48} height={48} />
+            </ListItemAvatar>
+            <Box sx={{ flex: 1, pr: 2 }}>
+              <Skeleton width="40%" />
+              <Skeleton width="65%" />
+            </Box>
+          </ListItem>
+          {i < 3 && <Divider variant="inset" component="li" />}
+        </React.Fragment>
       ))}
-    </Stack>
+    </List>
   );
 }
 
@@ -151,7 +166,7 @@ export default function UserDashboard() {
         Welcome, {user?.name || "User"}
       </Typography>
 
-      {/* SELECT A VENDOR */}
+      {/* ====== VENDORS (VERTICAL LIST) ====== */}
       <Paper sx={{ p: 3, mb: 3 }} elevation={0} variant="outlined">
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -174,32 +189,58 @@ export default function UserDashboard() {
         </Stack>
 
         {vendorsLoading ? (
-          <VendorChipsSkeleton />
+          <VendorListSkeleton />
         ) : vendors.length === 0 ? (
           <Typography color="text.secondary">No vendors available right now.</Typography>
         ) : (
-          <Stack direction="row" spacing={1} flexWrap="wrap">
-            {vendors.map((v) => {
+          <List disablePadding>
+            {vendors.map((v, idx) => {
               const selected = String(v.id) === String(vendorId);
+              const img = isHttpUrl(v.imageUrl) ? v.imageUrl : PLACEHOLDER_IMG;
               return (
-                <Chip
-                  key={v.id}
-                  label={v.name}
-                  color={selected ? "primary" : "default"}
-                  variant={selected ? "filled" : "outlined"}
-                  onClick={() => setVendorId(v.id)}
-                  clickable
-                  sx={{
-                    mb: 1,
-                    borderRadius: 999,
-                  }}
-                />
+                <React.Fragment key={v.id}>
+                  <ListItem
+                    disableGutters
+                    secondaryAction={
+                      <Button
+                        variant={selected ? "contained" : "outlined"}
+                        size="small"
+                        onClick={() => setVendorId(v.id)}
+                      >
+                        {selected ? "Selected" : "View Menu"}
+                      </Button>
+                    }
+                  >
+                    <ListItemAvatar>
+                      <Avatar
+                        src={img}
+                        alt={v.name || "Vendor"}
+                        variant="rounded"
+                        sx={{ width: 48, height: 48 }}
+                        imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                      />
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={
+                        <Typography variant="subtitle1" fontWeight={500}>
+                          {v.name}
+                        </Typography>
+                      }
+                      secondary={
+                        <Typography variant="body2" color="text.secondary">
+                          {v.description || "Delicious food & fast delivery"}
+                        </Typography>
+                      }
+                    />
+                  </ListItem>
+                  {idx < vendors.length - 1 && <Divider variant="inset" component="li" />}
+                </React.Fragment>
               );
             })}
-          </Stack>
+          </List>
         )}
 
-        {/* MENU LIST */}
+        {/* ====== MENU LIST ====== */}
         {vendorId && (
           <Box mt={3}>
             <Typography variant="subtitle1" gutterBottom>
@@ -263,7 +304,7 @@ export default function UserDashboard() {
         )}
       </Paper>
 
-      {/* CART SUMMARY */}
+      {/* ====== CART SUMMARY ====== */}
       <Paper sx={{ p: 3, mb: 3 }} elevation={0} variant="outlined">
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -327,7 +368,7 @@ export default function UserDashboard() {
         )}
       </Paper>
 
-      {/* RECENT ORDERS */}
+      {/* ====== RECENT ORDERS ====== */}
       <Paper sx={{ p: 3 }} elevation={0} variant="outlined">
         <Stack
           direction={{ xs: "column", sm: "row" }}
