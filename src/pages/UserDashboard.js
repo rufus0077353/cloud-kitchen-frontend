@@ -7,7 +7,6 @@ import {
   Typography,
   Paper,
   Stack,
-  Chip,
   CircularProgress,
   List,
   ListItem,
@@ -17,7 +16,11 @@ import {
   Grid,
   Skeleton,
   Divider,
+  Chip,
 } from "@mui/material";
+import StarIcon from "@mui/icons-material/Star";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import CurrencyRupeeIcon from "@mui/icons-material/CurrencyRupee";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useCart } from "../context/CartContext";
@@ -55,6 +58,11 @@ function VendorListSkeleton() {
             <Box sx={{ flex: 1, pr: 2 }}>
               <Skeleton width="40%" />
               <Skeleton width="65%" />
+              <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                <Skeleton variant="rounded" width={70} height={24} />
+                <Skeleton variant="rounded" width={80} height={24} />
+                <Skeleton variant="rounded" width={90} height={24} />
+              </Stack>
             </Box>
           </ListItem>
           {i < 3 && <Divider variant="inset" component="li" />}
@@ -160,13 +168,21 @@ export default function UserDashboard() {
     toast.success(`${it.name} added to cart`);
   };
 
+  // helpers
+  const cuisineChips = (cuisine) =>
+    String(cuisine || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 3); // limit for compactness
+
   return (
     <Container sx={{ py: 4 }}>
       <Typography variant="h5" gutterBottom>
         Welcome, {user?.name || "User"}
       </Typography>
 
-      {/* ====== VENDORS (VERTICAL LIST) ====== */}
+      {/* ====== VENDORS (VERTICAL LIST WITH RATING/ETA/FEE) ====== */}
       <Paper sx={{ p: 3, mb: 3 }} elevation={0} variant="outlined">
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -197,6 +213,12 @@ export default function UserDashboard() {
             {vendors.map((v, idx) => {
               const selected = String(v.id) === String(vendorId);
               const img = isHttpUrl(v.imageUrl) ? v.imageUrl : PLACEHOLDER_IMG;
+              const fee = Number(v.deliveryFee || 0);
+              const rating = Number(v.ratingAvg || 0);
+              const rCount = Number(v.ratingCount || 0);
+              const eta = Number(v.etaMins || 0);
+              const open = v.isOpen !== false; // default true
+
               return (
                 <React.Fragment key={v.id}>
                   <ListItem
@@ -206,8 +228,9 @@ export default function UserDashboard() {
                         variant={selected ? "contained" : "outlined"}
                         size="small"
                         onClick={() => setVendorId(v.id)}
+                        disabled={!open}
                       >
-                        {selected ? "Selected" : "View Menu"}
+                        {open ? (selected ? "Selected" : "View Menu") : "Closed"}
                       </Button>
                     }
                   >
@@ -216,24 +239,81 @@ export default function UserDashboard() {
                         src={img}
                         alt={v.name || "Vendor"}
                         variant="rounded"
-                        sx={{ width: 48, height: 48 }}
+                        sx={{ width: 56, height: 56 }}
                         imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
                       />
                     </ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <Typography variant="subtitle1" fontWeight={500}>
+
+                    <Box sx={{ flex: 1, pr: 2, minWidth: 0 }}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography
+                          variant="subtitle1"
+                          fontWeight={600}
+                          noWrap
+                          sx={{ maxWidth: { xs: "65%", sm: "70%" } }}
+                        >
                           {v.name}
                         </Typography>
-                      }
-                      secondary={
-                        <Typography variant="body2" color="text.secondary">
-                          {v.description || "Delicious food & fast delivery"}
+                        {!open && (
+                          <Chip size="small" color="default" variant="outlined" label="Closed" />
+                        )}
+                      </Stack>
+
+                      {/* Rating • ETA • Fee */}
+                      <Stack
+                        direction="row"
+                        spacing={2}
+                        alignItems="center"
+                        sx={{ mt: 0.5, flexWrap: "wrap" }}
+                      >
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <StarIcon fontSize="small" />
+                          <Typography variant="body2">
+                            {rating > 0 ? rating.toFixed(1) : "—"}{" "}
+                            {rCount > 0 ? `(${rCount})` : ""}
+                          </Typography>
+                        </Stack>
+
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <AccessTimeIcon fontSize="small" />
+                          <Typography variant="body2">
+                            {eta > 0 ? `${eta} mins` : "—"}
+                          </Typography>
+                        </Stack>
+
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <CurrencyRupeeIcon fontSize="small" />
+                          <Typography variant="body2">
+                            {fee > 0 ? fee.toFixed(0) : "Free delivery"}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+
+                      {/* Cuisine chips */}
+                      <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
+                        {cuisineChips(v.cuisine).map((c) => (
+                          <Chip key={c} size="small" label={c} variant="outlined" />
+                        ))}
+                        {!v.cuisine && (
+                          <Chip size="small" label="All cuisines" variant="outlined" />
+                        )}
+                      </Stack>
+
+                      {/* Optional description/location */}
+                      {(v.description || v.location) && (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ mt: 0.5 }}
+                          noWrap
+                        >
+                          {v.description || v.location}
                         </Typography>
-                      }
-                    />
+                      )}
+                    </Box>
                   </ListItem>
-                  {idx < vendors.length - 1 && <Divider variant="inset" component="li" />}
+
+                  {idx < vendors.length - 1 && <Divider component="li" />}
                 </React.Fragment>
               );
             })}
