@@ -27,6 +27,7 @@ import VendorOrders from "./pages/VendorOrders";
 import VendorMenu from "./pages/VendorMenu";
 import AdminOrders from "./pages/AdminOrders";
 import UserVendorMenu from "./pages/UserVendorMenu";
+import Vendors from "./pages/Vendors";
 import BrowseVendors from "./pages/BrowseVendors";
 import Checkout from "./pages/Checkout";
 import NotAuthorized from "./pages/NotAuthorized";
