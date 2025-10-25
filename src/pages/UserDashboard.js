@@ -1,4 +1,4 @@
-
+// src/pages/UserDashboard.js
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Box,
@@ -168,13 +168,20 @@ export default function UserDashboard() {
     toast.success(`${it.name} added to cart`);
   };
 
-  // helpers
   const cuisineChips = (cuisine) =>
     String(cuisine || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-      .slice(0, 3); // limit for compactness
+      .slice(0, 3);
+
+  const selectVendor = (id) => setVendorId(id);
+  const handleKeySelect = (e, id) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      selectVendor(id);
+    }
+  };
 
   return (
     <Container sx={{ py: 4 }}>
@@ -217,7 +224,7 @@ export default function UserDashboard() {
               const rating = Number(v.ratingAvg || 0);
               const rCount = Number(v.ratingCount || 0);
               const eta = Number(v.etaMins || 0);
-              const open = v.isOpen !== false; // default true
+              const open = v.isOpen !== false;
 
               return (
                 <React.Fragment key={v.id}>
@@ -227,7 +234,7 @@ export default function UserDashboard() {
                       <Button
                         variant={selected ? "contained" : "outlined"}
                         size="small"
-                        onClick={() => setVendorId(v.id)}
+                        onClick={() => selectVendor(v.id)}
                         disabled={!open}
                       >
                         {open ? (selected ? "Selected" : "View Menu") : "Closed"}
@@ -239,12 +246,20 @@ export default function UserDashboard() {
                         src={img}
                         alt={v.name || "Vendor"}
                         variant="rounded"
-                        sx={{ width: 56, height: 56 }}
+                        sx={{ width: 56, height: 56, cursor: open ? "pointer" : "default" }}
                         imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                        onClick={open ? () => selectVendor(v.id) : undefined}
                       />
                     </ListItemAvatar>
 
-                    <Box sx={{ flex: 1, pr: 2, minWidth: 0 }}>
+                    {/* Clickable body (name/row) to open menu */}
+                    <Box
+                      sx={{ flex: 1, pr: 2, minWidth: 0, cursor: open ? "pointer" : "default" }}
+                      role={open ? "button" : undefined}
+                      tabIndex={open ? 0 : -1}
+                      onClick={open ? () => selectVendor(v.id) : undefined}
+                      onKeyDown={open ? (e) => handleKeySelect(e, v.id) : undefined}
+                    >
                       <Stack direction="row" spacing={1} alignItems="center">
                         <Typography
                           variant="subtitle1"
@@ -299,7 +314,6 @@ export default function UserDashboard() {
                         )}
                       </Stack>
 
-                      {/* Optional description/location */}
                       {(v.description || v.location) && (
                         <Typography
                           variant="body2"
