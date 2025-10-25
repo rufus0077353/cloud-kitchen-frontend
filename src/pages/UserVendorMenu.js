@@ -1,10 +1,21 @@
-// src/pages/UserVendorMenu.js
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
-  Box, Container, Typography, Paper, List, ListItem,
-  ListItemText, Button, Stack, CircularProgress,
-  Avatar, ListItemAvatar
+  Box,
+  Container,
+  Typography,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  Button,
+  Stack,
+  CircularProgress,
+  Avatar,
+  ListItemAvatar,
+  Grid,
+  Skeleton,
+  Divider,
 } from "@mui/material";
 import { useCart } from "../context/CartContext";
 
@@ -20,6 +31,27 @@ const isHttpUrl = (v) => {
     return false;
   }
 };
+
+function MenuSkeletonGrid() {
+  return (
+    <Grid container spacing={2} sx={{ mt: 1 }}>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <Grid key={i} item xs={12} sm={6} md={4}>
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Skeleton variant="rounded" width={56} height={56} />
+              <Box sx={{ flex: 1 }}>
+                <Skeleton width="70%" />
+                <Skeleton width="40%" />
+              </Box>
+              <Skeleton variant="rounded" width={92} height={36} />
+            </Stack>
+          </Paper>
+        </Grid>
+      ))}
+    </Grid>
+  );
+}
 
 export default function UserVendorMenu() {
   const { vendorId } = useParams();
@@ -37,10 +69,10 @@ export default function UserVendorMenu() {
           fetch(`${API}/api/vendors/${vendorId}`, { headers }),
           fetch(`${API}/api/vendors/${vendorId}/menu`, { headers }),
         ]);
-        const v = await vRes.json().catch(() => null);
-        const m = await mRes.json().catch(() => []);
-        setVendor(v || null);
-        setItems(Array.isArray(m) ? m : (Array.isArray(m.items) ? m.items : []));
+        const v = (await vRes.json().catch(() => null)) || null;
+        const m = (await mRes.json().catch(() => []) ) || [];
+        setVendor(v);
+        setItems(Array.isArray(m) ? m : Array.isArray(m.items) ? m.items : []);
       } catch {
         setVendor(null);
         setItems([]);
@@ -57,72 +89,109 @@ export default function UserVendorMenu() {
       price: it.price,
       qty: 1,
       vendorId,
-      imageUrl: isHttpUrl(it.imageUrl) ? it.imageUrl : null, // keep image in cart if valid
+      imageUrl: isHttpUrl(it.imageUrl) ? it.imageUrl : null,
     });
-    openDrawer(); // show cart immediately
+    openDrawer();
   };
 
   return (
     <Container sx={{ py: 3 }}>
       <Stack
-        direction="row"
+        direction={{ xs: "column", sm: "row" }}
         justifyContent="space-between"
-        alignItems="center"
+        alignItems={{ xs: "flex-start", sm: "center" }}
         sx={{ mb: 2 }}
+        spacing={1.5}
       >
-        <Typography variant="h4">{vendor?.name || "Vendor Menu"}</Typography>
+        <Typography variant="h4" sx={{ lineHeight: 1.2 }}>
+          {vendor?.name || "Vendor Menu"}
+        </Typography>
         <Button component={Link} to="/vendors" variant="outlined">
           Back to Vendors
         </Button>
       </Stack>
 
-      {loading ? (
-        <Box sx={{ py: 6, textAlign: "center" }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <Paper>
-          <List>
-            {(items || []).map((it) => {
-              const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
-              return (
-                <ListItem
-                  key={it.id}
-                  secondaryAction={
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={() => handleAdd(it)}
+      <Paper sx={{ p: 2 }} variant="outlined">
+        {loading ? (
+          <MenuSkeletonGrid />
+        ) : items.length === 0 ? (
+          <Box sx={{ py: 5, textAlign: "center" }}>
+            <Typography>No items found for this vendor.</Typography>
+          </Box>
+        ) : (
+          <>
+            <Grid container spacing={2}>
+              {items.map((it) => {
+                const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
+                return (
+                  <Grid key={it.id} item xs={12} sm={6} md={4}>
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        p: 2,
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 2,
+                      }}
                     >
-                      Add to Cart
-                    </Button>
-                  }
-                >
-                  <ListItemAvatar>
-                    <Avatar
-                      src={thumb}
-                      alt={it.name || "Item"}
-                      variant="rounded"
-                      sx={{ width: 56, height: 56 }}
-                      imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
-                    />
-                  </ListItemAvatar>
+                      <Avatar
+                        src={thumb}
+                        alt={it.name || "Item"}
+                        variant="rounded"
+                        sx={{ width: 56, height: 56, flexShrink: 0 }}
+                        imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                      />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="subtitle2" noWrap>
+                          {it.name ?? "Item"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" noWrap>
+                          ₹{Number(it.price ?? 0).toFixed(2)}
+                        </Typography>
+                      </Box>
+                      <Button variant="contained" size="small" onClick={() => handleAdd(it)}>
+                        Add
+                      </Button>
+                    </Paper>
+                  </Grid>
+                );
+              })}
+            </Grid>
 
-                  <ListItemText
-                    primary={`${it.name ?? "Item"} — ₹${Number(it.price ?? 0).toFixed(2)}`}
-                    secondary={it.description || ""}
-                  />
-                </ListItem>
-              );
-            })}
-            {(items || []).length === 0 && (
-              <ListItem>
-                <ListItemText primary="No items found." />
-              </ListItem>
-            )}
-          </List>
-        </Paper>
-      )}
+            {/* Optional legacy list below for accessibility / long names */}
+            <Divider sx={{ my: 3 }} />
+            <List dense>
+              {items.map((it) => {
+                const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
+                return (
+                  <ListItem
+                    key={`list-${it.id}`}
+                    secondaryAction={
+                      <Button variant="text" size="small" onClick={() => handleAdd(it)}>
+                        Add
+                      </Button>
+                    }
+                  >
+                    <ListItemAvatar>
+                      <Avatar
+                        src={thumb}
+                        alt={it.name || "Item"}
+                        variant="rounded"
+                        imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
+                      />
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={`${it.name ?? "Item"} — ₹${Number(it.price ?? 0).toFixed(2)}`}
+                      secondary={it.description || ""}
+                    />
+                  </ListItem>
+                );
+              })}
+            </List>
+          </>
+        )}
+      </Paper>
     </Container>
   );
 }
