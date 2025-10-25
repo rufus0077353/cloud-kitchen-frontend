@@ -1,3 +1,4 @@
+
 // src/pages/UserDashboard.js
 import React, { useEffect, useState, useMemo } from "react";
 import {
@@ -17,6 +18,10 @@ import {
   Skeleton,
   Divider,
   Chip,
+  Card,
+  CardActionArea,
+  CardMedia,
+  CardContent,
 } from "@mui/material";
 import StarIcon from "@mui/icons-material/Star";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
@@ -31,7 +36,6 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
 const PLACEHOLDER_IMG = "/images/placeholder-food.png";
 
 const Money = ({ v }) => <strong>₹{Number(v || 0).toFixed(2)}</strong>;
-
 const isHttpUrl = (v) => {
   if (!v) return false;
   try {
@@ -43,50 +47,22 @@ const isHttpUrl = (v) => {
 };
 
 /* ---------- Skeletons ---------- */
-function VendorListSkeleton() {
+function VendorGridSkeleton() {
   return (
-    <List disablePadding>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <React.Fragment key={i}>
-          <ListItem
-            disableGutters
-            secondaryAction={<Skeleton variant="rounded" width={96} height={36} />}
-          >
-            <ListItemAvatar>
-              <Skeleton variant="circular" width={48} height={48} />
-            </ListItemAvatar>
-            <Box sx={{ flex: 1, pr: 2 }}>
-              <Skeleton width="40%" />
-              <Skeleton width="65%" />
-              <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                <Skeleton variant="rounded" width={70} height={24} />
-                <Skeleton variant="rounded" width={80} height={24} />
-                <Skeleton variant="rounded" width={90} height={24} />
-              </Stack>
-            </Box>
-          </ListItem>
-          {i < 3 && <Divider variant="inset" component="li" />}
-        </React.Fragment>
-      ))}
-    </List>
-  );
-}
-
-function MenuSkeleton() {
-  return (
-    <Grid container spacing={2} sx={{ mt: 1 }}>
+    <Grid container spacing={2}>
       {Array.from({ length: 6 }).map((_, i) => (
-        <Grid key={i} item xs={12} sm={6} md={4}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Skeleton variant="rounded" width={56} height={56} />
-              <Box sx={{ flex: 1 }}>
-                <Skeleton width="60%" />
-                <Skeleton width="40%" />
-              </Box>
-              <Skeleton variant="rounded" width={96} height={36} />
-            </Stack>
-          </Paper>
+        <Grid item xs={12} sm={6} md={4} key={i}>
+          <Card variant="outlined" sx={{ borderRadius: 2 }}>
+            <Skeleton variant="rectangular" height={140} />
+            <CardContent>
+              <Skeleton width="60%" />
+              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                <Skeleton variant="rounded" width={70} height={22} />
+                <Skeleton variant="rounded" width={80} height={22} />
+                <Skeleton variant="rounded" width={90} height={22} />
+              </Stack>
+            </CardContent>
+          </Card>
         </Grid>
       ))}
     </Grid>
@@ -99,10 +75,6 @@ export default function UserDashboard() {
 
   const [vendors, setVendors] = useState([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
-
-  const [vendorId, setVendorId] = useState("");
-  const [menuItems, setMenuItems] = useState([]);
-  const [loadingMenu, setLoadingMenu] = useState(false);
 
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -122,20 +94,6 @@ export default function UserDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Menu when vendor changes
-  useEffect(() => {
-    if (!vendorId) return;
-    setLoadingMenu(true);
-    fetch(`${API_BASE}/api/vendors/${vendorId}/menu`, { headers })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) =>
-        setMenuItems(Array.isArray(d) ? d : Array.isArray(d.items) ? d.items : [])
-      )
-      .catch(() => setMenuItems([]))
-      .finally(() => setLoadingMenu(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId]);
-
   // Orders
   const fetchOrders = () => {
     setLoadingOrders(true);
@@ -145,23 +103,21 @@ export default function UserDashboard() {
       .catch(() => setOrders([]))
       .finally(() => setLoadingOrders(false));
   };
-
   useEffect(() => {
     fetchOrders();
-    try {
-      subscribePush?.();
-    } catch {}
+    try { subscribePush?.(); } catch {}
     if (user?.id) socket.emit("user:join", user.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Add from menu page (kept because other parts of the page use the cart)
   const handleAdd = (it) => {
     addItem({
       id: it.id,
       name: it.name,
       price: it.price,
       qty: 1,
-      vendorId,
+      vendorId: it.VendorId ?? it.vendorId,
       imageUrl: isHttpUrl(it.imageUrl) ? it.imageUrl : null,
     });
     openDrawer();
@@ -175,21 +131,13 @@ export default function UserDashboard() {
       .filter(Boolean)
       .slice(0, 3);
 
-  const selectVendor = (id) => setVendorId(id);
-  const handleKeySelect = (e, id) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      selectVendor(id);
-    }
-  };
-
   return (
     <Container sx={{ py: 4 }}>
       <Typography variant="h5" gutterBottom>
         Welcome, {user?.name || "User"}
       </Typography>
 
-      {/* ====== VENDORS (VERTICAL LIST WITH RATING/ETA/FEE) ====== */}
+      {/* ====== VENDOR GRID (click card -> /vendors/:id) ====== */}
       <Paper sx={{ p: 3, mb: 3 }} elevation={0} variant="outlined">
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -200,25 +148,19 @@ export default function UserDashboard() {
         >
           <Typography variant="h6">Select a Vendor</Typography>
           {vendors.length > 0 && (
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => setVendorId("")}
-              disabled={!vendorId}
-            >
-              Clear Selection
+            <Button size="small" variant="outlined" onClick={() => navigate("/vendors")}>
+              See All Vendors
             </Button>
           )}
         </Stack>
 
         {vendorsLoading ? (
-          <VendorListSkeleton />
+          <VendorGridSkeleton />
         ) : vendors.length === 0 ? (
           <Typography color="text.secondary">No vendors available right now.</Typography>
         ) : (
-          <List disablePadding>
-            {vendors.map((v, idx) => {
-              const selected = String(v.id) === String(vendorId);
+          <Grid container spacing={2}>
+            {vendors.map((v) => {
               const img = isHttpUrl(v.imageUrl) ? v.imageUrl : PLACEHOLDER_IMG;
               const fee = Number(v.deliveryFee || 0);
               const rating = Number(v.ratingAvg || 0);
@@ -227,174 +169,97 @@ export default function UserDashboard() {
               const open = v.isOpen !== false;
 
               return (
-                <React.Fragment key={v.id}>
-                  <ListItem
-                    disableGutters
-                    secondaryAction={
-                      <Button
-                        variant={selected ? "contained" : "outlined"}
-                        size="small"
-                        onClick={() => selectVendor(v.id)}
-                        disabled={!open}
-                      >
-                        {open ? (selected ? "Selected" : "View Menu") : "Closed"}
-                      </Button>
-                    }
+                <Grid item xs={12} sm={6} md={4} key={v.id}>
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      height: "100%",
+                      borderRadius: 2,
+                      opacity: open ? 1 : 0.6,
+                    }}
                   >
-                    <ListItemAvatar>
-                      <Avatar
-                        src={img}
-                        alt={v.name || "Vendor"}
-                        variant="rounded"
-                        sx={{ width: 56, height: 56, cursor: open ? "pointer" : "default" }}
-                        imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
-                        onClick={open ? () => selectVendor(v.id) : undefined}
-                      />
-                    </ListItemAvatar>
-
-                    {/* Clickable body (name/row) to open menu */}
-                    <Box
-                      sx={{ flex: 1, pr: 2, minWidth: 0, cursor: open ? "pointer" : "default" }}
-                      role={open ? "button" : undefined}
-                      tabIndex={open ? 0 : -1}
-                      onClick={open ? () => selectVendor(v.id) : undefined}
-                      onKeyDown={open ? (e) => handleKeySelect(e, v.id) : undefined}
+                    <CardActionArea
+                      onClick={() => (open ? navigate(`/vendors/${v.id}`) : null)}
+                      disabled={!open}
+                      sx={{ height: "100%" }}
                     >
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography
-                          variant="subtitle1"
-                          fontWeight={600}
-                          noWrap
-                          sx={{ maxWidth: { xs: "65%", sm: "70%" } }}
-                        >
+                      <CardMedia
+                        component="img"
+                        height="160"
+                        image={img}
+                        alt={v.name || "Vendor"}
+                        sx={{ objectFit: "cover" }}
+                      />
+                      <CardContent>
+                        <Typography variant="subtitle1" fontWeight={600} noWrap>
                           {v.name}
                         </Typography>
-                        {!open && (
-                          <Chip size="small" color="default" variant="outlined" label="Closed" />
-                        )}
-                      </Stack>
 
-                      {/* Rating • ETA • Fee */}
-                      <Stack
-                        direction="row"
-                        spacing={2}
-                        alignItems="center"
-                        sx={{ mt: 0.5, flexWrap: "wrap" }}
-                      >
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <StarIcon fontSize="small" />
-                          <Typography variant="body2">
-                            {rating > 0 ? rating.toFixed(1) : "—"}{" "}
-                            {rCount > 0 ? `(${rCount})` : ""}
-                          </Typography>
-                        </Stack>
-
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <AccessTimeIcon fontSize="small" />
-                          <Typography variant="body2">
-                            {eta > 0 ? `${eta} mins` : "—"}
-                          </Typography>
-                        </Stack>
-
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <CurrencyRupeeIcon fontSize="small" />
-                          <Typography variant="body2">
-                            {fee > 0 ? fee.toFixed(0) : "Free delivery"}
-                          </Typography>
-                        </Stack>
-                      </Stack>
-
-                      {/* Cuisine chips */}
-                      <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
-                        {cuisineChips(v.cuisine).map((c) => (
-                          <Chip key={c} size="small" label={c} variant="outlined" />
-                        ))}
-                        {!v.cuisine && (
-                          <Chip size="small" label="All cuisines" variant="outlined" />
-                        )}
-                      </Stack>
-
-                      {(v.description || v.location) && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ mt: 0.5 }}
-                          noWrap
+                        {/* Rating • ETA • Fee */}
+                        <Stack
+                          direction="row"
+                          spacing={2}
+                          alignItems="center"
+                          sx={{ mt: 0.5, flexWrap: "wrap" }}
                         >
-                          {v.description || v.location}
-                        </Typography>
-                      )}
-                    </Box>
-                  </ListItem>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <StarIcon fontSize="small" />
+                            <Typography variant="body2">
+                              {rating > 0 ? rating.toFixed(1) : "—"}{" "}
+                              {rCount > 0 ? `(${rCount})` : ""}
+                            </Typography>
+                          </Stack>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <AccessTimeIcon fontSize="small" />
+                            <Typography variant="body2">
+                              {eta > 0 ? `${eta} mins` : "—"}
+                            </Typography>
+                          </Stack>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <CurrencyRupeeIcon fontSize="small" />
+                            <Typography variant="body2">
+                              {fee > 0 ? fee.toFixed(0) : "Free delivery"}
+                            </Typography>
+                          </Stack>
+                        </Stack>
 
-                  {idx < vendors.length - 1 && <Divider component="li" />}
-                </React.Fragment>
+                        {/* Cuisine chips */}
+                        <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
+                          {cuisineChips(v.cuisine).map((c) => (
+                            <Chip key={c} size="small" label={c} variant="outlined" />
+                          ))}
+                          {!v.cuisine && (
+                            <Chip size="small" label="All cuisines" variant="outlined" />
+                          )}
+                        </Stack>
+
+                        {(v.description || v.location) && (
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ mt: 1 }}
+                            noWrap
+                          >
+                            {v.description || v.location}
+                          </Typography>
+                        )}
+
+                        {!open && (
+                          <Chip
+                            label="Closed"
+                            size="small"
+                            color="default"
+                            variant="outlined"
+                            sx={{ mt: 1 }}
+                          />
+                        )}
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
               );
             })}
-          </List>
-        )}
-
-        {/* ====== MENU LIST ====== */}
-        {vendorId && (
-          <Box mt={3}>
-            <Typography variant="subtitle1" gutterBottom>
-              Menu Items
-            </Typography>
-
-            {loadingMenu ? (
-              <MenuSkeleton />
-            ) : menuItems.length === 0 ? (
-              <Paper
-                variant="outlined"
-                sx={{ p: 3, borderStyle: "dashed", textAlign: "center" }}
-              >
-                <Typography>No items found for this vendor.</Typography>
-              </Paper>
-            ) : (
-              <Grid container spacing={2}>
-                {menuItems.map((it) => {
-                  const thumb = isHttpUrl(it.imageUrl) ? it.imageUrl : PLACEHOLDER_IMG;
-                  return (
-                    <Grid key={it.id} item xs={12} sm={6} md={4}>
-                      <Paper
-                        variant="outlined"
-                        sx={{
-                          p: 2,
-                          height: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 2,
-                        }}
-                      >
-                        <Avatar
-                          variant="rounded"
-                          src={thumb}
-                          alt={it.name || "Item"}
-                          sx={{ width: 56, height: 56, flexShrink: 0 }}
-                          imgProps={{ loading: "lazy", referrerPolicy: "no-referrer" }}
-                        />
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="subtitle2" noWrap>
-                            {it.name ?? "Item"}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" noWrap>
-                            ₹{Number(it.price ?? 0).toFixed(2)}
-                          </Typography>
-                        </Box>
-                        <Button
-                          variant="contained"
-                          size="small"
-                          onClick={() => handleAdd(it)}
-                        >
-                          Add
-                        </Button>
-                      </Paper>
-                    </Grid>
-                  );
-                })}
-              </Grid>
-            )}
-          </Box>
+          </Grid>
         )}
       </Paper>
 
