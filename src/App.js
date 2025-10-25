@@ -142,6 +142,14 @@ function App() {
                 }
               />
               <Route
+                path="/vendors"
+                element={
+                  <PrivateRoute>
+                    <Vendors />
+                  </PrivateRoute>
+                }
+              />
+              <Route
                 path="/vendors/:vendorId"
                 element={
                   <PrivateRoute>
