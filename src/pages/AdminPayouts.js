@@ -4,12 +4,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Paper, Stack, Typography, TextField, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Chip, LinearProgress, Tooltip
+  Chip, LinearProgress, Tooltip, Dialog, DialogTitle, DialogContent
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ScheduleIcon from "@mui/icons-material/Schedule";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import { toast } from "react-toastify";
 
 const API = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/,"");
@@ -47,6 +49,12 @@ export default function AdminPayouts() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [busyVendorId, setBusyVendorId] = useState(null);
+
+  // details dialog
+  const [dlgOpen, setDlgOpen] = useState(false);
+  const [dlgVendor, setDlgVendor] = useState({ id: "", name: "" });
+  const [dlgTotals, setDlgTotals] = useState({ gross: 0, platformFee: 0, net: 0 });
+  const [dlgItems, setDlgItems] = useState([]);
 
   const fetchPayouts = async () => {
     setLoading(true);
@@ -139,7 +147,43 @@ export default function AdminPayouts() {
     downloadCsv("admin-payouts", headersCsv, rowsCsv);
   };
 
-  // ---- Actions (only meaningful when source === "payouts") ----
+  // ---- Details + Statement
+  const fetchDetails = async (vendorId) => {
+    try {
+      const r = await fetch(`${API}/api/admin/payouts/vendor/${vendorId}`, { headers });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      setDlgVendor({ id: data.vendorId, name: data.vendorName });
+      setDlgTotals({
+        gross: Number(data.totals?.gross || 0),
+        platformFee: Number(data.totals?.platformFee || 0),
+        net: Number(data.totals?.net || 0),
+      });
+      setDlgItems(Array.isArray(data.items) ? data.items : []);
+      setDlgOpen(true);
+    } catch (e) {
+      toast.error(e?.message || "Failed to load details");
+    }
+  };
+
+  const downloadStatement = async (vendorId) => {
+    try {
+      const res = await fetch(`${API}/api/admin/payouts/vendor/${vendorId}/statement.csv`, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+      a.href = url;
+      a.download = `vendor-${vendorId}-payouts-${stamp}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e?.message || "Failed to download statement");
+    }
+  };
+
+  // ---- Bulk Actions (only meaningful when source === "payouts")
   const markPaid = async (vendorId) => {
     try {
       setBusyVendorId(vendorId);
@@ -182,7 +226,7 @@ export default function AdminPayouts() {
     }
   };
 
-  const actionsEnabled = source === "payouts"; // hide buttons in orders-fallback mode
+  const actionsEnabled = source === "payouts"; // hide buttons in orders-fallback or legacy mode
 
   return (
     <Box p={3}>
@@ -267,6 +311,20 @@ export default function AdminPayouts() {
                   <TableCell align="right">
                     {actionsEnabled ? (
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Tooltip title="View details">
+                          <span>
+                            <IconButton size="small" onClick={() => fetchDetails(vendorId)}>
+                              <VisibilityIcon fontSize="inherit" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Download statement (CSV)">
+                          <span>
+                            <IconButton size="small" onClick={() => downloadStatement(vendorId)}>
+                              <ReceiptLongIcon fontSize="inherit" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
                         <Tooltip title="Mark pending payouts as SCHEDULED">
                           <span>
                             <IconButton
@@ -308,6 +366,51 @@ export default function AdminPayouts() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Details dialog */}
+      <Dialog open={dlgOpen} onClose={() => setDlgOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          Vendor #{dlgVendor.id} — {dlgVendor.name}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.5} sx={{ mb: 2 }}>
+            <Typography variant="body2">Gross: <b>{fmtMoney(dlgTotals.gross)}</b></Typography>
+            <Typography variant="body2">Platform Fee: <b>{fmtMoney(dlgTotals.platformFee)}</b></Typography>
+            <Typography variant="body2">Net: <b>{fmtMoney(dlgTotals.net)}</b></Typography>
+          </Stack>
+
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>ID</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Gross</TableCell>
+                <TableCell align="right">Fee</TableCell>
+                <TableCell align="right">Net</TableCell>
+                <TableCell>Created</TableCell>
+                <TableCell>Scheduled</TableCell>
+                <TableCell>Paid</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {dlgItems.length === 0 ? (
+                <TableRow><TableCell colSpan={8} align="center">No rows</TableCell></TableRow>
+              ) : dlgItems.map((it) => (
+                <TableRow key={it.id}>
+                  <TableCell>{it.id}</TableCell>
+                  <TableCell>{it.status}</TableCell>
+                  <TableCell align="right">{fmtMoney(it.grossAmount)}</TableCell>
+                  <TableCell align="right">{fmtMoney(it.commissionAmount)}</TableCell>
+                  <TableCell align="right">{fmtMoney(it.payoutAmount)}</TableCell>
+                  <TableCell>{it.createdAt ? new Date(it.createdAt).toLocaleString() : "-"}</TableCell>
+                  <TableCell>{it.scheduledAt ? new Date(it.scheduledAt).toLocaleString() : "-"}</TableCell>
+                  <TableCell>{it.paidAt ? new Date(it.paidAt).toLocaleString() : "-"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 }
