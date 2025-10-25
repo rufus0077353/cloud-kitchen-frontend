@@ -6,7 +6,7 @@ import {
   DialogContent, DialogContentText, DialogTitle, FormControl, InputLabel,
   MenuItem, Paper, Select, Snackbar, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
-  Badge, Skeleton, Fade,
+  Badge, Skeleton, Fade, IconButton
 } from "@mui/material";
 import {
   ArrowBack, Delete, Download as DownloadIcon, Edit, Logout,
