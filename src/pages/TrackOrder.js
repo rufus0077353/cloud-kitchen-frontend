@@ -3,27 +3,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Box,
-  Paper,
-  Stack,
-  Typography,
-  Chip,
-  LinearProgress,
-  Divider,
-  Button,
+  Box, Paper, Stack, Typography, Chip, LinearProgress, Divider, Button, Rating
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
-import ReplayIcon from "@mui/icons-material/Replay";
-import CancelScheduleSendIcon from "@mui/icons-material/CancelScheduleSend";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
 import api from "../utils/api";
+import RateOrderDialog from "../components/RateOrderDialog";
 
 const STAGES = ["pending", "accepted", "ready", "delivered"]; // "rejected" handled separately
 
-// MUI Chip: default | primary | secondary | error | info | success | warning
+// MUI Chip accepts: default | primary | secondary | error | info | success | warning
 const COLORS = {
   pending: "default",
   accepted: "info",
@@ -40,12 +32,13 @@ export default function TrackOrder() {
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false); // for actions
+
+  // rate dialog
+  const [rateOpen, setRateOpen] = useState(false);
 
   const fetchOrder = async () => {
     setLoading(true);
     try {
-      // api base already has /api
       const { data } = await api.get(`/orders/${id}`);
       setOrder(data);
     } catch (err) {
@@ -88,93 +81,16 @@ export default function TrackOrder() {
     return Math.min(100, Math.max(0, (stageIndex / totalSteps) * 100));
   }, [stageIndex, isRejected]);
 
-  // ---------- action guards ----------
-  const paymentMethod = String(order?.paymentMethod || "").toLowerCase(); // "cod" | "mock_online" | "online"
-  const paymentStatus = String(order?.paymentStatus || "unpaid").toLowerCase(); // "unpaid" | "paid" | "processing"
-  const canCancel =
-    (statusLc === "pending" || statusLc === "accepted") &&
-    (paymentMethod === "cod" || paymentStatus !== "paid"); // allow cancel until prep, unless already paid online
-  const canReorder = statusLc === "delivered" || statusLc === "rejected";
-
-  // ---------- actions ----------
-  const cancelOrder = async () => {
-    if (!canCancel) return;
-    setBusy(true);
-    try {
-      const { data } = await api.patch(`/orders/${id}/cancel`);
-      // optimistic merge
-      setOrder((prev) => ({ ...(prev || {}), ...(data || {}), status: "rejected" }));
-      toast.success("Order cancelled");
-    } catch (err) {
-      console.error(err);
-      toast.error(err?.response?.data?.message || "Failed to cancel order");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reorder = async () => {
-    if (!canReorder) return;
-    setBusy(true);
-    try {
-      // Primary attempt: dedicated reorder endpoint
-      await api.post(`/orders/${id}/reorder`);
-      toast.success("Items added from past order. Opening cart…");
-      // If your cart drawer exists, send them to checkout directly or open cart.
-      // Navigate to checkout (adjust if you prefer opening a drawer instead)
-      navigate("/checkout");
-    } catch (err) {
-      // Fallback UX if endpoint not present
-      console.error(err);
-      const msg =
-        err?.response?.status === 404
-          ? "Reorder is not available for this order."
-          : err?.response?.data?.message || "Failed to reorder";
-      toast.error(msg);
-    } finally {
-      setBusy(false);
-    }
+  const onRated = (updated) => {
+    setOrder((prev) => (prev ? { ...prev, ...updated } : updated));
   };
 
   return (
     <Box sx={{ py: 3 }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "flex-start", sm: "center" }}
-        justifyContent="space-between"
-        sx={{ mb: 2 }}
-        spacing={1.5}
-      >
-        <Button onClick={() => navigate(-1)} startIcon={<ArrowBackIcon />}>
-          Back
-        </Button>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Button onClick={() => navigate(-1)} startIcon={<ArrowBackIcon />}>Back</Button>
         <Typography variant="h5">Track Order #{id}</Typography>
-
-        {/* Actions on the right */}
-        {!!order && (
-          <Stack direction="row" spacing={1} sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}>
-            <Button
-              size="small"
-              variant="outlined"
-              color="warning"
-              onClick={cancelOrder}
-              disabled={!canCancel || busy}
-              startIcon={<CancelScheduleSendIcon />}
-            >
-              Cancel Order
-            </Button>
-            <Button
-              size="small"
-              variant="contained"
-              color="primary"
-              onClick={reorder}
-              disabled={!canReorder || busy}
-              startIcon={<ReplayIcon />}
-            >
-              Reorder
-            </Button>
-          </Stack>
-        )}
+        <span />
       </Stack>
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
@@ -186,10 +102,10 @@ export default function TrackOrder() {
       ) : (
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
-            {/* Header chips */}
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-              <Typography variant="subtitle1">{order.Vendor?.name || "Vendor"}</Typography>
-
+              <Typography variant="subtitle1">
+                {order.Vendor?.name || "Vendor"}
+              </Typography>
               <Chip
                 size="small"
                 label={statusLc.toUpperCase()}
@@ -198,11 +114,8 @@ export default function TrackOrder() {
               <Chip
                 size="small"
                 variant="outlined"
-                label={`${
-                  paymentMethod === "online" || paymentMethod === "mock_online" ? "Online" : "COD"
-                } · ${(order.paymentStatus || "unpaid").toUpperCase()}`}
+                label={`${(order.paymentMethod === "online" || order.paymentMethod === "mock_online") ? "Online" : "COD"} · ${(order.paymentStatus || "unpaid").toUpperCase()}`}
               />
-
               <Typography variant="subtitle2" sx={{ ml: "auto" }}>
                 Total: {rupee(order.totalAmount)}
               </Typography>
@@ -223,9 +136,7 @@ export default function TrackOrder() {
                   return (
                     <Stack key={s} alignItems="center" sx={{ width: "25%" }}>
                       <Icon fontSize="small" color={done ? "success" : "disabled"} />
-                      <Typography variant="caption" sx={{ mt: 0.5 }}>
-                        {s}
-                      </Typography>
+                      <Typography variant="caption" sx={{ mt: 0.5 }}>{s}</Typography>
                     </Stack>
                   );
                 })}
@@ -237,14 +148,34 @@ export default function TrackOrder() {
               )}
             </Box>
 
+            {/* Rate CTA (only if delivered) */}
+            {statusLc === "delivered" && (
+              <Box>
+                <Divider sx={{ my: 1.5 }} />
+                {!order.rating ? (
+                  <Stack direction={{ xs: "column", sm: "row" }} alignItems="center" spacing={1.5}>
+                    <Typography variant="subtitle1">How was your order?</Typography>
+                    <Button variant="outlined" onClick={() => setRateOpen(true)}>
+                      Rate this order
+                    </Button>
+                  </Stack>
+                ) : (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography variant="subtitle1">Your rating:</Typography>
+                    <Rating value={Number(order.rating)} readOnly />
+                    {order.review && (
+                      <Typography variant="body2" color="text.secondary">“{order.review}”</Typography>
+                    )}
+                  </Stack>
+                )}
+              </Box>
+            )}
+
             <Divider />
 
             {/* Items */}
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Items
-              </Typography>
-
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>Items</Typography>
               {Array.isArray(order?.MenuItems) && order.MenuItems.length > 0 ? (
                 <Stack spacing={0.5}>
                   {order.MenuItems.map((mi) => (
@@ -268,9 +199,7 @@ export default function TrackOrder() {
                   ))}
                 </Stack>
               ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No items
-                </Typography>
+                <Typography variant="body2" color="text.secondary">No items</Typography>
               )}
             </Box>
 
@@ -281,6 +210,16 @@ export default function TrackOrder() {
             </Typography>
           </Stack>
         </Paper>
+      )}
+
+      {/* Rate dialog */}
+      {order && (
+        <RateOrderDialog
+          open={rateOpen}
+          onClose={() => setRateOpen(false)}
+          order={order}
+          onRated={onRated}
+        />
       )}
     </Box>
   );

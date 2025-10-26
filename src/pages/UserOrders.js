@@ -1,17 +1,16 @@
 
-// src/pages/UserOrders.js — polished + Reorder
+// src/pages/UserOrders.js — with Rate dialog
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Button, Chip, CircularProgress, Container, Dialog, DialogActions,
   DialogContent, DialogContentText, DialogTitle, FormControl, InputLabel,
   MenuItem, Paper, Select, Snackbar, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
-  Badge, Skeleton, Fade, IconButton
+  Badge, Skeleton, Fade, IconButton, Rating
 } from "@mui/material";
 import {
   ArrowBack, Delete, Download as DownloadIcon, Edit, Logout,
   ReceiptLong, ShoppingCart as ShoppingCartIcon, Storefront as StorefrontIcon,
-  Replay as ReplayIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -19,6 +18,7 @@ import { socket } from "../utils/socket";
 import CartDrawer from "../components/CartDrawer";
 import { useCart } from "../context/CartContext";
 import PaymentBadge from "../components/PaymentBadge";
+import RateOrderDialog from "../components/RateOrderDialog";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -54,10 +54,13 @@ export default function UserOrders() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [openCart, setOpenCart] = useState(false);
 
-  // cart utils (added for Reorder)
-  const { totalQty, addItem, clear, vendorId: cartVendorId } = useCart();
+  // rating dialog state
+  const [rateOpen, setRateOpen] = useState(false);
+  const [rateTarget, setRateTarget] = useState(null);
 
+  const { totalQty } = useCart();
   const navigate = useNavigate();
+
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -65,28 +68,6 @@ export default function UserOrders() {
 
   const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
-  // Extract robust line items from any order shape
-  const getLineItems = (order) => {
-    if (Array.isArray(order?.OrderItems)) {
-      return order.OrderItems.map((oi) => ({
-        id: oi.MenuItem?.id ?? oi.MenuItemId ?? oi.id,
-        name: oi.MenuItem?.name || "Item",
-        price: Number(oi.MenuItem?.price ?? 0),
-        quantity: Number(oi.quantity ?? 1),
-      })).filter((x) => x.id);
-    }
-    if (Array.isArray(order?.MenuItems)) {
-      return order.MenuItems.map((mi) => ({
-        id: mi.id,
-        name: mi.name || "Item",
-        price: Number(mi.price ?? 0),
-        quantity: Number(mi.OrderItem?.quantity ?? 1),
-      })).filter((x) => x.id);
-    }
-    return [];
-  };
-
-  // ---------- data ----------
   const fetchOrders = async (opts = {}) => {
     if (!token) return navigate("/login");
     const p = opts.page ?? page;
@@ -111,7 +92,8 @@ export default function UserOrders() {
         : Array.isArray(data)
         ? data
         : [];
-      const filtered = status === "all" ? list : list.filter((o) => o.status === status);
+      const normalized = [...list].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const filtered = status === "all" ? normalized : normalized.filter((o) => o.status === status);
       setOrders(filtered);
       setTotal(filtered.length);
     } catch {
@@ -122,10 +104,25 @@ export default function UserOrders() {
     }
   };
 
-  useEffect(() => { fetchOrders({ page: 0 }); }, []); // initial
+  useEffect(() => { fetchOrders({ page: 0 }); /* initial */ }, []);
   useEffect(() => { fetchOrders({ page, rowsPerPage, statusFilter }); }, [page, rowsPerPage, statusFilter]);
 
-  // ---------- actions ----------
+  // live updates
+  useEffect(() => {
+    if (!user?.id) return;
+    const refill = () => fetchOrders({ page, rowsPerPage, statusFilter });
+    socket.emit("user:join", user.id);
+    socket.on("order:new", refill);
+    socket.on("order:status", refill);
+    socket.on("order:payment", refill);
+    return () => {
+      socket.off("order:new", refill);
+      socket.off("order:status", refill);
+      socket.off("order:payment", refill);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, page, rowsPerPage, statusFilter]);
+
   const cancelOrder = async (id) => {
     try {
       const res = await fetch(`${API}/api/orders/${id}/cancel`, {
@@ -157,54 +154,13 @@ export default function UserOrders() {
   const handleDelete = async (id) => {
     try {
       const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers });
-      if (!res.ok) return toast.error("Delete failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast.error(data?.message || "Delete failed");
       toast.info("Order deleted");
       setOpenDialog(false);
       fetchOrders({ page, rowsPerPage, statusFilter });
     } catch {
       toast.error("Server error");
-    }
-  };
-
-  // NEW: Reorder
-  const reorder = (order) => {
-    try {
-      const vendorId = order?.VendorId ?? order?.Vendor?.id ?? order?.vendorId;
-      if (!vendorId) {
-        toast.error("Cannot reorder: missing vendor");
-        return;
-      }
-      const lines = getLineItems(order);
-      if (lines.length === 0) {
-        toast.error("No items found in this order");
-        return;
-      }
-
-      // single-vendor cart rule → clear if different vendor
-      if (cartVendorId && String(cartVendorId) !== String(vendorId)) {
-        clear();
-      }
-
-      // Add each item with its quantity
-      for (const li of lines) {
-        const qty = Math.max(1, Number(li.quantity || 1));
-        addItem(
-          {
-            id: li.id,
-            name: li.name,
-            price: li.price,
-            qty,            // addItem sums if already present
-            vendorId,
-            imageUrl: null, // optional
-          },
-          0 // delta not needed; we pass qty above
-        );
-      }
-
-      setOpenCart(true);
-      toast.success(`Added ${lines.length} item(s) to cart from order #${order.id}`);
-    } catch {
-      toast.error("Failed to reorder");
     }
   };
 
@@ -225,6 +181,10 @@ export default function UserOrders() {
       </Box>
     </Fade>
   );
+
+  const onRated = (updated) => {
+    setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
+  };
 
   return (
     <Container sx={{ py: 3 }}>
@@ -289,9 +249,7 @@ export default function UserOrders() {
             <TableBody>
               {loading
                 ? [...Array(5)].map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={7}><Skeleton height={40} /></TableCell>
-                    </TableRow>
+                    <TableRow key={i}><TableCell colSpan={7}><Skeleton height={40} /></TableCell></TableRow>
                   ))
                 : orders.length === 0
                 ? (
@@ -300,10 +258,17 @@ export default function UserOrders() {
                 : orders.map((o) => {
                     const payMethod = o.paymentMethod || "cod";
                     const canCancel = o.status === "pending" && o.paymentStatus !== "paid";
+                    const isDelivered = o.status === "delivered";
                     return (
                       <TableRow key={o.id} hover>
                         <TableCell>#{o.id}</TableCell>
-                        <TableCell>{o.Vendor?.name || "-"}</TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography>{o.Vendor?.name || "-"}</Typography>
+                            {/* read-only stars if already rated */}
+                            {o.rating ? <Rating value={Number(o.rating)} readOnly size="small" /> : null}
+                          </Stack>
+                        </TableCell>
                         <TableCell><StatusChip status={o.status} /></TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={1} alignItems="center">
@@ -325,24 +290,29 @@ export default function UserOrders() {
                             </IconButton>
                           </Tooltip>
 
-                          <Tooltip title="Reorder these items">
-                            <span>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                startIcon={<ReplayIcon />}
-                                onClick={() => reorder(o)}
-                                sx={{ mr: 1 }}
-                              >
-                                Reorder
-                              </Button>
-                            </span>
-                          </Tooltip>
+                          {isDelivered && !o.rating && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              sx={{ mr: 1 }}
+                              onClick={() => { setRateTarget(o); setRateOpen(true); }}
+                            >
+                              Rate
+                            </Button>
+                          )}
 
                           <Button
                             size="small"
-                            onClick={() => navigate(`/track/${o.id}`)}
+                            color="warning"
+                            variant="outlined"
+                            sx={{ mr: 1 }}
+                            onClick={() => cancelOrder(o.id)}
+                            disabled={!canCancel}
                           >
+                            Cancel
+                          </Button>
+
+                          <Button size="small" onClick={() => navigate(`/track/${o.id}`)}>
                             Track
                           </Button>
 
@@ -380,6 +350,14 @@ export default function UserOrders() {
           <Button color="error" onClick={() => handleDelete(orderToDelete)}>Delete</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Rate dialog */}
+      <RateOrderDialog
+        open={rateOpen}
+        onClose={() => setRateOpen(false)}
+        order={rateTarget}
+        onRated={onRated}
+      />
 
       {/* Cart Drawer */}
       <CartDrawer open={openCart} onClose={() => setOpenCart(false)} />
