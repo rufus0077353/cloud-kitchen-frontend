@@ -1,5 +1,5 @@
 
-// src/pages/UserOrders.js — with Rate dialog
+// src/pages/UserOrders.js — resilient fetch with fallbacks + Refresh
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Button, Chip, CircularProgress, Container, Dialog, DialogActions,
@@ -11,6 +11,7 @@ import {
 import {
   ArrowBack, Delete, Download as DownloadIcon, Edit, Logout,
   ReceiptLong, ShoppingCart as ShoppingCartIcon, Storefront as StorefrontIcon,
+  Refresh as RefreshIcon
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -22,7 +23,7 @@ import RateOrderDialog from "../components/RateOrderDialog";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
-/* ---------- status chip helper ---------- */
+/* ---------- helpers ---------- */
 const STATUS_COLORS = {
   pending: "default",
   accepted: "primary",
@@ -41,6 +42,8 @@ function StatusChip({ status }) {
     />
   );
 }
+const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
+const safeArray = (v) => (Array.isArray(v) ? v : []);
 
 export default function UserOrders() {
   const [orders, setOrders] = useState([]);
@@ -54,7 +57,7 @@ export default function UserOrders() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [openCart, setOpenCart] = useState(false);
 
-  // rating dialog state
+  // rating dialog
   const [rateOpen, setRateOpen] = useState(false);
   const [rateTarget, setRateTarget] = useState(null);
 
@@ -63,55 +66,94 @@ export default function UserOrders() {
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-  const safeArray = (v) => (Array.isArray(v) ? v : []);
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
 
-  const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
-
-  const fetchOrders = async (opts = {}) => {
-    if (!token) return navigate("/login");
-    const p = opts.page ?? page;
-    const rpp = opts.rowsPerPage ?? rowsPerPage;
-    const status = opts.statusFilter ?? statusFilter;
-    setLoading(true);
-    try {
-      const url =
-        status === "all"
-          ? `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`
-          : `${API}/api/orders/my?page=0`;
-      const res = await fetch(url, { headers, credentials: "include" });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear(); navigate("/login"); return;
-      }
-      const data = await res.json().catch(() => []);
-      const list = Array.isArray(data?.items)
+  // --- normalize any backend shape into a stable array ---
+  const normalize = (data) => {
+    const list =
+      Array.isArray(data?.items) && typeof data?.total === "number"
         ? data.items
         : Array.isArray(data?.orders)
         ? data.orders
         : Array.isArray(data)
         ? data
         : [];
-      const normalized = [...list].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
-      const filtered = status === "all" ? normalized : normalized.filter((o) => o.status === status);
+    // newest first
+    return [...list].sort(
+      (a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0)
+    );
+  };
+
+  // --- resilient fetch that tries multiple endpoints/shapes ---
+  const fetchOrders = async (opts = {}) => {
+    if (!token) { navigate("/login"); return; }
+
+    const p = opts.page ?? page;
+    const rpp = opts.rowsPerPage ?? rowsPerPage;
+    const status = opts.statusFilter ?? statusFilter;
+
+    const urlCandidates =
+      status === "all"
+        ? [
+            `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`, // preferred paginated
+            `${API}/api/orders/my`,                               // full list (fallback)
+            `${API}/api/orders/my?page=0`,                        // some backends treat 0 as "all"
+          ]
+        : [
+            `${API}/api/orders/my?page=0`,
+            `${API}/api/orders/my`,
+          ];
+
+    setLoading(true);
+    try {
+      let got = null;
+      for (const url of urlCandidates) {
+        const res = await fetch(url, { headers, credentials: "include" });
+        if (res.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          localStorage.clear(); navigate("/login"); return;
+        }
+        if (!res.ok) continue;
+        const payload = await res.json().catch(() => null);
+        const list = normalize(payload);
+        // accept if we have data or this is the last candidate
+        if (list.length || url === urlCandidates[urlCandidates.length - 1]) {
+          got = { list, raw: payload };
+          break;
+        }
+      }
+
+      const full = got?.list ?? [];
+      const filtered = status === "all" ? full : full.filter((o) => o.status === status);
+      // if the very first (paginated) call returned items+total, prefer its total
+      let totalCount =
+        typeof got?.raw?.total === "number" ? Number(got.raw.total) : filtered.length;
+
       setOrders(filtered);
-      setTotal(filtered.length);
-    } catch {
+      setTotal(totalCount);
+    } catch (e) {
+      console.error("orders fetch error", e);
       setError("Failed to fetch orders");
       setOrders([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchOrders({ page: 0 }); /* initial */ }, []);
-  useEffect(() => { fetchOrders({ page, rowsPerPage, statusFilter }); }, [page, rowsPerPage, statusFilter]);
+  useEffect(() => { fetchOrders({ page: 0 }); }, []); // initial load
+  useEffect(() => { fetchOrders({ page, rowsPerPage, statusFilter }); },
+    [page, rowsPerPage, statusFilter]);
 
   // live updates
   useEffect(() => {
     if (!user?.id) return;
     const refill = () => fetchOrders({ page, rowsPerPage, statusFilter });
-    socket.emit("user:join", user.id);
+    try { socket.emit("user:join", user.id); } catch {}
     socket.on("order:new", refill);
     socket.on("order:status", refill);
     socket.on("order:payment", refill);
@@ -164,10 +206,7 @@ export default function UserOrders() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate("/login");
-  };
+  const handleLogout = () => { localStorage.clear(); navigate("/login"); };
 
   const EmptyState = () => (
     <Fade in timeout={400}>
@@ -196,10 +235,13 @@ export default function UserOrders() {
           <Button startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>
             Browse
           </Button>
+          <Button startIcon={<RefreshIcon />} onClick={() => fetchOrders({ page, rowsPerPage, statusFilter })}>
+            Refresh
+          </Button>
           <Button
             variant="outlined"
             startIcon={
-              <Badge color="primary" badgeContent={totalQty} invisible={!totalQty}>
+              <Badge color="primary" badgeContent={useCart().totalQty} invisible={!useCart().totalQty}>
                 <ShoppingCartIcon />
               </Badge>
             }
@@ -207,7 +249,7 @@ export default function UserOrders() {
           >
             Cart
           </Button>
-          <Button variant="contained" onClick={() => navigate("/checkout")} disabled={!totalQty}>
+          <Button variant="contained" onClick={() => navigate("/checkout")} disabled={!useCart().totalQty}>
             Checkout
           </Button>
           <Button color="secondary" variant="contained" startIcon={<Logout />} onClick={handleLogout}>
@@ -265,7 +307,6 @@ export default function UserOrders() {
                         <TableCell>
                           <Stack direction="row" spacing={1} alignItems="center">
                             <Typography>{o.Vendor?.name || "-"}</Typography>
-                            {/* read-only stars if already rated */}
                             {o.rating ? <Rating value={Number(o.rating)} readOnly size="small" /> : null}
                           </Stack>
                         </TableCell>
@@ -277,7 +318,7 @@ export default function UserOrders() {
                           </Stack>
                         </TableCell>
                         <TableCell>{rupee(o.totalAmount)}</TableCell>
-                        <TableCell>{new Date(o.createdAt).toLocaleString()}</TableCell>
+                        <TableCell>{o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}</TableCell>
                         <TableCell align="right">
                           <Tooltip title="Receipt (HTML)">
                             <IconButton onClick={() => openInvoice(o.id)}>
