@@ -1,11 +1,12 @@
 
+// src/pages/UserOrders.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box, Button, Chip, Container, Dialog, DialogActions,
-  DialogContent, DialogContentText, DialogTitle, FormControl,
-  InputLabel, MenuItem, Paper, Select, Snackbar, Stack, Table,
-  TableBody, TableCell, TableContainer, TableHead, TablePagination,
-  TableRow, Tooltip, Typography, Badge, Skeleton, Fade, IconButton, Rating
+  Box, Button, Chip, CircularProgress, Container, Dialog, DialogActions,
+  DialogContent, DialogContentText, DialogTitle, FormControl, InputLabel,
+  MenuItem, Paper, Select, Snackbar, Stack, Table, TableBody, TableCell,
+  TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
+  Badge, Skeleton, Fade, IconButton
 } from "@mui/material";
 import {
   ArrowBack, Delete, Download as DownloadIcon, Edit, Logout,
@@ -17,7 +18,6 @@ import { socket } from "../utils/socket";
 import CartDrawer from "../components/CartDrawer";
 import { useCart } from "../context/CartContext";
 import PaymentBadge from "../components/PaymentBadge";
-import RateOrderDialog from "../components/RateOrderDialog";
 
 const API = process.env.REACT_APP_API_BASE_URL || "";
 
@@ -29,15 +29,17 @@ const STATUS_COLORS = {
   delivered: "success",
   rejected: "error",
 };
-const StatusChip = ({ status }) => (
-  <Chip
-    label={status}
-    color={STATUS_COLORS[status] || "default"}
-    size="small"
-    variant="filled"
-    sx={{ textTransform: "capitalize" }}
-  />
-);
+function StatusChip({ status }) {
+  return (
+    <Chip
+      label={status}
+      color={STATUS_COLORS[status] || "default"}
+      size="small"
+      variant="filled"
+      sx={{ textTransform: "capitalize" }}
+    />
+  );
+}
 
 export default function UserOrders() {
   const [orders, setOrders] = useState([]);
@@ -45,61 +47,153 @@ export default function UserOrders() {
   const [openDialog, setOpenDialog] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
 
+  // pagination
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
 
+  // cart drawer
   const [openCart, setOpenCart] = useState(false);
   const { totalQty } = useCart();
-  const navigate = useNavigate();
 
-  const [rateOpen, setRateOpen] = useState(false);
-  const [rateTarget, setRateTarget] = useState(null);
+  const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
   const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
-  const normalizeResponse = (data) => {
-    if (Array.isArray(data?.items)) return data.items;
-    if (Array.isArray(data?.orders)) return data.orders;
-    if (Array.isArray(data)) return data;
+  // unify line items for tooltip
+  const getLineItems = (order) => {
+    if (Array.isArray(order?.OrderItems)) {
+      return order.OrderItems.map((oi) => ({
+        name: oi.MenuItem?.name || "Item",
+        quantity: oi.quantity ?? 1,
+        price: oi.MenuItem?.price ?? 0,
+      }));
+    }
+    if (Array.isArray(order?.MenuItems)) {
+      return order.MenuItems.map((mi) => ({
+        name: mi.name,
+        quantity: mi?.OrderItem?.quantity ?? 1,
+        price: mi.price ?? 0,
+      }));
+    }
     return [];
   };
 
+  const ItemsTooltip = ({ items }) => (
+    <Box sx={{ whiteSpace: "pre-line" }}>
+      {items.length
+        ? items
+            .map((it) => `${it.name} × ${it.quantity} = ${rupee(Number(it.price) * Number(it.quantity))}`)
+            .join("\n")
+        : "No items"}
+    </Box>
+  );
+
+  /** Robustly pick array + total from any payload shape */
+  const normalizePayload = (data) => {
+    if (!data) return { list: [], total: 0 };
+    if (Array.isArray(data?.items) && typeof data?.total === "number") {
+      return { list: data.items, total: Number(data.total) };
+    }
+    if (Array.isArray(data?.orders)) {
+      return { list: data.orders, total: data.orders.length };
+    }
+    if (Array.isArray(data?.rows)) {
+      return { list: data.rows, total: Number(data?.count ?? data.rows.length) };
+    }
+    if (Array.isArray(data)) {
+      return { list: data, total: data.length };
+    }
+    // some APIs wrap as {data:[...]}
+    if (Array.isArray(data?.data)) {
+      return { list: data.data, total: data.data.length };
+    }
+    return { list: [], total: 0 };
+  };
+
+  /** Sort newest first, tolerant of createdAt/created_at missing */
+  const sortOrders = (arr) =>
+    [...arr].sort((a, b) => {
+      const aT = new Date(a.createdAt || a.created_at || 0).getTime();
+      const bT = new Date(b.createdAt || b.created_at || 0).getTime();
+      return bT - aT || Number(b.id) - Number(a.id);
+    });
+
+  /**
+   * Fetch orders with fallbacks:
+   * 1) /api/orders/my?page=&pageSize=
+   * 2) /api/orders/my
+   * 3) /api/orders  (last resort)
+   */
   const fetchOrders = async (opts = {}) => {
-    if (!token) return navigate("/login");
-    const p = opts.page ?? page;
-    const rpp = opts.rowsPerPage ?? rowsPerPage;
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    const p = typeof opts.page === "number" ? opts.page : page;
+    const rpp = typeof opts.rowsPerPage === "number" ? opts.rowsPerPage : rowsPerPage;
     const status = opts.statusFilter ?? statusFilter;
 
     setLoading(true);
     try {
-      const url =
+      const endpoints = [
         status === "all"
           ? `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`
-          : `${API}/api/orders/my?page=0`;
-      const res = await fetch(url, { headers, credentials: "include" });
-      if (res.status === 401) {
-        toast.error("Session expired. Please log in again.");
-        localStorage.clear();
-        navigate("/login");
-        return;
-      }
-      const data = await res.json().catch(() => []);
-      const list = normalizeResponse(data);
+          : `${API}/api/orders/my?page=0`,
+        `${API}/api/orders/my`,
+        `${API}/api/orders`,
+      ];
 
-      const filtered = status === "all" ? list : list.filter((o) => o.status === status);
-      filtered.sort(
-        (a, b) =>
-          new Date(b.createdAt || 0) - new Date(a.createdAt || 0) || Number(b.id) - Number(a.id)
-      );
-      setOrders(filtered);
-      setTotal(filtered.length);
-    } catch {
+      let got = { list: [], total: 0 };
+      for (const url of endpoints) {
+        const res = await fetch(url, { headers, credentials: "include" });
+        if (res.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          localStorage.clear();
+          navigate("/login");
+          return;
+        }
+        // ignore 404/204 silently and try next endpoint
+        if (!res.ok) continue;
+
+        const data = await res.json().catch(() => null);
+        const { list, total: t } = normalizePayload(data);
+        if (list.length) {
+          got = { list, total: t || list.length };
+          break;
+        }
+        // if server gave items but empty, still preserve "total"
+        got = { list, total: t || 0 };
+      }
+
+      const all = sortOrders(got.list);
+
+      if (status === "all") {
+        // If the first endpoint returned paged items + total, keep as-is;
+        // otherwise slice client-side
+        if (got.total > all.length) {
+          setOrders(all); // server already paginated; `total` > current length
+          setTotal(got.total);
+        } else {
+          const start = p * rpp;
+          setOrders(all.slice(start, start + rpp));
+          setTotal(all.length);
+        }
+      } else {
+        const filtered = all.filter((o) => String(o.status) === status);
+        const start = p * rpp;
+        setOrders(filtered.slice(start, start + rpp));
+        setTotal(filtered.length);
+      }
+    } catch (e) {
       setError("Failed to fetch orders");
       setOrders([]);
       setTotal(0);
@@ -108,42 +202,71 @@ export default function UserOrders() {
     }
   };
 
+  // initial
   useEffect(() => {
     fetchOrders({ page: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // react to controls
   useEffect(() => {
     fetchOrders({ page, rowsPerPage, statusFilter });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, rowsPerPage, statusFilter]);
 
-  // live socket updates
+  // live updates via socket
   useEffect(() => {
     if (!user?.id) return;
+
+    const join = () => { try { socket.emit("user:join", user.id); } catch {} };
     const refill = () => fetchOrders({ page, rowsPerPage, statusFilter });
-    socket.emit("user:join", user.id);
-    socket.on("order:new", refill);
-    socket.on("order:status", refill);
+
+    join();
+    const onConnect = () => { join(); refill(); };
+    const onNew = (fullOrder) => {
+      if (Number(fullOrder?.UserId) !== Number(user.id)) return;
+      toast.info(`New order #${fullOrder?.id ?? ""} placed`);
+      refill();
+    };
+    const onStatus = (payload) => {
+      if (Number(payload?.UserId) !== Number(user.id)) return;
+      toast.success(`Order #${payload?.id ?? ""} is now ${payload?.status}`);
+      refill();
+    };
+
+    socket.on("connect", onConnect);
+    socket.on("order:new", onNew);
+    socket.on("order:status", onStatus);
+    socket.on("payment:processing", refill);
+    socket.on("payment:success", refill);
+    socket.on("payment:failed", refill);
     socket.on("order:payment", refill);
+
     return () => {
-      socket.off("order:new", refill);
-      socket.off("order:status", refill);
+      socket.off("connect", onConnect);
+      socket.off("order:new", onNew);
+      socket.off("order:status", onStatus);
+      socket.off("payment:processing", refill);
+      socket.off("payment:success", refill);
+      socket.off("payment:failed", refill);
       socket.off("order:payment", refill);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, page, rowsPerPage, statusFilter]);
 
   const cancelOrder = async (id) => {
     try {
       const res = await fetch(`${API}/api/orders/${id}/cancel`, {
-        method: "PATCH", headers, credentials: "include",
+        method: "PATCH",
+        headers,
+        credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast.error(data?.message || "Failed to cancel order");
       toast.success("Order cancelled");
       fetchOrders({ page, rowsPerPage, statusFilter });
     } catch {
-      toast.error("Network error");
+      toast.error("Network error while cancelling");
     }
   };
 
@@ -154,8 +277,8 @@ export default function UserOrders() {
       if (!res.ok) return toast.error("Invoice not found");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       toast.error("Failed to open invoice");
     }
@@ -163,13 +286,17 @@ export default function UserOrders() {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers });
+      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers, credentials: "include" });
       if (!res.ok) return toast.error("Delete failed");
       toast.info("Order deleted");
       setOpenDialog(false);
-      fetchOrders({ page, rowsPerPage, statusFilter });
+      const newTotal = Math.max(0, total - 1);
+      const maxPageIndex = Math.max(0, Math.ceil(newTotal / rowsPerPage) - 1);
+      const nextPage = Math.min(page, maxPageIndex);
+      setPage(nextPage);
+      fetchOrders({ page: nextPage, rowsPerPage, statusFilter });
     } catch {
-      toast.error("Server error");
+      toast.error("Server error while deleting");
     }
   };
 
@@ -182,21 +309,14 @@ export default function UserOrders() {
     <Fade in timeout={400}>
       <Box sx={{ py: 6, textAlign: "center" }}>
         <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-          No orders yet.
+          No orders found.
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<StorefrontIcon />}
-          onClick={() => navigate("/vendors")}
-        >
+        <Button variant="outlined" startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>
           Browse Vendors
         </Button>
       </Box>
     </Fade>
   );
-
-  const onRated = (updated) =>
-    setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
 
   return (
     <Container sx={{ py: 3 }}>
@@ -209,7 +329,7 @@ export default function UserOrders() {
           <Button
             variant="outlined"
             startIcon={
-              <Badge color="primary" badgeContent={totalQty} invisible={!totalQty}>
+              <Badge color="primary" badgeContent={useCart().totalQty} invisible={!useCart().totalQty}>
                 <ShoppingCartIcon />
               </Badge>
             }
@@ -259,28 +379,23 @@ export default function UserOrders() {
             <TableBody>
               {loading
                 ? [...Array(5)].map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={7}><Skeleton height={40} /></TableCell>
-                    </TableRow>
+                    <TableRow key={i}><TableCell colSpan={7}><Skeleton height={40} /></TableCell></TableRow>
                   ))
                 : orders.length === 0
                 ? (
-                  <TableRow><TableCell colSpan={7}><EmptyState /></TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={7}><EmptyState /></TableCell>
+                  </TableRow>
                 )
                 : orders.map((o) => {
                     const payMethod = o.paymentMethod || "cod";
                     const canCancel = o.status === "pending" && o.paymentStatus !== "paid";
-                    const isDelivered = o.status === "delivered";
+                    const items = getLineItems(o);
 
                     return (
                       <TableRow key={o.id} hover>
                         <TableCell>#{o.id}</TableCell>
-                        <TableCell>
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <Typography>{o.Vendor?.name || "-"}</Typography>
-                            {o.rating ? <Rating value={Number(o.rating)} readOnly size="small" /> : null}
-                          </Stack>
-                        </TableCell>
+                        <TableCell>{o.Vendor?.name || "-"}</TableCell>
                         <TableCell><StatusChip status={o.status} /></TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={1} alignItems="center">
@@ -289,29 +404,18 @@ export default function UserOrders() {
                           </Stack>
                         </TableCell>
                         <TableCell>{rupee(o.totalAmount)}</TableCell>
-                        <TableCell>{new Date(o.createdAt).toLocaleString()}</TableCell>
+                        <TableCell>{o.createdAt || o.created_at ? new Date(o.createdAt || o.created_at).toLocaleString() : "-"}</TableCell>
                         <TableCell align="right">
-                          <Tooltip title="Receipt">
-                            <IconButton onClick={() => openInvoice(o.id)}>
-                              <ReceiptLong />
-                            </IconButton>
+                          <Tooltip title={<ItemsTooltip items={items} />}>
+                            <span>
+                              <IconButton onClick={() => openInvoice(o.id)} aria-label="Receipt">
+                                <ReceiptLong />
+                              </IconButton>
+                              <IconButton onClick={() => openInvoice(o.id, true)} aria-label="PDF">
+                                <DownloadIcon />
+                              </IconButton>
+                            </span>
                           </Tooltip>
-                          <Tooltip title="Download PDF">
-                            <IconButton onClick={() => openInvoice(o.id, true)}>
-                              <DownloadIcon />
-                            </IconButton>
-                          </Tooltip>
-
-                          {isDelivered && !o.rating && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              sx={{ mr: 1 }}
-                              onClick={() => { setRateTarget(o); setRateOpen(true); }}
-                            >
-                              Rate
-                            </Button>
-                          )}
 
                           <Button
                             size="small"
@@ -323,13 +427,12 @@ export default function UserOrders() {
                           >
                             Cancel
                           </Button>
-
                           <Button size="small" onClick={() => navigate(`/track/${o.id}`)}>Track</Button>
 
-                          <IconButton color="error" onClick={() => { setOrderToDelete(o.id); setOpenDialog(true); }}>
+                          <IconButton color="error" onClick={() => { setOrderToDelete(o.id); setOpenDialog(true); }} aria-label="Delete">
                             <Delete />
                           </IconButton>
-                          <IconButton disabled><Edit /></IconButton>
+                          <IconButton disabled aria-label="Edit"><Edit /></IconButton>
                         </TableCell>
                       </TableRow>
                     );
@@ -343,7 +446,7 @@ export default function UserOrders() {
           page={page}
           onPageChange={(_, newPage) => setPage(newPage)}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => { setRowsPerPage(+e.target.value); setPage(0); }}
+          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10) || 10); setPage(0); }}
           rowsPerPageOptions={[5, 10, 20]}
           labelRowsPerPage="Rows:"
         />
@@ -361,16 +464,7 @@ export default function UserOrders() {
         </DialogActions>
       </Dialog>
 
-      {/* Rating dialog */}
-      <RateOrderDialog
-        open={rateOpen}
-        onClose={() => setRateOpen(false)}
-        order={rateTarget}
-        onRated={onRated}
-      />
-
       {/* Cart Drawer */}
       <CartDrawer open={openCart} onClose={() => setOpenCart(false)} />
     </Container>
   );
-}
