@@ -2,15 +2,47 @@
 // src/pages/UserOrders.js
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box, Button, Chip, CircularProgress, Container, Dialog, DialogActions,
-  DialogContent, DialogContentText, DialogTitle, FormControl, InputLabel,
-  MenuItem, Paper, Select, Snackbar, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
-  Badge, Skeleton, Fade, IconButton
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Snackbar,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TablePagination,
+  TableRow,
+  Tooltip,
+  Typography,
+  Badge,
+  Skeleton,
+  Fade,
+  IconButton,
+  Alert,
 } from "@mui/material";
 import {
-  ArrowBack, Delete, Download as DownloadIcon, Edit, Logout,
-  ReceiptLong, ShoppingCart as ShoppingCartIcon, Storefront as StorefrontIcon
+  ArrowBack,
+  Delete,
+  Download as DownloadIcon,
+  Edit,
+  Logout,
+  ReceiptLong,
+  ShoppingCart as ShoppingCartIcon,
+  Storefront as StorefrontIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -30,10 +62,11 @@ const STATUS_COLORS = {
   rejected: "error",
 };
 function StatusChip({ status }) {
+  const s = String(status || "").toLowerCase();
   return (
     <Chip
-      label={status}
-      color={STATUS_COLORS[status] || "default"}
+      label={s || "-"}
+      color={STATUS_COLORS[s] || "default"}
       size="small"
       variant="filled"
       sx={{ textTransform: "capitalize" }}
@@ -41,8 +74,99 @@ function StatusChip({ status }) {
   );
 }
 
+/* ---------- small utils ---------- */
+const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
+const safeArray = (v) => (Array.isArray(v) ? v : []);
+const getLS = (k, d) => {
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; }
+};
+
+/* Normalize order objects from varied backends */
+const normalizeOrder = (o) => {
+  if (!o || typeof o !== "object") return {};
+  const createdAt =
+    o.createdAt ||
+    o.created_at ||
+    o.created ||
+    (o.timestamp ? new Date(o.timestamp) : null);
+
+  // Vendor may arrive as Vendor, vendor, or include only VendorId
+  const Vendor =
+    o.Vendor ||
+    o.vendor ||
+    (o.vendorName ? { name: o.vendorName } : null) ||
+    null;
+
+  // Normalize status to lowercase
+  const status = (o.status || "").toString().toLowerCase();
+
+  // normalize payment method/status
+  const paymentMethod = (o.paymentMethod || o.payment_method || "cod").toString();
+  const paymentStatus = (o.paymentStatus || o.payment_status || "unpaid").toString();
+
+  return {
+    ...o,
+    createdAt,
+    Vendor,
+    status,
+    paymentMethod,
+    paymentStatus,
+    totalAmount: Number(o.totalAmount ?? o.total_amount ?? 0),
+  };
+};
+
+/* Extract unified array from different shapes */
+const extractList = (data) => {
+  if (Array.isArray(data?.items) && typeof data?.total === "number") {
+    return { list: data.items, total: Number(data.total) };
+  }
+  if (Array.isArray(data?.orders)) {
+    return { list: data.orders, total: data.orders.length };
+  }
+  if (Array.isArray(data)) {
+    return { list: data, total: data.length };
+  }
+  return { list: [], total: 0 };
+};
+
+/* Tooltip content for items */
+const ItemsTooltip = ({ items }) => (
+  <Box sx={{ whiteSpace: "pre-line" }}>
+    {items.length
+      ? items
+          .map(
+            (it) =>
+              `${it.name} × ${it.quantity} = ${rupee(
+                Number(it.price) * Number(it.quantity)
+              )}`
+          )
+          .join("\n")
+      : "No items"}
+  </Box>
+);
+
+/* Unify line items coming from OrderItems or MenuItems join */
+const getLineItems = (order) => {
+  if (Array.isArray(order?.OrderItems)) {
+    return order.OrderItems.map((oi) => ({
+      name: oi?.MenuItem?.name || "Item",
+      quantity: oi?.quantity ?? 1,
+      price: oi?.MenuItem?.price ?? 0,
+    }));
+  }
+  if (Array.isArray(order?.MenuItems)) {
+    return order.MenuItems.map((mi) => ({
+      name: mi?.name || "Item",
+      quantity: mi?.OrderItem?.quantity ?? 1,
+      price: mi?.price ?? 0,
+    }));
+  }
+  return [];
+};
+
 export default function UserOrders() {
   const [orders, setOrders] = useState([]);
+  const [rawCount, setRawCount] = useState(0);
   const [error, setError] = useState("");
   const [openDialog, setOpenDialog] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
@@ -62,76 +186,10 @@ export default function UserOrders() {
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
-  const user = useMemo(() => JSON.parse(localStorage.getItem("user") || "{}"), []);
+  const user = useMemo(() => getLS("user", {}), []);
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  const rupee = (n) => `₹${Number(n || 0).toFixed(2)}`;
-
-  // unify line items for tooltip
-  const getLineItems = (order) => {
-    if (Array.isArray(order?.OrderItems)) {
-      return order.OrderItems.map((oi) => ({
-        name: oi.MenuItem?.name || "Item",
-        quantity: oi.quantity ?? 1,
-        price: oi.MenuItem?.price ?? 0,
-      }));
-    }
-    if (Array.isArray(order?.MenuItems)) {
-      return order.MenuItems.map((mi) => ({
-        name: mi.name,
-        quantity: mi?.OrderItem?.quantity ?? 1,
-        price: mi.price ?? 0,
-      }));
-    }
-    return [];
-  };
-
-  const ItemsTooltip = ({ items }) => (
-    <Box sx={{ whiteSpace: "pre-line" }}>
-      {items.length
-        ? items
-            .map((it) => `${it.name} × ${it.quantity} = ${rupee(Number(it.price) * Number(it.quantity))}`)
-            .join("\n")
-        : "No items"}
-    </Box>
-  );
-
-  /** Robustly pick array + total from any payload shape */
-  const normalizePayload = (data) => {
-    if (!data) return { list: [], total: 0 };
-    if (Array.isArray(data?.items) && typeof data?.total === "number") {
-      return { list: data.items, total: Number(data.total) };
-    }
-    if (Array.isArray(data?.orders)) {
-      return { list: data.orders, total: data.orders.length };
-    }
-    if (Array.isArray(data?.rows)) {
-      return { list: data.rows, total: Number(data?.count ?? data.rows.length) };
-    }
-    if (Array.isArray(data)) {
-      return { list: data, total: data.length };
-    }
-    // some APIs wrap as {data:[...]}
-    if (Array.isArray(data?.data)) {
-      return { list: data.data, total: data.data.length };
-    }
-    return { list: [], total: 0 };
-  };
-
-  /** Sort newest first, tolerant of createdAt/created_at missing */
-  const sortOrders = (arr) =>
-    [...arr].sort((a, b) => {
-      const aT = new Date(a.createdAt || a.created_at || 0).getTime();
-      const bT = new Date(b.createdAt || b.created_at || 0).getTime();
-      return bT - aT || Number(b.id) - Number(a.id);
-    });
-
-  /**
-   * Fetch orders with fallbacks:
-   * 1) /api/orders/my?page=&pageSize=
-   * 2) /api/orders/my
-   * 3) /api/orders  (last resort)
-   */
+  // fetch with hybrid pagination and robust normalization
   const fetchOrders = async (opts = {}) => {
     if (!token) {
       navigate("/login");
@@ -140,55 +198,52 @@ export default function UserOrders() {
 
     const p = typeof opts.page === "number" ? opts.page : page;
     const rpp = typeof opts.rowsPerPage === "number" ? opts.rowsPerPage : rowsPerPage;
-    const status = opts.statusFilter ?? statusFilter;
+    const status = (opts.statusFilter ?? statusFilter).toLowerCase();
 
     setLoading(true);
     try {
-      const endpoints = [
+      const url =
         status === "all"
           ? `${API}/api/orders/my?page=${p + 1}&pageSize=${rpp}`
-          : `${API}/api/orders/my?page=0`,
-        `${API}/api/orders/my`,
-        `${API}/api/orders`,
-      ];
+          : `${API}/api/orders/my?page=0`;
 
-      let got = { list: [], total: 0 };
-      for (const url of endpoints) {
-        const res = await fetch(url, { headers, credentials: "include" });
-        if (res.status === 401) {
-          toast.error("Session expired. Please log in again.");
-          localStorage.clear();
-          navigate("/login");
-          return;
-        }
-        // ignore 404/204 silently and try next endpoint
-        if (!res.ok) continue;
+      const res = await fetch(url, { headers, credentials: "include" });
 
-        const data = await res.json().catch(() => null);
-        const { list, total: t } = normalizePayload(data);
-        if (list.length) {
-          got = { list, total: t || list.length };
-          break;
-        }
-        // if server gave items but empty, still preserve "total"
-        got = { list, total: t || 0 };
+      if (res.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        localStorage.clear();
+        navigate("/login");
+        return;
       }
 
-      const all = sortOrders(got.list);
+      const payload = await res.json().catch(() => ({}));
+      const { list } = extractList(payload);
+
+      // normalize all orders safely
+      const normalized = safeArray(list).map(normalizeOrder);
+
+      // newest first
+      normalized.sort((a, b) => {
+        const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bt - at || (Number(b.id) - Number(a.id));
+      });
+
+      // For debug summary when zero results
+      setRawCount(normalized.length);
 
       if (status === "all") {
-        // If the first endpoint returned paged items + total, keep as-is;
-        // otherwise slice client-side
-        if (got.total > all.length) {
-          setOrders(all); // server already paginated; `total` > current length
-          setTotal(got.total);
+        // if server paginated, use directly; else client slice
+        if (Array.isArray(payload?.items) && typeof payload?.total === "number") {
+          setOrders(payload.items.map(normalizeOrder));
+          setTotal(Number(payload.total) || payload.items.length);
         } else {
           const start = p * rpp;
-          setOrders(all.slice(start, start + rpp));
-          setTotal(all.length);
+          setOrders(normalized.slice(start, start + rpp));
+          setTotal(normalized.length);
         }
       } else {
-        const filtered = all.filter((o) => String(o.status) === status);
+        const filtered = normalized.filter((o) => (o.status || "").toLowerCase() === status);
         const start = p * rpp;
         setOrders(filtered.slice(start, start + rpp));
         setTotal(filtered.length);
@@ -218,10 +273,13 @@ export default function UserOrders() {
   useEffect(() => {
     if (!user?.id) return;
 
-    const join = () => { try { socket.emit("user:join", user.id); } catch {} };
+    const join = () => {
+      try { socket.emit("user:join", user.id); } catch {}
+    };
+    join();
+
     const refill = () => fetchOrders({ page, rowsPerPage, statusFilter });
 
-    join();
     const onConnect = () => { join(); refill(); };
     const onNew = (fullOrder) => {
       if (Number(fullOrder?.UserId) !== Number(user.id)) return;
@@ -237,19 +295,19 @@ export default function UserOrders() {
     socket.on("connect", onConnect);
     socket.on("order:new", onNew);
     socket.on("order:status", onStatus);
+    socket.on("order:payment", refill);
     socket.on("payment:processing", refill);
     socket.on("payment:success", refill);
     socket.on("payment:failed", refill);
-    socket.on("order:payment", refill);
 
     return () => {
       socket.off("connect", onConnect);
       socket.off("order:new", onNew);
       socket.off("order:status", onStatus);
+      socket.off("order:payment", refill);
       socket.off("payment:processing", refill);
       socket.off("payment:success", refill);
       socket.off("payment:failed", refill);
-      socket.off("order:payment", refill);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, page, rowsPerPage, statusFilter]);
@@ -272,7 +330,9 @@ export default function UserOrders() {
 
   const openInvoice = async (id, pdf = false) => {
     try {
-      const endpoint = pdf ? `${API}/api/orders/${id}/invoice.pdf` : `${API}/api/orders/${id}/invoice`;
+      const endpoint = pdf
+        ? `${API}/api/orders/${id}/invoice.pdf`
+        : `${API}/api/orders/${id}/invoice`;
       const res = await fetch(endpoint, { headers, credentials: "include" });
       if (!res.ok) return toast.error("Invoice not found");
       const blob = await res.blob();
@@ -286,10 +346,11 @@ export default function UserOrders() {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers, credentials: "include" });
+      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE", headers });
       if (!res.ok) return toast.error("Delete failed");
       toast.info("Order deleted");
       setOpenDialog(false);
+      // keep pagination consistent
       const newTotal = Math.max(0, total - 1);
       const maxPageIndex = Math.max(0, Math.ceil(newTotal / rowsPerPage) - 1);
       const nextPage = Math.min(page, maxPageIndex);
@@ -311,9 +372,19 @@ export default function UserOrders() {
         <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
           No orders found.
         </Typography>
-        <Button variant="outlined" startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>
+        <Button
+          variant="outlined"
+          startIcon={<StorefrontIcon />}
+          onClick={() => navigate("/vendors")}
+        >
           Browse Vendors
         </Button>
+        {/* Tiny debug hint when list is empty */}
+        <Box sx={{ mt: 2 }}>
+          <Alert severity="info" variant="outlined">
+            Debug: fetched {rawCount} rows from API before filtering.
+          </Alert>
+        </Box>
       </Box>
     </Fade>
   );
@@ -322,14 +393,20 @@ export default function UserOrders() {
     <Container sx={{ py: 3 }}>
       {/* Header */}
       <Stack direction="row" justifyContent="space-between" flexWrap="wrap" sx={{ mb: 2 }}>
-        <Typography variant="h4" sx={{ fontWeight: 600 }}>My Orders</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 600 }}>
+          My Orders
+        </Typography>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<ArrowBack />} onClick={() => navigate(-1)}>Back</Button>
-          <Button startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>Browse</Button>
+          <Button startIcon={<ArrowBack />} onClick={() => navigate(-1)}>
+            Back
+          </Button>
+          <Button startIcon={<StorefrontIcon />} onClick={() => navigate("/vendors")}>
+            Browse
+          </Button>
           <Button
             variant="outlined"
             startIcon={
-              <Badge color="primary" badgeContent={useCart().totalQty} invisible={!useCart().totalQty}>
+              <Badge color="primary" badgeContent={totalQty} invisible={!totalQty}>
                 <ShoppingCartIcon />
               </Badge>
             }
@@ -340,7 +417,12 @@ export default function UserOrders() {
           <Button variant="contained" onClick={() => navigate("/checkout")} disabled={!totalQty}>
             Checkout
           </Button>
-          <Button color="secondary" variant="contained" startIcon={<Logout />} onClick={handleLogout}>
+          <Button
+            color="secondary"
+            variant="contained"
+            startIcon={<Logout />}
+            onClick={handleLogout}
+          >
             Logout
           </Button>
         </Stack>
@@ -353,10 +435,15 @@ export default function UserOrders() {
           <Select
             label="Status"
             value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
+            onChange={(e) => {
+              setStatusFilter(String(e.target.value).toLowerCase());
+              setPage(0);
+            }}
           >
             {["all", "pending", "accepted", "ready", "delivered", "rejected"].map((s) => (
-              <MenuItem key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</MenuItem>
+              <MenuItem key={s} value={s}>
+                {s[0].toUpperCase() + s.slice(1)}
+              </MenuItem>
             ))}
           </Select>
         </FormControl>
@@ -371,20 +458,30 @@ export default function UserOrders() {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                {["Order ID", "Vendor", "Status", "Payment", "Total", "Created", "Actions"].map((h) => (
-                  <TableCell key={h} sx={{ fontWeight: 600 }}>{h}</TableCell>
-                ))}
+                {["Order ID", "Vendor", "Status", "Payment", "Total", "Created", "Actions"].map(
+                  (h) => (
+                    <TableCell key={h} sx={{ fontWeight: 600 }}>
+                      {h}
+                    </TableCell>
+                  )
+                )}
               </TableRow>
             </TableHead>
             <TableBody>
               {loading
                 ? [...Array(5)].map((_, i) => (
-                    <TableRow key={i}><TableCell colSpan={7}><Skeleton height={40} /></TableCell></TableRow>
+                    <TableRow key={i}>
+                      <TableCell colSpan={7}>
+                        <Skeleton height={40} />
+                      </TableCell>
+                    </TableRow>
                   ))
                 : orders.length === 0
                 ? (
                   <TableRow>
-                    <TableCell colSpan={7}><EmptyState /></TableCell>
+                    <TableCell colSpan={7}>
+                      <EmptyState />
+                    </TableCell>
                   </TableRow>
                 )
                 : orders.map((o) => {
@@ -396,15 +493,22 @@ export default function UserOrders() {
                       <TableRow key={o.id} hover>
                         <TableCell>#{o.id}</TableCell>
                         <TableCell>{o.Vendor?.name || "-"}</TableCell>
-                        <TableCell><StatusChip status={o.status} /></TableCell>
+                        <TableCell>
+                          <StatusChip status={o.status} />
+                        </TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={1} alignItems="center">
                             <PaymentBadge status={o.paymentStatus} />
-                            <Chip size="small" label={payMethod === "mock_online" ? "Online" : "COD"} />
+                            <Chip
+                              size="small"
+                              label={payMethod === "mock_online" ? "Online" : "COD"}
+                            />
                           </Stack>
                         </TableCell>
                         <TableCell>{rupee(o.totalAmount)}</TableCell>
-                        <TableCell>{o.createdAt || o.created_at ? new Date(o.createdAt || o.created_at).toLocaleString() : "-"}</TableCell>
+                        <TableCell>
+                          {o.createdAt ? new Date(o.createdAt).toLocaleString() : "-"}
+                        </TableCell>
                         <TableCell align="right">
                           <Tooltip title={<ItemsTooltip items={items} />}>
                             <span>
@@ -427,12 +531,23 @@ export default function UserOrders() {
                           >
                             Cancel
                           </Button>
-                          <Button size="small" onClick={() => navigate(`/track/${o.id}`)}>Track</Button>
+                          <Button size="small" onClick={() => navigate(`/track/${o.id}`)}>
+                            Track
+                          </Button>
 
-                          <IconButton color="error" onClick={() => { setOrderToDelete(o.id); setOpenDialog(true); }} aria-label="Delete">
+                          <IconButton
+                            color="error"
+                            onClick={() => {
+                              setOrderToDelete(o.id);
+                              setOpenDialog(true);
+                            }}
+                            aria-label="Delete"
+                          >
                             <Delete />
                           </IconButton>
-                          <IconButton disabled aria-label="Edit"><Edit /></IconButton>
+                          <IconButton disabled aria-label="Edit">
+                            <Edit />
+                          </IconButton>
                         </TableCell>
                       </TableRow>
                     );
@@ -446,7 +561,10 @@ export default function UserOrders() {
           page={page}
           onPageChange={(_, newPage) => setPage(newPage)}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10) || 10); setPage(0); }}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10) || 10);
+            setPage(0);
+          }}
           rowsPerPageOptions={[5, 10, 20]}
           labelRowsPerPage="Rows:"
         />
@@ -460,7 +578,9 @@ export default function UserOrders() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-          <Button color="error" onClick={() => handleDelete(orderToDelete)}>Delete</Button>
+          <Button color="error" onClick={() => handleDelete(orderToDelete)}>
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
 
