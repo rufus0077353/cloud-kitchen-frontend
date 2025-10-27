@@ -1335,7 +1335,7 @@ const VendorDashboard = () => {
                   const count = ratingsHist.histogram?.[star] || 0;
                   const perc = ratingsHist.total ? Math.min(100, (count / ratingsHist.total) * 100) : 0;
                   return (
-                    <Grid item xs={12} key={startIcon}>
+                    <Grid item xs={12} key={star}>
                       <Stack direction="row" alignItems="center" spacing={1}>
                         <Typography variant="body2" sx={{ width:32 }}>{star}★</Typography>
                         <LinearProgress variant="determinate" value={perc} sx={{ flexGrow:1, height:10, borderRadius:1 }} />
