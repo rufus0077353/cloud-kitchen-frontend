@@ -248,7 +248,7 @@ export default function TrackOrder() {
         <RateOrderDialog
           open={rateOpen}
           onClose={() => setRateOpen(false)}
-          orderId={orderid}
+          orderId={order.id}
           // Immediately reflect the saved rating in the UI
           onRated={(payload) => {
             setRateOpen(false);
