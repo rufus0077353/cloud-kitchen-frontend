@@ -3,47 +3,77 @@
 import React, { useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Button, Rating, Stack, Typography
+  TextField, Button, Rating, Stack, Typography, Alert
 } from "@mui/material";
 import { toast } from "react-toastify";
 
-const API = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
+const API_BASE = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
 
 export default function RateOrderDialog({ open, onClose, orderId, onRated }) {
   const [stars, setStars] = useState(5);
   const [review, setReview] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
 
   const submit = async () => {
+    setErrMsg("");
+
+    if (!orderId) {
+      setErrMsg("Missing order id.");
+      return;
+    }
+    if (!Number.isFinite(Number(stars)) || stars < 1 || stars > 5) {
+      setErrMsg("Please select a rating between 1 and 5.");
+      return;
+    }
+
     const token = localStorage.getItem("token");
-    if (!orderId) return;
+    if (!token) {
+      setErrMsg("You’re not logged in.");
+      toast.error("Please log in again.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/api/orders/${orderId}/rate`, {
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}/rate`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ rating: stars, review })
+        // important for cookie-based sessions too
+        credentials: "include",
+        body: JSON.stringify({ rating: Number(stars), review: String(review || "").trim() }),
       });
+
       if (!res.ok) {
-        const msg = (await res.json().catch(() => null))?.message || "Failed to submit rating";
+        // Show precise backend message if present
+        let msg = "Failed to submit rating";
+        try {
+          const j = await res.json();
+          if (j?.message) msg = j.message;
+        } catch {}
+        setErrMsg(msg);
         toast.error(msg);
-      } else {
-        toast.success("Thanks for the feedback!");
-        onRated?.(); // refresh the order if parent provided a handler
-        onClose?.();
-      }
-    } catch {
-      toast.error("Network error while submitting rating");
+        return;
+        }
+
+      toast.success("Thanks for the feedback!");
+      onRated?.();   // parent can refresh order
+      onClose?.();   // close dialog
+      setReview("");
+      setStars(5);
+    } catch (e) {
+      setErrMsg("Network error while submitting rating.");
+      toast.error("Network error while submitting rating.");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="xs">
       <DialogTitle>Rate your order #{orderId}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
@@ -56,6 +86,7 @@ export default function RateOrderDialog({ open, onClose, orderId, onRated }) {
               size="large"
             />
           </Stack>
+
           <TextField
             label="Write a short review (optional)"
             multiline
@@ -64,11 +95,20 @@ export default function RateOrderDialog({ open, onClose, orderId, onRated }) {
             onChange={(e) => setReview(e.target.value)}
             inputProps={{ maxLength: 1000 }}
           />
+
+          {errMsg && <Alert severity="error">{errMsg}</Alert>}
         </Stack>
       </DialogContent>
+
       <DialogActions>
-        <Button onClick={onClose} disabled={submitting}>Cancel</Button>
-        <Button variant="contained" onClick={submit} disabled={submitting}>
+        <Button onClick={onClose} disabled={submitting} type="button">Cancel</Button>
+        {/* type="button" ensures we don't submit a parent <form> */}
+        <Button
+          variant="contained"
+          onClick={submit}
+          disabled={submitting}
+          type="button"
+        >
           {submitting ? "Submitting…" : "Submit"}
         </Button>
       </DialogActions>
