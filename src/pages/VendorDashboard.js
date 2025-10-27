@@ -356,6 +356,34 @@ const VendorDashboard = () => {
     }
   };
 
+  const fetchRatingsHistogram = async () => {
+    setRatingsLoading(true);
+    try {
+      const res = await fetch(apiUrl("/vendors/me/ratings/histogram"), { headers: authHeaders });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Failed to load histogram");
+      setRatingsHist(data);
+    } catch (e) {
+      setRatingsHist(null);
+    } finally {
+     setRatingsLoading(false);
+   }
+  };
+
+  const fetchRecentReviews = async () => {
+    setReviewsLoading(true);
+    try {
+      const res = await fetch(apiUrl("/vendors/me/reviews?limit=20"), { headers: authHeaders });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Failed to load reviews");
+      setReviews(Array.isArray(data.items) ? data.items : []);
+    } catch (e) {
+      setReviews([]);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
   /* ---------- TOP ITEMS (client-side) ---------- */
   const fetchTopItems = async () => {
     setLoadingTop(true);
@@ -650,6 +678,8 @@ const VendorDashboard = () => {
         fetchSummary(),
         fetchDaily(days),
         fetchTopItems(),
+        fetchRatingsHistogram(),
+        fetchRecentReviews(),
       ]);
       if (vendorId) await fetchPayouts();
     })();
@@ -1273,6 +1303,78 @@ const VendorDashboard = () => {
                 </Paper>
               </Grid>
             </Grid>
+          )}
+        </Paper>
+        {/* Ratings Breakdown */}
+        <Paper sx ={{ p:2, mb:3 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb:1 }}>
+            <Typography variant="h6">Ratings</Typography>
+            <Tooltip title="Reload ratings">
+              <IconButton onClick={fetchRatingsHistogram}><Refresh /></IconButton>
+            </Tooltip>
+          </Stack>
+
+          {ratingsLoading ? (
+            <Skeleton variant="rectangular" height={72} />
+          ) : !ratingHist ? (
+            <Typography variant="body2" color="text.secondary">No ratings yet.</Typography>
+          ) : (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb:1 }}>
+                Avg {ratingHist.avg} : {ratingHist.total} ratings
+              </Typography>
+              <Grid container spacing={1}>
+                {[5,4,3,2,1].map(star => {
+                  const count = ratingHist.histogram?.[star] || 0;
+                  const perc = ratingHist.total ? Math.min(100, (count / ratingHist.total) * 100) : 0;
+                  return (
+                    <Grid item xs={12} key={start}>
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Typography variant="body2" sx={{ width:32 }}>{star}★</Typography>
+                        <LinearProgress variant="determinate" value={perc} sx={{ flexGrow:1, height:10, borderRadius:1 }} />
+                        <Typography variant="body2" sx={{ width:48 }} align="right">{count}</Typography>
+                      </Stack>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </>
+          )}
+        </Paper>
+
+        {/* Recent Reviews */}
+        <Paper sx={{ p:2, mb:3 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb:1 }}>
+            <Typography variant="h6">Recent Reviews</Typography>
+            <Tooltip title="Reload reviews">
+              <IconButton onClick={fetchRecentReviews}><Refresh /></IconButton>
+            </Tooltip>
+          </Stack>
+
+          {reviewsLoading ? (
+            <>
+              <Skeleton height={24} />
+              <Skeleton height={24} />
+              <Skeleton height={24} />
+            </>
+          ) : reviews.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">No reviews yet.</Typography>
+          ) : (
+            <Stack spacing={1}>
+              {reviews.map((r) => (
+                <Box key={r.orderId} sx={{ borderBottom: "1px solid rgba(0,0,0,0.1)", pb:1 }}>
+                  <Stack direction="row" alignItems="center" spacing={1} >
+                    <Chip size="small" label={'${r.rating}'} color="warning" />
+                    <Typography variant="body2" sx={{flex: 1 }}>
+                      {r.review || <em style={{ color : "#777" }}>No text</em>}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary">
+                    #{r.orderId} · {r.user?.name || User} · {r.reviewedAt ? new Data(r.reviewedAt).toLocaleString() : ""}
+                  </Typography>                  
+                </Box>
+              ))}
+            </Stack>
           )}
         </Paper>
       </Container>
