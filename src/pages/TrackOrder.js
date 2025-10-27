@@ -213,12 +213,15 @@ export default function TrackOrder() {
       )}
 
       {/* Rate dialog */}
-      {order && rateOpen&& (
+      {order && rateOpen && (
         <RateOrderDialog
           open={rateOpen}
           onClose={() => setRateOpen(false)}
           orderId={order.id}
-          onRated={onRated}
+          onRated={() => {
+            //options: refetch or just set locally
+            fetchOrder(); 
+          }}
         />
       )}
     </Box>

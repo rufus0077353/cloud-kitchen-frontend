@@ -3,112 +3,82 @@
 import React, { useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Button, Rating, Stack, Typography, Alert
+  Button, TextField, Stack, Rating, Typography
 } from "@mui/material";
 import { toast } from "react-toastify";
 
-const API_BASE = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
+const API = process.env.REACT_APP_API_BASE_URL || "";
 
-export default function RateOrderDialog({ open, onClose, orderId, onRated }) {
+export default function RateOrderDialog({
+  open,
+  onClose,
+  orderId,             // <- make sure you pass orderId={order.id}
+  onRated,             // optional callback: (payload) => void
+}) {
   const [stars, setStars] = useState(5);
   const [review, setReview] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [errMsg, setErrMsg] = useState("");
 
-  const submit = async () => {
-    setErrMsg("");
-
+  const handleSubmit = async () => {
     if (!orderId) {
-      setErrMsg("Missing order id.");
+      toast.error("Missing order id");
       return;
     }
-    if (!Number.isFinite(Number(stars)) || stars < 1 || stars > 5) {
-      setErrMsg("Please select a rating between 1 and 5.");
+    if (stars < 1 || stars > 5) {
+      toast.error("Rating must be 1–5");
       return;
     }
 
     const token = localStorage.getItem("token");
-    if (!token) {
-      setErrMsg("You’re not logged in.");
-      toast.error("Please log in again.");
-      return;
-    }
-
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${orderId}/rate`, {
+      const res = await fetch(`${API}/api/orders/${orderId}/rate`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        // important for cookie-based sessions too
         credentials: "include",
-        body: JSON.stringify({ rating: Number(stars), review: String(review || "").trim() }),
+        body: JSON.stringify({ rating: stars, review }),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // Show precise backend message if present
-        let msg = "Failed to submit rating";
-        try {
-          const j = await res.json();
-          if (j?.message) msg = j.message;
-        } catch {}
-        setErrMsg(msg);
-        toast.error(msg);
+        toast.error(data?.message || "Failed to submit rating");
         return;
-        }
+      }
 
-      toast.success("Thanks for the feedback!");
-      onRated?.();   // parent can refresh order
-      onClose?.();   // close dialog
-      setReview("");
-      setStars(5);
+      toast.success("Thanks for your feedback!");
+      onClose?.();
+      onRated?.(data);          // let parent refresh if desired
     } catch (e) {
-      setErrMsg("Network error while submitting rating.");
-      toast.error("Network error while submitting rating.");
+      toast.error("Network error while submitting rating");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="xs">
+    <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="sm">
       <DialogTitle>Rate your order #{orderId}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <Typography component="legend">Rating</Typography>
-            <Rating
-              value={stars}
-              onChange={(_, v) => setStars(v || 0)}
-              precision={1}
-              size="large"
-            />
+            <Typography variant="body2">Rating</Typography>
+            <Rating value={stars} onChange={(_, v) => setStars(v || 0)} />
           </Stack>
-
           <TextField
             label="Write a short review (optional)"
-            multiline
-            minRows={3}
+            multiline minRows={3} fullWidth
             value={review}
             onChange={(e) => setReview(e.target.value)}
             inputProps={{ maxLength: 1000 }}
           />
-
-          {errMsg && <Alert severity="error">{errMsg}</Alert>}
         </Stack>
       </DialogContent>
-
       <DialogActions>
-        <Button onClick={onClose} disabled={submitting} type="button">Cancel</Button>
-        {/* type="button" ensures we don't submit a parent <form> */}
-        <Button
-          variant="contained"
-          onClick={submit}
-          disabled={submitting}
-          type="button"
-        >
+        <Button onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button variant="contained" onClick={handleSubmit} disabled={submitting}>
           {submitting ? "Submitting…" : "Submit"}
         </Button>
       </DialogActions>
