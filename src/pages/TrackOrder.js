@@ -213,11 +213,11 @@ export default function TrackOrder() {
       )}
 
       {/* Rate dialog */}
-      {order && (
+      {order && rateOpen&& (
         <RateOrderDialog
           open={rateOpen}
           onClose={() => setRateOpen(false)}
-          order={order}
+          orderId={order.id}
           onRated={onRated}
         />
       )}
