@@ -1,13 +1,21 @@
-
 // src/pages/TrackOrder.js
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Box, Paper, Stack, Typography, Chip, LinearProgress, Divider, Button, Rating
+  Box,
+  Paper,
+  Stack,
+  Typography,
+  Chip,
+  LinearProgress,
+  Divider,
+  Button,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
+import StarIcon from "@mui/icons-material/Star";
+import { Rating } from "@mui/material";
 import { toast } from "react-toastify";
 import { socket } from "../utils/socket";
 import api from "../utils/api";
@@ -33,12 +41,13 @@ export default function TrackOrder() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // rate dialog
+  // rating dialog
   const [rateOpen, setRateOpen] = useState(false);
 
   const fetchOrder = async () => {
     setLoading(true);
     try {
+      // api base already includes /api → just call /orders/:id
       const { data } = await api.get(`/orders/${id}`);
       setOrder(data);
     } catch (err) {
@@ -69,6 +78,8 @@ export default function TrackOrder() {
 
   const statusLc = String(order?.status || "pending").toLowerCase();
   const isRejected = statusLc === "rejected";
+  const isDelivered = statusLc === "delivered";
+  const isRated = Boolean(order?.rating && Number(order.rating) > 0);
 
   const stageIndex = useMemo(() => {
     const idx = STAGES.indexOf(statusLc);
@@ -80,10 +91,6 @@ export default function TrackOrder() {
     const totalSteps = STAGES.length - 1; // 3
     return Math.min(100, Math.max(0, (stageIndex / totalSteps) * 100));
   }, [stageIndex, isRejected]);
-
-  const onRated = (updated) => {
-    setOrder((prev) => (prev ? { ...prev, ...updated } : updated));
-  };
 
   return (
     <Box sx={{ py: 3 }}>
@@ -148,29 +155,6 @@ export default function TrackOrder() {
               )}
             </Box>
 
-            {/* Rate CTA (only if delivered) */}
-            {statusLc === "delivered" && (
-              <Box>
-                <Divider sx={{ my: 1.5 }} />
-                {!order.rating ? (
-                  <Stack direction={{ xs: "column", sm: "row" }} alignItems="center" spacing={1.5}>
-                    <Typography variant="subtitle1">How was your order?</Typography>
-                    <Button variant="outlined" onClick={() => setRateOpen(true)}>
-                      Rate this order
-                    </Button>
-                  </Stack>
-                ) : (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography variant="subtitle1">Your rating:</Typography>
-                    <Rating value={Number(order.rating)} readOnly />
-                    {order.review && (
-                      <Typography variant="body2" color="text.secondary">“{order.review}”</Typography>
-                    )}
-                  </Stack>
-                )}
-              </Box>
-            )}
-
             <Divider />
 
             {/* Items */}
@@ -205,6 +189,53 @@ export default function TrackOrder() {
 
             <Divider />
 
+            {/* Rating section */}
+            <Box>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2">Your rating</Typography>
+                {/* Show Rate button only if delivered AND not already rated */}
+                {isDelivered && !isRated && (
+                  <Button size="small" variant="contained" onClick={() => setRateOpen(true)}>
+                    Rate this order
+                  </Button>
+                )}
+              </Stack>
+
+              {isRated ? (
+                <Stack spacing={0.5}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <Rating value={Number(order.rating)} precision={1} readOnly />
+                    <Chip
+                      size="small"
+                      icon={<StarIcon fontSize="small" />}
+                      label={`${order.rating}/5`}
+                      variant="outlined"
+                    />
+                  </Stack>
+                  {order.review ? (
+                    <Typography variant="body2" sx={{ mt: 0.5 }}>
+                      “{order.review}”
+                    </Typography>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      No written review.
+                    </Typography>
+                  )}
+                  {order.ratedAt && (
+                    <Typography variant="caption" color="text.secondary">
+                      Rated on {new Date(order.ratedAt).toLocaleString()}
+                    </Typography>
+                  )}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  You can rate this order once it’s delivered.
+                </Typography>
+              )}
+            </Box>
+
+            <Divider />
+
             <Typography variant="caption" color="text.secondary">
               Placed: {order.createdAt ? new Date(order.createdAt).toLocaleString() : "-"}
             </Typography>
@@ -213,14 +244,25 @@ export default function TrackOrder() {
       )}
 
       {/* Rate dialog */}
-      {order && rateOpen && (
+      {order && (
         <RateOrderDialog
           open={rateOpen}
           onClose={() => setRateOpen(false)}
-          orderId={order.id}
-          onRated={() => {
-            //options: refetch or just set locally
-            fetchOrder(); 
+          order={order}
+          // Immediately reflect the saved rating in the UI
+          onRated={(payload) => {
+            setRateOpen(false);
+            setOrder((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    rating: Number(payload?.rating) || 0,
+                    review: payload?.review || "",
+                    ratedAt: payload?.ratedAt || new Date().toISOString(),
+                  }
+                : prev
+            );
+            toast.success("Thanks for your feedback!");
           }}
         />
       )}
