@@ -159,6 +159,13 @@ const VendorDashboard = () => {
   const [payoutSummary, setPayoutSummary] = useState(null);
   const [payoutsLoading, setPayoutsLoading] = useState(true);
 
+
+  const [ratingsHist, setRatingsHist] = useState(null);
+  const [ratingsLoading, setRatingsLoading] = useState(true);
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+
+
   // persist settings
   useEffect(() => { localStorage.setItem("vd_days", String(days)); }, [days]);
   useEffect(() => { localStorage.setItem("vd_rev_goal", String(revGoal)); }, [revGoal]);
@@ -1370,7 +1377,7 @@ const VendorDashboard = () => {
                     </Typography>
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
-                    #{r.orderId} · {r.user?.name || User} · {r.reviewedAt ? new Data(r.reviewedAt).toLocaleString() : ""}
+                    #{r.orderId} · {r.user?.name || "User"} · {r.reviewedAt ? new Data(r.reviewedAt).toLocaleString() : ""}
                   </Typography>                  
                 </Box>
               ))}
