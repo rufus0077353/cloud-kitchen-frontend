@@ -339,7 +339,7 @@ const VendorDashboard = () => {
   const fetchPayouts = async () => {
     setPayoutsLoading(true);
     try {
-      const res = await fetch(apiUrl(`/orders/payouts/summary`), { headers: authHeaders });
+      const res = await fetch(apiUrl(`/vendors/me/payouts/summary`), { headers: authHeaders });
       const data = await parseJsonSafe(res);
       if (!res.ok) throw new Error(data?.message || "Failed to fetch payouts");
       setPayoutSummary({
