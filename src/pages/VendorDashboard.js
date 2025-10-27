@@ -1323,19 +1323,19 @@ const VendorDashboard = () => {
 
           {ratingsLoading ? (
             <Skeleton variant="rectangular" height={72} />
-          ) : !ratingHist ? (
+          ) : !ratingsHist ? (
             <Typography variant="body2" color="text.secondary">No ratings yet.</Typography>
           ) : (
             <>
               <Typography variant="body2" color="text.secondary" sx={{ mb:1 }}>
-                Avg {ratingHist.avg} : {ratingHist.total} ratings
+                Avg {ratingsHist.avg} : {ratingsHist.total} ratings
               </Typography>
               <Grid container spacing={1}>
                 {[5,4,3,2,1].map(star => {
-                  const count = ratingHist.histogram?.[star] || 0;
-                  const perc = ratingHist.total ? Math.min(100, (count / ratingHist.total) * 100) : 0;
+                  const count = ratingsHist.histogram?.[star] || 0;
+                  const perc = ratingsHist.total ? Math.min(100, (count / ratingsHist.total) * 100) : 0;
                   return (
-                    <Grid item xs={12} key={start}>
+                    <Grid item xs={12} key={startIcon}>
                       <Stack direction="row" alignItems="center" spacing={1}>
                         <Typography variant="body2" sx={{ width:32 }}>{star}★</Typography>
                         <LinearProgress variant="determinate" value={perc} sx={{ flexGrow:1, height:10, borderRadius:1 }} />
@@ -1377,7 +1377,7 @@ const VendorDashboard = () => {
                     </Typography>
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
-                    #{r.orderId} · {r.user?.name || "User"} · {r.reviewedAt ? new Data(r.reviewedAt).toLocaleString() : ""}
+                    #{r.orderId || ""}
                   </Typography>                  
                 </Box>
               ))}
