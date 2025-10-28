@@ -1419,6 +1419,14 @@ const VendorDashboard = () => {
                 sx={{ mt: 0.5, backgroundColor: "rgba(76,175,80,0.05)" }}
               >
                 <strong>Your reply:</strong> {r.reply}
+
+                <Typography 
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{display: "block", mt: 0.5}}
+                > 
+                  replied just now
+                </Typography>
               </Alert>
              ) : (
               <Stack
