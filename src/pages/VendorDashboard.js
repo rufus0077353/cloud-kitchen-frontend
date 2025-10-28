@@ -164,7 +164,7 @@ const VendorDashboard = () => {
   const [ratingsLoading, setRatingsLoading] = useState(true);
   const [reviews, setReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
-  const [replyDrafts, setReplyDrafts] = userState({});
+  const [replyDrafts, setReplyDrafts] = useState({});
 
 
   // persist settings
