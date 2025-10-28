@@ -164,6 +164,7 @@ const VendorDashboard = () => {
   const [ratingsLoading, setRatingsLoading] = useState(true);
   const [reviews, setReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [replyDrafts, setReplyDrafts] = userState({});
 
 
   // persist settings
@@ -391,6 +392,25 @@ const VendorDashboard = () => {
       setReviewsLoading(false);
     }
   };
+
+  const submitReply = async (orderId) => {
+  const text = String(replyDrafts[orderId] || "").trim();
+  if (!text) return toast.error("Reply cannot be empty");
+  try {
+    const res = await fetch(apiUrl(`/vendors/me/reviews/${orderId}/reply`), {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await parseJsonSafe(res);
+    if (!res.ok) throw new Error(data?.message || "Failed to save reply");
+    toast.success("Reply posted");
+    setReplyDrafts((d) => ({ ...d, [orderId]: "" }));
+    await fetchReviews();
+  } catch (e) {
+    toast.error(e?.message || "Failed to save reply");
+  }
+};
 
   /* ---------- TOP ITEMS (client-side) ---------- */
   const fetchTopItems = async () => {
@@ -1350,41 +1370,89 @@ const VendorDashboard = () => {
           )}
         </Paper>
 
-        {/* Reviews */}
-        <Paper sx={{ p:2, mb:3 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb:1 }}>
-            <Typography variant="h6">Reviews</Typography>
-            <Tooltip title="Reload reviews">
-              <IconButton onClick={fetchReviews}><Refresh /></IconButton>
-            </Tooltip>
-          </Stack>
+        {/* --- REVIEWS SECTION (with vendor reply support) --- */}
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Reviews
+          </Typography>
 
           {reviewsLoading ? (
-            <>
-              <Skeleton height={24} />
-              <Skeleton height={24} />
-              <Skeleton height={24} />
-            </>
-          ) : reviews.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">No reviews yet.</Typography>
-          ) : (
-            <Stack spacing={1}>
-              {reviews.map((r) => (
-                <Box key={r.orderId} sx={{ borderBottom: "1px solid rgba(0,0,0,0.1)", pb:1 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} >
-                    <Chip size="small" label={Number(r.rating).toFixed(1)} color="warning" />
-                    <Typography variant="body2" sx={{flex: 1 }}>
-                      {r.review || <em style={{ color : "#777" }}>No text</em>}
-                    </Typography>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary">
-                    #{r.orderId || ""}
-                  </Typography>                  
-                </Box>
-              ))}
+        <Stack spacing={1.5}>
+          {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} height={56} />
+         ))}
+        </Stack>
+        ) : reviews.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          No reviews yet.
+        </Typography>
+        ) : (
+        <Stack spacing={1.5}>
+          {reviews.map((r) => (
+          <Paper key={r.orderId} sx={{ p: 1.5 }}>
+            {/* Rating header */}
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+              <Chip
+                size="small"
+                color="warning"
+                label={`${r.rating ? r.rating.toFixed(1) : "0"}★`}
+              />
+              <Typography variant="body2" color="text.secondary">
+                #{r.orderId}
+              </Typography>
+              <Box sx={{ flexGrow: 1 }} />
+              <Typography variant="caption" color="text.secondary">
+                {r.reviewedAt ? new Date(r.reviewedAt).toLocaleString() : ""}
+              </Typography>
             </Stack>
-          )}
-        </Paper>
+
+            {/* Review text */}
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              {r.review?.trim() ? r.review : <em>No text</em>}
+            </Typography>
+
+            {/* Vendor reply (editable if missing) */}
+            {r.reply ? (
+              <Alert
+                severity="success"
+                variant="outlined"
+                sx={{ mt: 0.5, backgroundColor: "rgba(76,175,80,0.05)" }}
+              >
+                <strong>Your reply:</strong> {r.reply}
+              </Alert>
+             ) : (
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                alignItems="center"
+                spacing={1}
+              >
+                <TextField
+                  size="small"
+                  fullWidth
+                  placeholder="Write a reply to this review…"
+                  value={replyDrafts[r.orderId] || ""}
+                  onChange={(e) =>
+                    setReplyDrafts((prev) => ({
+                      ...prev,
+                      [r.orderId]: e.target.value,
+                    }))
+                  }
+                />
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => submitReply(r.orderId)}
+                  disabled={!replyDrafts[r.orderId]?.trim()}
+                >
+                  Reply
+                </Button>
+              </Stack>
+            )}
+          </Paper>
+         ))}
+       </Stack>
+      )}
+      </Box>
       </Container>
     </>
   );
