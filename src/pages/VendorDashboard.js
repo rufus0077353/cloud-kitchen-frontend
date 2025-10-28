@@ -377,14 +377,15 @@ const VendorDashboard = () => {
    }
   };
 
-  const fetchRecentReviews = async () => {
+  const fetchReviews = async () => {
     setReviewsLoading(true);
     try {
       const res = await fetch(apiUrl("/vendors/me/reviews?limit=20"), { headers: authHeaders });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!res.ok) throw new Error(data?.message || "Failed to load reviews");
       setReviews(Array.isArray(data.items) ? data.items : []);
     } catch (e) {
+      console.error("reviews load:", e?.message);
       setReviews([]);
     } finally {
       setReviewsLoading(false);
@@ -686,7 +687,7 @@ const VendorDashboard = () => {
         fetchDaily(days),
         fetchTopItems(),
         fetchRatingsHistogram(),
-        fetchRecentReviews(),
+        fetchReviews(),
       ]);
       if (vendorId) await fetchPayouts();
     })();
@@ -1349,12 +1350,12 @@ const VendorDashboard = () => {
           )}
         </Paper>
 
-        {/* Recent Reviews */}
+        {/* Reviews */}
         <Paper sx={{ p:2, mb:3 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb:1 }}>
-            <Typography variant="h6">Recent Reviews</Typography>
+            <Typography variant="h6">Reviews</Typography>
             <Tooltip title="Reload reviews">
-              <IconButton onClick={fetchRecentReviews}><Refresh /></IconButton>
+              <IconButton onClick={fetchReviews}><Refresh /></IconButton>
             </Tooltip>
           </Stack>
 
