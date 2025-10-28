@@ -1372,7 +1372,7 @@ const VendorDashboard = () => {
               {reviews.map((r) => (
                 <Box key={r.orderId} sx={{ borderBottom: "1px solid rgba(0,0,0,0.1)", pb:1 }}>
                   <Stack direction="row" alignItems="center" spacing={1} >
-                    <Chip size="small" label={'${r.rating}'} color="warning" />
+                    <Chip size="small" label={Number(r.rating).toFixed(1)} color="warning" />
                     <Typography variant="body2" sx={{flex: 1 }}>
                       {r.review || <em style={{ color : "#777" }}>No text</em>}
                     </Typography>
