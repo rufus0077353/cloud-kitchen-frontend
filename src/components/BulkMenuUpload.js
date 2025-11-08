@@ -9,6 +9,7 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { toast } from "react-toastify";
 import { downloadMenuTemplate, uploadMenuCsv } from "../api/menu";
 import { exportMenuCsv } from "../api/menu";
+import ListAltIcon from "@mui/icons-material/ListAlt";
 
 export default function BulkMenuUpload() {
   const [file, setFile] = useState(null);
@@ -24,6 +25,7 @@ export default function BulkMenuUpload() {
       setResult(data);
       if (data.created || data.updated) {
         toast.success(`Done: +${data.created} created, ${data.updated} updated`);
+        onDone?.();
       } else {
         toast.info("No rows created/updated");
       }
