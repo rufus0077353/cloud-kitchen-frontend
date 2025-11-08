@@ -6,9 +6,13 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export function exportMenuCsv() {
+export function downloadMenuTemplate() {
   // Opens the template endpoint directly; browser downloads it
-  window.open(`${API}/api/menu-items/export-csv`, "_blank");
+  window.open(`${API}/api/menu-items/template-csv`, "_blank");
+}
+
+export function exportMenuCsv() {
+    window.open(`${API}/api/menu-items/export-csv`, "_blank");
 }
 
 export async function uploadMenuCsv({ file, mode = "upsert" }) {
