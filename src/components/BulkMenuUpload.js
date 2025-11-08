@@ -8,6 +8,7 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { toast } from "react-toastify";
 import { downloadMenuTemplate, uploadMenuCsv } from "../api/menu";
+import { exportMenuCsv } from "../api/menu";
 
 export default function BulkMenuUpload() {
   const [file, setFile] = useState(null);
@@ -45,6 +46,14 @@ export default function BulkMenuUpload() {
             onClick={downloadMenuTemplate}
           >
             Download template
+          </Button>
+
+          <Button
+            variant="outlined"
+            startIcon={<ListAltIcon />}
+            onClick={exportMenuCsv}
+          >
+            Export current menu
           </Button>
 
           <TextField

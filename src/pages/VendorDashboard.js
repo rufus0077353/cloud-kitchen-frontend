@@ -1140,7 +1140,7 @@ const VendorDashboard = () => {
         </Paper>
 
         {/* ----- BULK MENU UPLOAD ----- */}
-        <BulkMenuUpload />
+        <BulkMenuUpload onDone={refetchMenuItems} />
 
         {/* ---- MENU FORM ---- */}
         <Paper sx={{ p: 3, mb: 3 }} ref={formRef}>
