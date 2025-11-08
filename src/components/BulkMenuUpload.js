@@ -25,7 +25,6 @@ export default function BulkMenuUpload() {
       setResult(data);
       if (data.created || data.updated) {
         toast.success(`Done: +${data.created} created, ${data.updated} updated`);
-        onDone?.();
       } else {
         toast.info("No rows created/updated");
       }
