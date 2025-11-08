@@ -17,6 +17,7 @@ import { socket, connectSocket } from "../utils/socket";
 import VendorSalesTrend from "../components/VendorSalesTrend";
 import LiveOrdersWidget from "../components/LiveOrdersWidget";
 import MapPicker from "../components/MapPicker";
+import BulkMenuUpload from "../components/BulkMenuUpload";
 
 /* ------------ API base normalizer (ensure single /api) ------------ */
 function resolveApiBase() {
@@ -1137,6 +1138,9 @@ const VendorDashboard = () => {
             <Button variant="outlined" onClick={fetchVendorMe}>Reset</Button>
           </Stack>
         </Paper>
+
+        {/* ----- BULK MENU UPLOAD ----- */}
+        <BulkMenuUpload />
 
         {/* ---- MENU FORM ---- */}
         <Paper sx={{ p: 3, mb: 3 }} ref={formRef}>
