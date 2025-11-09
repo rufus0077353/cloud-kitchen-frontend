@@ -1084,7 +1084,7 @@ const VendorDashboard = () => {
                     Location (click map on search)
                   </Typography>
                   <MapPicker
-                    value={vendorProfile.lat && vendorProfile.lng ? [vendorProfile.lat, vendorProfile.lng] : null}
+                    value={vendorProfile.lat && vendorProfile.lng ? { lat: vendorProfile.lat, lng: vendorProfile.lng } : null}
                     onChange={(coords) => 
                       setVendorProfile((p) => ({
                         ...p,
