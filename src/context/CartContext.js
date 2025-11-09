@@ -1,10 +1,11 @@
+
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 /**
  * CartContext
  * - Single-vendor cart (locks to the first vendor you add)
  * - Persists items + vendorId to localStorage
- * - API exposed to consumers:
+ * - Exposes:
  *   items, subtotal, totalQty, vendorId
  *   addItem(item, delta), setQty(id, qty), removeItem(id), clear()
  *   isOpen, openDrawer(), closeDrawer(), toggleDrawer()
@@ -16,27 +17,18 @@ const LS_VENDOR = "cart_v1_vendor";
 const CartContext = createContext(null);
 
 export function CartProvider({ children }) {
-  // items
   const [items, setItems] = useState(() => {
     try {
       const raw = localStorage.getItem(LS_ITEMS);
       const parsed = JSON.parse(raw || "[]");
       return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   });
 
-  // vendor lock
   const [vendorId, setVendorId] = useState(() => {
-    try {
-      return localStorage.getItem(LS_VENDOR) || "";
-    } catch {
-      return "";
-    }
+    try { return localStorage.getItem(LS_VENDOR) || ""; } catch { return ""; }
   });
 
-  // optional UI drawer state
   const [isOpen, setIsOpen] = useState(false);
 
   // persist
@@ -50,7 +42,23 @@ export function CartProvider({ children }) {
     } catch {}
   }, [vendorId]);
 
-  // derived totals
+  // cross-tab sync
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === LS_ITEMS && e.newValue != null) {
+        try {
+          const parsed = JSON.parse(e.newValue || "[]");
+          if (Array.isArray(parsed)) setItems(parsed);
+        } catch {}
+      }
+      if (e.key === LS_VENDOR) {
+        setVendorId(e.newValue || "");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   const { subtotal, totalQty } = useMemo(() => {
     let t = 0, q = 0;
     for (const it of items) {
@@ -62,11 +70,9 @@ export function CartProvider({ children }) {
     return { subtotal: t, totalQty: q };
   }, [items]);
 
-  // core ops
   const addItem = (item, delta = 1) => {
     if (!item || !item.id) return;
 
-    // enforce single-vendor cart (assumes item.vendorId exists)
     const incomingVendor = item.vendorId ?? vendorId ?? "";
     if (!vendorId && incomingVendor) {
       setVendorId(incomingVendor);
@@ -74,7 +80,7 @@ export function CartProvider({ children }) {
       // Different vendor item: reset cart to only this item
       setItems([{ ...item, qty: Math.max(1, Number(item.qty || delta || 1)) }]);
       setVendorId(incomingVendor);
-      setIsOpen(true); // show the change to the user
+      setIsOpen(true);
       return;
     }
 
@@ -91,7 +97,7 @@ export function CartProvider({ children }) {
       return next;
     });
 
-    setIsOpen(true); // open cart when an item is added
+    setIsOpen(true);
   };
 
   const setQty = (id, qty) => {
@@ -113,26 +119,20 @@ export function CartProvider({ children }) {
     setVendorId("");
   };
 
-  // drawer helpers
   const openDrawer = () => setIsOpen(true);
   const closeDrawer = () => setIsOpen(false);
   const toggleDrawer = () => setIsOpen((s) => !s);
 
   const value = {
-    // data
     items,
     subtotal,
     totalQty,
     vendorId,
-
-    // ops
     addItem,
     setQty,
     removeItem,
-    remove: removeItem, // alias
+    remove: removeItem,
     clear,
-
-    // drawer
     isOpen,
     openDrawer,
     closeDrawer,

@@ -1,21 +1,36 @@
-// src/components/PaymentBadge.jsx
+
 import React from "react";
 
 export default function PaymentBadge({ status }) {
-  const s = (status || "unpaid").toLowerCase();
-  const bg =
-    s === "paid" ? "#ecfdf5" : s === "failed" ? "#fef2f2" : "#f9fafb";
-  const border =
-    s === "paid" ? "#a7f3d0" : s === "failed" ? "#fecaca" : "#e5e7eb";
-  const color =
-    s === "paid" ? "#065f46" : s === "failed" ? "#7f1d1d" : "#374151";
+  const raw = (status || "unpaid").toString().toLowerCase();
+  const s = ["paid","unpaid","processing","failed","refunded"].includes(raw) ? raw : "unpaid";
+
+  const theme = {
+    paid:       { bg: "#ecfdf5", border: "#a7f3d0", color: "#065f46" },
+    processing: { bg: "#fff7ed", border: "#fed7aa", color: "#9a3412" },
+    failed:     { bg: "#fef2f2", border: "#fecaca", color: "#7f1d1d" },
+    refunded:   { bg: "#eff6ff", border: "#bfdbfe", color: "#1e3a8a" },
+    unpaid:     { bg: "#f9fafb", border: "#e5e7eb", color: "#374151" },
+  }[s];
+
+  const label = s[0].toUpperCase() + s.slice(1);
 
   return (
-    <span style={{
-      display: "inline-block", padding: "3px 8px", borderRadius: 999,
-      border: `1px solid ${border}`, background: bg, color, fontSize: 12
-    }}>
-      {s}
+    <span
+      style={{
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: 999,
+        border: `1px solid ${theme.border}`,
+        background: theme.bg,
+        color: theme.color,
+        fontSize: 12,
+        lineHeight: "16px",
+      }}
+      aria-label={`Payment ${label}`}
+      title={`Payment ${label}`}
+    >
+      {label}
     </span>
   );
 }

@@ -1,6 +1,5 @@
 
-// src/components/LiveOrdersWidget.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Paper, Stack, Typography, IconButton, Tooltip, Chip, Box, Button,
   CircularProgress, Divider, Badge, Collapse
@@ -30,12 +29,12 @@ const STATUS_COLORS = {
 const inr = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
 export default function LiveOrdersWidget({
-  limit = 10,             // how many recent orders to show
-  pollMs = 30000,         // optional refresh interval (ms)
-  enablePolling = true,   // polling fallback
+  limit = 10,
+  pollMs = 30000,
+  enablePolling = true,
 }) {
   const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const headers = token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : {};
 
   const [vendorId, setVendorId] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -43,7 +42,6 @@ export default function LiveOrdersWidget({
   const [busy, setBusy] = useState(null); // orderId while updating
   const [expanded, setExpanded] = useState(new Set());
 
-  // ---- helpers ----
   const toggleExpand = (id) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -127,6 +125,7 @@ export default function LiveOrdersWidget({
     }
   };
 
+  // FIX: backend expects { paymentStatus: "paid" }
   const markPaid = async (id) => {
     setBusy(id);
     try {
@@ -134,7 +133,7 @@ export default function LiveOrdersWidget({
         method: "PATCH",
         headers,
         credentials: "include",
-        body: JSON.stringify({ status: "paid" }),
+        body: JSON.stringify({ paymentStatus: "paid" }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -177,12 +176,8 @@ export default function LiveOrdersWidget({
     fetchVendorMe().then(fetchOrders);
 
     const onNew = (order) => {
-      // scope to current vendor if possible
       if (vendorId && Number(order?.VendorId) !== Number(vendorId)) return;
-      setOrders((prev) => {
-        const next = [order, ...prev];
-        return next.slice(0, limit);
-      });
+      setOrders((prev) => [order, ...prev].slice(0, limit));
       toast.info(`🆕 New order #${order?.id ?? ""}`);
     };
 
@@ -219,7 +214,6 @@ export default function LiveOrdersWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enablePolling, pollMs]);
 
-  // ---- render ----
   return (
     <Paper sx={{ p: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
@@ -293,13 +287,10 @@ export default function LiveOrdersWidget({
                       {o.User?.name || "-"} · {o.User?.email || ""}
                     </Typography>
                     <Typography variant="body2" sx={{ my: 0.5 }}>
-                      {lines.length
-                        ? lines.map((it) => `${it.name} x${it.qty}`).join(", ")
-                        : "No items"}
+                      {lines.length ? lines.map((it) => `${it.name} x${it.qty}`).join(", ") : "No items"}
                     </Typography>
 
                     <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
-                      {/* quick actions per status */}
                       {o.status === "pending" && (
                         <>
                           <Button

@@ -100,7 +100,7 @@ export default function VendorSalesTrend({ days: daysProp }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
   const fetchDaily = async (d = days) => {
     setLoading(true);
@@ -124,6 +124,7 @@ export default function VendorSalesTrend({ days: daysProp }) {
       const n = Number(daysProp);
       if (Number.isFinite(n) && n > 0) {
         setDays(n);
+        localStorage.setItem("vd_days", String(n));
         fetchDaily(n);
       }
     }
@@ -148,7 +149,13 @@ export default function VendorSalesTrend({ days: daysProp }) {
             size="small"
             label="Range"
             value={days}
-            onChange={(e) => { const v = Number(e.target.value); setDays(v); fetchDaily(v); }}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              const safe = Number.isFinite(v) && v > 0 ? v : 14;
+              setDays(safe);
+              localStorage.setItem("vd_days", String(safe));
+              fetchDaily(safe);
+            }}
             sx={{ width: 150 }}
           >
             <MenuItem value={7}>Last 7 days</MenuItem>

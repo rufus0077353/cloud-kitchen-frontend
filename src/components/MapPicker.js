@@ -25,8 +25,8 @@ export default function MapPicker({ value, onChange, disabled = false }) {
   const [auto, setAuto] = useState(null);
   const hasKey = Boolean(MAPS_KEY);
 
-  const point = useMemo(() => toLatLng(value), [value]);                // 👈 normalize
-  const center = useMemo(() => point ?? defaultCenter, [point]);        // 👈 use normalized
+  const point = useMemo(() => toLatLng(value), [value]);
+  const center = useMemo(() => point ?? defaultCenter, [point]);
 
   const { isLoaded } = useJsApiLoader({
     id: "servezy-maps",
@@ -37,7 +37,7 @@ export default function MapPicker({ value, onChange, disabled = false }) {
   const onMapClick = useCallback(
     (e) => {
       if (disabled) return;
-      onChange?.({ lat: e.latLng.lat(), lng: e.latLng.lng() });         // 👈 always send {lat,lng}
+      onChange?.({ lat: e.latLng.lat(), lng: e.latLng.lng() });
     },
     [onChange, disabled]
   );
@@ -95,7 +95,7 @@ export default function MapPicker({ value, onChange, disabled = false }) {
             if (loc) onChange?.({ lat: loc.lat(), lng: loc.lng() });
           }}
         >
-          <TextField fullWidth size="small" placeholder="Search address or place…" />
+          <TextField fullWidth size="small" placeholder="Search address or place…" type="search" />
         </Autocomplete>
         <Button size="small" variant="outlined" onClick={locateMe} disabled={disabled}>
           Use my location
@@ -105,7 +105,7 @@ export default function MapPicker({ value, onChange, disabled = false }) {
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={center}
-        zoom={point ? 15 : 12}                                          
+        zoom={point ? 15 : 12}
         onClick={onMapClick}
         options={{ streetViewControl: false, mapTypeControl: false }}
       >

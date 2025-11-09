@@ -1,40 +1,80 @@
 // src/api/menu.js
-const API = process.env.REACT_APP_API_BASE_URL || "";
+const API = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/,"");
 
 function authHeaders() {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("token") || "";
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+/** Client-side CSV template */
 export function downloadMenuTemplate() {
-  // Opens the template endpoint directly; browser downloads it
-  window.open(`${API}/api/menu-items/template-csv`, "_blank");
+  const csv = [
+    "name,price,description,imageUrl,isAvailable",
+    "Margherita,199,Classic cheese pizza,https://example.com/p1.jpg,true",
+    "Veg Burger,149,Fresh patty with veggies,https://example.com/p2.jpg,true",
+  ].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, "menu-template.csv");
 }
 
-export function exportMenuCsv() {
-    window.open(`${API}/api/menu-items/export-csv`, "_blank");
-}
-
-export async function uploadMenuCsv({ file, mode = "upsert" }) {
-  const form = new FormData();
-  form.append("file", file);        // field name must be "file"
-  form.append("mode", mode);        // "create" | "upsert"
-
-  const resp = await fetch(`${API}/api/menu-items/bulk-csv`, {
-    method: "POST",
-    headers: { ...authHeaders() },  // do NOT set Content-Type (let browser set multipart boundary)
-    body: form,
-    credentials: "include",
-  });
-
-  if (!resp.ok) {
-    // Try to surface server error message
-    let msg = "Upload failed";
+/** Export current menu from server */
+export async function exportMenuCsv() {
+  const paths = [
+    "/api/vendors/me/menu.csv",
+    "/api/menu/export", // fallback
+  ];
+  for (const p of paths) {
     try {
-      const j = await resp.json();
-      msg = j?.message || msg;
+      const res = await fetch(API + p, { headers: { ...authHeaders() }, credentials: "include" });
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      downloadBlob(blob, "menu-export.csv");
+      return;
     } catch {}
-    throw new Error(msg);
   }
-  return await resp.json(); // { total, created, updated, skipped, errors: [...] }
+  throw new Error("Export not available");
+}
+
+/** Upload CSV */
+export async function uploadMenuCsv({ file, mode = "upsert" }) {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("mode", mode);
+
+  const paths = [
+    `/api/vendors/me/menu/upload?mode=${encodeURIComponent(mode)}`,
+    `/api/menu/upload?mode=${encodeURIComponent(mode)}`, // fallback
+  ];
+
+  for (const p of paths) {
+    try {
+      const res = await fetch(API + p, {
+        method: "POST",
+        headers: { ...authHeaders() },
+        body: fd,
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `Upload failed (${res.status})`);
+      return {
+        total: Number(data.total ?? data.count ?? 0),
+        created: Number(data.created ?? 0),
+        updated: Number(data.updated ?? 0),
+        skipped: Number(data.skipped ?? 0),
+        errors: Array.isArray(data.errors) ? data.errors : [],
+      };
+    } catch (e) {
+      // try next
+    }
+  }
+  throw new Error("Upload endpoint not found");
 }
