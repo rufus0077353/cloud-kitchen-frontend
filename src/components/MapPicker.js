@@ -1,43 +1,43 @@
-
 import React, { useCallback, useMemo, useState } from "react";
 import { Box, TextField, Stack, Button, Typography } from "@mui/material";
 import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from "@react-google-maps/api";
 
-// ✅ Stable constants — these should never be declared inside the component
 const MAPS_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "";
 const containerStyle = { width: "100%", height: 320 };
-const MAP_LIBRARIES = ["places"]; // 👈 declare outside component to stop reloading warning
-const defaultCenter = { lat: 12.9716, lng: 77.5946 }; // Bengaluru fallback
+const MAP_LIBRARIES = ["places"];
+const defaultCenter = { lat: 12.9716, lng: 77.5946 };
 
-/**
- * props:
- *  - value: { lat: number, lng: number } | null
- *  - onChange: (coords|null) => void
- *  - disabled?: boolean
- */
+// 👉 helper: normalize any input into {lat,lng}
+function toLatLng(v) {
+  if (!v) return null;
+  if (Array.isArray(v)) {
+    const [lat, lng] = v;
+    const nlat = Number(lat), nlng = Number(lng);
+    if (Number.isFinite(nlat) && Number.isFinite(nlng)) return { lat: nlat, lng: nlng };
+    return null;
+  }
+  const nlat = Number(v.lat), nlng = Number(v.lng);
+  if (Number.isFinite(nlat) && Number.isFinite(nlng)) return { lat: nlat, lng: nlng };
+  return null;
+}
+
 export default function MapPicker({ value, onChange, disabled = false }) {
   const [auto, setAuto] = useState(null);
   const hasKey = Boolean(MAPS_KEY);
 
-  // lazy init map center
-  const center = useMemo(() => {
-    if (value?.lat && value?.lng) return { lat: Number(value.lat), lng: Number(value.lng) };
-    return defaultCenter;
-  }, [value]);
+  const point = useMemo(() => toLatLng(value), [value]);                // 👈 normalize
+  const center = useMemo(() => point ?? defaultCenter, [point]);        // 👈 use normalized
 
-  // ✅ use stable MAP_LIBRARIES constant
   const { isLoaded } = useJsApiLoader({
     id: "servezy-maps",
     googleMapsApiKey: MAPS_KEY,
-    libraries: MAP_LIBRARIES, // 👈 fix: don't create a new array each render
+    libraries: MAP_LIBRARIES,
   });
 
   const onMapClick = useCallback(
     (e) => {
       if (disabled) return;
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      onChange?.({ lat, lng });
+      onChange?.({ lat: e.latLng.lat(), lng: e.latLng.lng() });         // 👈 always send {lat,lng}
     },
     [onChange, disabled]
   );
@@ -51,7 +51,6 @@ export default function MapPicker({ value, onChange, disabled = false }) {
     );
   };
 
-  // Graceful fallback if no key
   if (!hasKey) {
     return (
       <Stack spacing={1}>
@@ -62,14 +61,18 @@ export default function MapPicker({ value, onChange, disabled = false }) {
           <TextField
             label="Lat"
             size="small"
-            value={value?.lat ?? ""}
-            onChange={(e) => onChange?.({ lat: Number(e.target.value || 0), lng: value?.lng ?? 0 })}
+            value={point?.lat ?? ""}
+            onChange={(e) =>
+              onChange?.({ lat: Number(e.target.value || 0), lng: point?.lng ?? 0 })
+            }
           />
           <TextField
             label="Lng"
             size="small"
-            value={value?.lng ?? ""}
-            onChange={(e) => onChange?.({ lat: value?.lat ?? 0, lng: Number(e.target.value || 0) })}
+            value={point?.lng ?? ""}
+            onChange={(e) =>
+              onChange?.({ lat: point?.lat ?? 0, lng: Number(e.target.value || 0) })
+            }
           />
         </Stack>
         <Button size="small" variant="outlined" onClick={locateMe} disabled={disabled}>
@@ -79,9 +82,7 @@ export default function MapPicker({ value, onChange, disabled = false }) {
     );
   }
 
-  if (!isLoaded) {
-    return <Box sx={{ height: 320, bgcolor: "action.hover", borderRadius: 1 }} />;
-  }
+  if (!isLoaded) return <Box sx={{ height: 320, bgcolor: "action.hover", borderRadius: 1 }} />;
 
   return (
     <Stack spacing={1}>
@@ -104,13 +105,13 @@ export default function MapPicker({ value, onChange, disabled = false }) {
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={center}
-        zoom={value ? 15 : 12}
+        zoom={point ? 15 : 12}                                          
         onClick={onMapClick}
         options={{ streetViewControl: false, mapTypeControl: false }}
       >
-        {value?.lat && value?.lng && (
+        {point && (
           <Marker
-            position={{ lat: value.lat, lng: value.lng }}
+            position={point}
             draggable={!disabled}
             onDragEnd={(e) => onChange?.({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
           />
@@ -121,14 +122,14 @@ export default function MapPicker({ value, onChange, disabled = false }) {
         <TextField
           size="small"
           label="Lat"
-          value={value?.lat ?? ""}
-          onChange={(e) => onChange?.({ lat: Number(e.target.value || 0), lng: value?.lng ?? 0 })}
+          value={point?.lat ?? ""}
+          onChange={(e) => onChange?.({ lat: Number(e.target.value || 0), lng: point?.lng ?? 0 })}
         />
         <TextField
           size="small"
           label="Lng"
-          value={value?.lng ?? ""}
-          onChange={(e) => onChange?.({ lat: value?.lat ?? 0, lng: Number(e.target.value || 0) })}
+          value={point?.lng ?? ""}
+          onChange={(e) => onChange?.({ lat: point?.lat ?? 0, lng: Number(e.target.value || 0) })}
         />
       </Stack>
     </Stack>

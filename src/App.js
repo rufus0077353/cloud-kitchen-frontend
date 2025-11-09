@@ -142,7 +142,7 @@ function App() {
                 }
               />
               <Route
-                path="/vendors"
+                path="/vendors/list"
                 element={
                   <PrivateRoute>
                     <Vendors />
