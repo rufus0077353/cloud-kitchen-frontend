@@ -185,17 +185,10 @@ export default function VendorOrders() {
     if (!s) return;
     socketRef.current = s;
 
-    const OnConnect = () => {
-      if (vendorId) {
-        try { s.emit("vendor:join", vendorId); } catch {}
-      }
-    };
-
     const onNew = () => loadOrders({ silent: true });
     const onStatus = () => loadOrders({ silent: true });
     const onPayment = () => loadOrders({ silent: true });
 
-    s.on("connect", onConnect);
     s.on("order:new", onNew);
     s.on("order:status", onStatus);
     s.on("order:payment", onPayment);
@@ -203,7 +196,6 @@ export default function VendorOrders() {
 
     return () => {
       try {
-        s.off("connect", onConnect);
         s.off("order:new", onNew);
         s.off("order:status", onStatus);
         s.off("order:payment", onPayment);
