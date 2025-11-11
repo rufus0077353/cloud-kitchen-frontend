@@ -28,32 +28,28 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  const goToHomeByRole = async (user, token) => {
-    const role = getRole(user);
-
-    // Vendors: make sure we have vendorId in storage
+  const routeByRole = async (me, token) => {
+    const role = getRole(me);
     if (role === "vendor") {
+      // Ensure vendorId cached
       try {
         const res = await fetch(`${API_BASE}/api/vendors/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
-          const me = await res.json();
-          if (me?.vendorId || me?.id) {
-            localStorage.setItem("vendorId", String(me.vendorId ?? me.id));
+          const v = await res.json();
+          if (v?.vendorId || v?.id) {
+            localStorage.setItem("vendorId", String(v.vendorId ?? v.id));
           }
         }
-      } catch (_) {}
+      } catch { /* noop */ }
       nav("/vendor/dashboard", { replace: true });
       return;
     }
-
     if (role === "admin") {
       nav("/admin/dashboard", { replace: true });
       return;
     }
-
-    // fallback: normal user
     const redirectBack = location.state?.from?.pathname;
     nav(redirectBack || "/dashboard", { replace: true });
   };
@@ -75,19 +71,38 @@ export default function Login() {
       }
 
       const json = await res.json();
-      // Expecting { token, user } but tolerate variants
       const token = json.token || json.accessToken || json.jwt;
-      const user  = json.user  || json.profile  || json.data  || {};
-      if (!token || !user?.id) {
-        throw new Error("Invalid login response");
-      }
+      const user  = json.user  || json.profile     || json.data || {};
+      if (!token || !user?.id) throw new Error("Invalid login response");
 
-      // Store auth
+      // Persist auth
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
 
-      // Route based on role (vendor/admin/user)
-      await goToHomeByRole(user, token);
+      // Fetch fresh /auth/me so we have emailVerified (and normalized role)
+      const meRes = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const me = meRes.ok ? await meRes.json() : user;
+
+      // If not verified, go to the verify prompt and (best effort) trigger a code
+      if (!me?.emailVerified) {
+        // Fire-and-forget: ask backend to send verification OTP/email
+        try {
+          await fetch(`${API_BASE}/api/otp/email/send`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+        } catch { /* ignore */ }
+        nav("/verify-email", { replace: true });
+        return;
+      }
+
+      // Verified -> route by role
+      await routeByRole(me, token);
     } catch (e) {
       setErr(e.message || "Login failed");
     } finally {
@@ -125,23 +140,22 @@ export default function Login() {
                 {err}
               </Typography>
             )}
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={loading}
-            >
+            <Button type="submit" variant="contained" disabled={loading}>
               {loading ? "Signing in…" : "Login"}
             </Button>
-            <Button sx={{ mt: 2, textAlign: "center" }}>
-              <Typography variant="body2">
-                Don't have an account? {""}
-                <Link to="/register" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none"}}>Register here</Link>
-              </Typography>
 
-              <Typography variant="body2">
-                <Link to="/forgot-password" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none"}}>Forgot Password?</Link>
-              </Typography>
-            </Button>
+            <Typography variant="body2" sx={{ textAlign: "center" }}>
+              Don't have an account?{" "}
+              <Link to="/register" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none" }}>
+                Register here
+              </Link>
+            </Typography>
+
+            <Typography variant="body2" sx={{ textAlign: "center" }}>
+              <Link to="/forgot-password" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none" }}>
+                Forgot Password?
+              </Link>
+            </Typography>
           </Stack>
         </form>
       </Paper>

@@ -1,20 +1,15 @@
+
 // src/pages/Register.js
 import React, { useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Container,
-  TextField,
-  Button,
-  Typography,
-  Box,
-  Alert,
-  MenuItem,
+  Container, TextField, Button, Typography, Box, Alert, MenuItem,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API_BASE = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/+$/, "");
 
-const Register = () => {
+export default function Register() {
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -22,43 +17,61 @@ const Register = () => {
     role: "user",
   });
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  
-
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const res = await fetch(`${API}/api/auth/register`, {
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        toast.success("regisration succesful");
-
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        navigate("/dashboard");
-      } else {
-        toast.error("Registration failed");
-        setError(data.message || "Registration failed");
+      if (!res.ok) {
+        const msg = data?.message || "Registration failed";
+        throw new Error(msg);
       }
+
+      // Store auth so we can call protected endpoints to send verification
+      const token = data.token;
+      const user  = data.user;
+      if (token && user?.id) {
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(user));
+      }
+
+      // Trigger verification email/OTP (best effort; ignore errors)
+      try {
+        await fetch(`${API_BASE}/api/otp/email/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      } catch { /* ignore */ }
+
+      toast.success("Registration successful. Please verify your email.");
+      // Always take new users to verification first
+      navigate("/verify-email", { replace: true });
     } catch (err) {
-      toast.error("server error. Please try again later");
-      setError("Server error");
+      setError(err.message || "Server error");
+      toast.error(err.message || "Server error. Please try again later.");
+    } finally {
+      setLoading(false);
     }
   };
-  
 
   return (
     <Container maxWidth="xs">
@@ -68,6 +81,7 @@ const Register = () => {
         </Typography>
         <form onSubmit={handleSubmit}>
           {error && <Alert severity="error">{error}</Alert>}
+
           <TextField
             label="Name"
             name="name"
@@ -77,6 +91,7 @@ const Register = () => {
             onChange={handleChange}
             required
           />
+
           <TextField
             label="Email"
             name="email"
@@ -87,6 +102,7 @@ const Register = () => {
             onChange={handleChange}
             required
           />
+
           <TextField
             label="Password"
             name="password"
@@ -97,6 +113,7 @@ const Register = () => {
             onChange={handleChange}
             required
           />
+
           <TextField
             label="Role"
             name="role"
@@ -109,19 +126,19 @@ const Register = () => {
             <MenuItem value="user">User</MenuItem>
             <MenuItem value="vendor">Vendor</MenuItem>
           </TextField>
+
           <Button
             type="submit"
             variant="contained"
             color="primary"
             fullWidth
             sx={{ mt: 2 }}
+            disabled={loading}
           >
-            Register
+            {loading ? "Registering…" : "Register"}
           </Button>
         </form>
       </Box>
     </Container>
   );
-};
-
-export default Register;
+}
