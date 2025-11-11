@@ -74,6 +74,7 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/verify-email" element={<VerifyEmailPrompt />} />
+              <Route path="/dev-email-test" element={<DevEmailTest />} />
 
               {/* Public Legal Pages */}
               <Route path="/contact" element={<Contact />} />
