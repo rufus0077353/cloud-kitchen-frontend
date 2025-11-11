@@ -52,6 +52,8 @@ import BrowseVendorsMap from "./pages/BrowseVendorsMap";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import VerifyEmailPrompt from "./pages/VerifyEmailPrompt";
+import DevEmailTest from "./pages/DevEmailTest";
+
 
 // Guards
 import RequireVerified from "./routes/RequireVerified";
