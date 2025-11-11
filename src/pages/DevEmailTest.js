@@ -1,33 +1,32 @@
 
 // src/pages/DevEmailTest.jsx
-import React, { useState } from "react";
-import { postJSON } from "../utils/api";
+import React, { useState } from 'react';
+import { sendDevEmail } from '../api/devEmail';
 
 export default function DevEmailTest() {
-  const [to, setTo] = useState("rufusaddanki777@gmail.com");
-  const [subject, setSubject] = useState("Hi from React");
-  const [message, setMessage] = useState("Test email");
-  const [out, setOut] = useState(null);
-  const [err, setErr] = useState("");
+  const [to, setTo] = useState('rufusaddanki777@gmail.com');
+  const [subject, setSubject] = useState('Hi from React');
+  const [message, setMessage] = useState('Test email');
+  const [out, setOut] = useState('');
 
-  const send = async () => {
-    setErr(""); setOut(null);
+  const go = async (e) => {
+    e.preventDefault();
+    setOut('Sending...');
     try {
-      const data = await postJSON("/api/dev-email/send", { to, subject, message });
-      setOut(data);
-    } catch (e) {
-      setErr(e.message || "Email send failed");
+      const res = await sendDevEmail({ to, subject, message });
+      setOut(JSON.stringify(res, null, 2));
+    } catch (err) {
+      setOut(`Error: ${err.message}`);
     }
   };
 
   return (
-    <div style={{ padding: 16 }}>
-      <input value={to} onChange={e=>setTo(e.target.value)} />
-      <input value={subject} onChange={e=>setSubject(e.target.value)} />
-      <textarea value={message} onChange={e=>setMessage(e.target.value)} />
-      <button onClick={send}>Send</button>
-      {err && <pre style={{color:'crimson'}}>Error: {err}</pre>}
-      {out && <pre>{JSON.stringify(out, null, 2)}</pre>}
-    </div>
+    <form onSubmit={go} style={{ padding: 16 }}>
+      <div><input value={to} onChange={e=>setTo(e.target.value)} placeholder="to"/></div>
+      <div><input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="subject"/></div>
+      <div><textarea value={message} onChange={e=>setMessage(e.target.value)} placeholder="message"/></div>
+      <button type="submit">Send</button>
+      <pre>{out}</pre>
+    </form>
   );
 }
