@@ -16,6 +16,7 @@ export default function Register() {
     password: "",
     role: "user",
   });
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -43,31 +44,19 @@ export default function Register() {
         throw new Error(msg);
       }
 
-      // Store auth so we can call protected endpoints to send verification
       const token = data.token;
       const user  = data.user;
+
       if (token && user?.id) {
         localStorage.setItem("token", token);
         localStorage.setItem("user", JSON.stringify(user));
       }
 
-      // Trigger verification email/OTP (best effort; ignore errors)
-      try {
-        await fetch(`${API_BASE}/api/otp/email/send`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-      } catch { /* ignore */ }
-
-      toast.success("Registration successful. Please verify your email.");
-      // Always take new users to verification first
-      navigate("/verify-email", { replace: true });
+      toast.success("Registered successfully!");
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.message || "Server error");
-      toast.error(err.message || "Server error. Please try again later.");
+      toast.error(err.message || "Server error");
     } finally {
       setLoading(false);
     }
@@ -79,6 +68,7 @@ export default function Register() {
         <Typography variant="h4" gutterBottom>
           Register
         </Typography>
+
         <form onSubmit={handleSubmit}>
           {error && <Alert severity="error">{error}</Alert>}
 
@@ -130,7 +120,6 @@ export default function Register() {
           <Button
             type="submit"
             variant="contained"
-            color="primary"
             fullWidth
             sx={{ mt: 2 }}
             disabled={loading}

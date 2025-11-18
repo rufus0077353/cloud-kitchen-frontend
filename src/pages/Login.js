@@ -30,8 +30,8 @@ export default function Login() {
 
   const routeByRole = async (me, token) => {
     const role = getRole(me);
+
     if (role === "vendor") {
-      // Ensure vendorId cached
       try {
         const res = await fetch(`${API_BASE}/api/vendors/me`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -42,14 +42,17 @@ export default function Login() {
             localStorage.setItem("vendorId", String(v.vendorId ?? v.id));
           }
         }
-      } catch { /* noop */ }
+      } catch {}
+
       nav("/vendor/dashboard", { replace: true });
       return;
     }
+
     if (role === "admin") {
       nav("/admin/dashboard", { replace: true });
       return;
     }
+
     const redirectBack = location.state?.from?.pathname;
     nav(redirectBack || "/dashboard", { replace: true });
   };
@@ -58,6 +61,7 @@ export default function Login() {
     e.preventDefault();
     setErr("");
     setLoading(true);
+
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
@@ -72,37 +76,15 @@ export default function Login() {
 
       const json = await res.json();
       const token = json.token || json.accessToken || json.jwt;
-      const user  = json.user  || json.profile     || json.data || {};
+      const user  = json.user  || json.profile || json.data || {};
+
       if (!token || !user?.id) throw new Error("Invalid login response");
 
-      // Persist auth
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
 
-      // Fetch fresh /auth/me so we have emailVerified (and normalized role)
-      const meRes = await fetch(`${API_BASE}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const me = meRes.ok ? await meRes.json() : user;
-
-      // If not verified, go to the verify prompt and (best effort) trigger a code
-      if (!me?.emailVerified) {
-        // Fire-and-forget: ask backend to send verification OTP/email
-        try {
-          await fetch(`${API_BASE}/api/otp/email/send`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          });
-        } catch { /* ignore */ }
-        nav("/verify-email", { replace: true });
-        return;
-      }
-
-      // Verified -> route by role
-      await routeByRole(me, token);
+      // DIRECTLY ROUTE — NO EMAIL VERIFICATION
+      await routeByRole(user, token);
     } catch (e) {
       setErr(e.message || "Login failed");
     } finally {
@@ -127,6 +109,7 @@ export default function Login() {
               required
               fullWidth
             />
+
             <TextField
               label="Password"
               type="password"
@@ -135,24 +118,26 @@ export default function Login() {
               required
               fullWidth
             />
+
             {err && (
               <Typography color="error" variant="body2">
                 {err}
               </Typography>
             )}
+
             <Button type="submit" variant="contained" disabled={loading}>
               {loading ? "Signing in…" : "Login"}
             </Button>
 
             <Typography variant="body2" sx={{ textAlign: "center" }}>
               Don't have an account?{" "}
-              <Link to="/register" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none" }}>
+              <Link to="/register" style={{ color: "#1976d2", fontWeight: 600 }}>
                 Register here
               </Link>
             </Typography>
 
             <Typography variant="body2" sx={{ textAlign: "center" }}>
-              <Link to="/forgot-password" style={{ color: "#1976d2", fontWeight: 600, textDecoration: "none" }}>
+              <Link to="/forgot-password" style={{ color: "#1976d2", fontWeight: 600 }}>
                 Forgot Password?
               </Link>
             </Typography>
