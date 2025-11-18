@@ -89,9 +89,7 @@ function App() {
                 path="/dashboard"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <UserDashboard />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -99,9 +97,7 @@ function App() {
                 path="/orders"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <UserOrders />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -109,9 +105,7 @@ function App() {
                 path="/create-order"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <CreateOrder />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -119,9 +113,7 @@ function App() {
                 path="/orders/success"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <OrderSuccess />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -129,9 +121,7 @@ function App() {
                 path="/orders/form"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <OrderForm />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -139,9 +129,7 @@ function App() {
                 path="/orders/history"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <OrderHistory />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -149,9 +137,7 @@ function App() {
                 path="/orders/invoice/:id"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <Invoice />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -159,9 +145,7 @@ function App() {
                 path="/vendors"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <BrowseVendors />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -169,9 +153,7 @@ function App() {
                 path="/vendors/list"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <Vendors />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -179,9 +161,7 @@ function App() {
                 path="/vendors/:vendorId"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <UserVendorMenu />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -189,9 +169,7 @@ function App() {
                 path="/checkout"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <Checkout />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -199,9 +177,7 @@ function App() {
                 path="/track/:id"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <TrackOrder />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -209,9 +185,7 @@ function App() {
                 path="/browse-map"
                 element={
                   <PrivateRoute>
-                    <RequireVerified>
                       <BrowseVendorsMap />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -221,9 +195,7 @@ function App() {
                 path="/vendor/dashboard"
                 element={
                   <PrivateRoute role="vendor">
-                    <RequireVerified>
                       <VendorDashboard />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -231,9 +203,7 @@ function App() {
                 path="/vendor/menu"
                 element={
                   <PrivateRoute role="vendor">
-                    <RequireVerified>
                       <VendorMenu />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -241,9 +211,7 @@ function App() {
                 path="/vendor/orders"
                 element={
                   <PrivateRoute role="vendor">
-                    <RequireVerified>
                       <VendorOrders />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -251,9 +219,7 @@ function App() {
                 path="/vendor/payouts"
                 element={
                   <PrivateRoute role="vendor">
-                    <RequireVerified>
                       <PayoutsDashboard role="vendor" />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -263,9 +229,7 @@ function App() {
                 path="/admin/dashboard"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <AdminDashboard />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -273,9 +237,7 @@ function App() {
                 path="/admin/users"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <AdminUsers />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -283,9 +245,7 @@ function App() {
                 path="/admin/users/edit/:id"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <EditUser />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -293,9 +253,7 @@ function App() {
                 path="/admin/vendors"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <AdminVendors />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -303,9 +261,7 @@ function App() {
                 path="/admin/menu-items"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <AdminMenuItems />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -313,9 +269,7 @@ function App() {
                 path="/admin/orders"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <AdminOrders />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
@@ -323,9 +277,7 @@ function App() {
                 path="/admin/payouts"
                 element={
                   <PrivateRoute role="admin">
-                    <RequireVerified>
                       <AdminPayouts />
-                    </RequireVerified>
                   </PrivateRoute>
                 }
               />
